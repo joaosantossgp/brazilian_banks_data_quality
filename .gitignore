@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.worktrees/
+data/raw/
+data/*.collection.json
+data/derived/
+.playwright-cli/
+.tools/
+.superpowers/
+data/runs/
+expansion-stage/
+.scratch/
+third_party/feynman/inactive-20261002/
+third_party/feynman/provenance-before-selection-20261002.json
+reports/expansion-20261001.verification.json
