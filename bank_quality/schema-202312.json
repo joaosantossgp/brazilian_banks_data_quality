@@ -1,0 +1,305 @@
+{
+  "period": 202312,
+  "baseline_stage": "First acquired info metadata reviewed against raw HTTP; report/notes/columns pre-pinned by discovery catalog",
+  "catalog_source": {
+    "url": "https://www3.bcb.gov.br/ifdata/rest/relatorios2000a2024",
+    "method": "GET",
+    "final_url": "https://www3.bcb.gov.br/ifdata/rest/relatorios2000a2024",
+    "query_parameters": [],
+    "context": {},
+    "started_at_utc": "2026-10-01T01:29:52.763821+00:00",
+    "http_status": 200,
+    "response_headers": {
+      "Date": "Thu, 01 Oct 2026 01:29:58 GMT",
+      "Content-Type": "text/plain;charset=UTF-8",
+      "Content-Length": "13527657",
+      "Connection": "close",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, GET, PUT, OPTIONS, DELETE",
+      "Access-Control-Max-Age": "3600",
+      "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept",
+      "Set-Cookie": "TS012b7e98=012e4f88b3a689e843f4db8ddfe36b068d4e1862bc817f13fee85d51e46852677bce184e2bbcd446ec4d92312f5b80d95afb039c3b02831f67f00dc035d27d50faed2c348368769f82b601d57edeea41869697e109b898c25b4854502cb348e38c9b07166b; Path=/",
+      "Expires": "Thu, 01 Dec 1994 16:00:00 GMT",
+      "Content-Language": "en-US",
+      "Vary": "Accept-Encoding",
+      "X-Content-Type-Options": "'nosniff'",
+      "Strict-Transport-Security": "max-age=16070400; includeSubDomains",
+      "x-azure-ref": "20261001T012950Z-157686b49dds2cvvhC1GRUczk80000001n7g00000000evu5",
+      "X-Cache": "CONFIG_NOCACHE",
+      "Accept-Ranges": "bytes"
+    },
+    "diagnostics": [],
+    "outcome": "ok",
+    "truncated": false,
+    "retrieved_at_utc": "2026-10-01T01:30:04.206286+00:00",
+    "elapsed_seconds": 11.438,
+    "bytes": 13527657,
+    "sha256": "2428b8a436e142682cd63eb6155717f58f2524582dcca427654032f45f6acf07",
+    "body_path": "20261001T012952763821Z_portal_catalog_retry_1e8743faa0be4262b5c2b64c02dad2f7.bin",
+    "manifest_path": "20261001T012952763821Z_portal_catalog_retry_1e8743faa0be4262b5c2b64c02dad2f7.json"
+  },
+  "info_source": {
+    "url": "https://www3.bcb.gov.br/ifdata/rest/arquivos?nomeArquivo=ifdata/202312/info202312.json",
+    "final_url": "https://www3.bcb.gov.br/ifdata/rest/arquivos?nomeArquivo=ifdata/202312/info202312.json",
+    "method": "GET",
+    "query_parameters": [
+      [
+        "nomeArquivo",
+        "ifdata/202312/info202312.json"
+      ]
+    ],
+    "context": {
+      "period": 202312,
+      "requested_url": "https://www3.bcb.gov.br/ifdata/rest/arquivos?nomeArquivo=ifdata/202312/info202312.json",
+      "body_capture": "Intercepted official response bytes before browser fulfillment"
+    },
+    "http_status": 200,
+    "response_headers": {
+      "date": "Thu, 01 Oct 2026 03:37:20 GMT",
+      "content-type": "application/json;charset=UTF-8",
+      "content-length": "174579",
+      "connection": "keep-alive",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "POST, GET, PUT, OPTIONS, DELETE",
+      "access-control-max-age": "3600",
+      "access-control-allow-headers": "Origin, X-Requested-With, Content-Type, Accept",
+      "content-language": "en-US",
+      "x-content-type-options": "'nosniff'",
+      "strict-transport-security": "max-age=16070400; includeSubDomains",
+      "x-azure-ref": "20261001T033716Z-r165b7c4cd8759pwhC1SAOyefn00000006d0000000003fr9",
+      "x-cache": "CONFIG_NOCACHE",
+      "accept-ranges": "bytes"
+    },
+    "retrieved_at_utc": "2026-10-01T03:37:20.509Z",
+    "bytes": 174579,
+    "sha256": "11a0704ec62d3123c8af2ceb7c98b545c683781e297f8a3f4d89e449122c7ee2",
+    "body_path": "2026-10-01T033720509Z_202312_e1bacaca-f0b3-4c23-a40d-8defa2891ca2.bin",
+    "manifest_path": "2026-10-01T033720509Z_202312_e1bacaca-f0b3-4c23-a40d-8defa2891ca2.json",
+    "kind": "http_response",
+    "outcome": "ok",
+    "diagnostics": [
+      "Playwright stores decoded response-body bytes"
+    ]
+  },
+  "columns": [
+    {
+      "ifd": 79670,
+      "fid": 8
+    },
+    {
+      "ifd": 79706,
+      "fid": 9
+    },
+    {
+      "ifd": 79728,
+      "fid": 8
+    },
+    {
+      "ifd": 79702,
+      "fid": 9
+    },
+    {
+      "ifd": 79703,
+      "fid": 9
+    },
+    {
+      "ifd": 79671,
+      "fid": 1
+    },
+    {
+      "ifd": 79676,
+      "fid": 1
+    },
+    {
+      "ifd": 79680,
+      "fid": 1
+    },
+    {
+      "ifd": 79672,
+      "fid": 1
+    },
+    {
+      "ifd": 79673,
+      "fid": 1
+    },
+    {
+      "ifd": 79678,
+      "fid": 14
+    },
+    {
+      "ifd": 78182,
+      "fid": 13
+    },
+    {
+      "ifd": 78183,
+      "fid": 13
+    },
+    {
+      "ifd": 78184,
+      "fid": 13
+    },
+    {
+      "ifd": 78185,
+      "fid": 13
+    },
+    {
+      "ifd": 78186,
+      "fid": 13
+    },
+    {
+      "ifd": 79718,
+      "fid": 13
+    },
+    {
+      "ifd": 79704,
+      "fid": 2
+    },
+    {
+      "ifd": 79705,
+      "fid": 2
+    }
+  ],
+  "report": {
+    "id": 93,
+    "n": "Resumo",
+    "cp": "Resumo<br />Valores monetários em R$ mil<br />",
+    "ge": "14/04/2025",
+    "rp": "1. De acordo com a Lei nº 4.595, de 31 de dezembro de 1964, as instituições financeiras devem apurar resultados em 30 de junho e em 31 de dezembro de cada ano, obrigatoriamente, com observância às regras contábeis estabelecidas pelo CMN. Dessa forma, em março e setembro, os dados contábeis referentes às receitas e às despesas correspondem aos saldos acumulados entre janeiro e março e entre julho e setembro, respectivamente. Os demonstrativos de resultado de junho e dezembro registram os valores acumulados entre janeiro e junho e entre julho e dezembro, respectivamente. <br />2. Os dados constantes deste relatório são fornecidos pelas próprias instituições, podendo apresentar diferenças em relação aos dados divulgados na imprensa em atendimento à legislação societária pelas instituições financeiras constituídas sob a forma de sociedade anônima. <br />3. NI: Não informado pela instituição até a publicação do relatório.<br />4. Na data-base de dezembro, serão republicados os dados contábeis, de capital e de crédito dos últimos quatro trimestres, com as informações mais recentes recebidas das instituições. Dessa forma, os dados poderão ser alterados no caso de reapresentação de documentos. <br />5. O recurso de \"Composição de Colunas\" e \"Composição de Colunas em PDF\" permite consultar as rubricas contábeis de cada coluna do relatório. <br />6. As informações resumidas de Capital estão disponíveis no relatório Resumo para as instituições selecionadas do tipo Conglomerados Financeiros e Instituições Independentes de dezembro/2000 até dezembro/2014 e para as instituições selecionadas do tipo Conglomerado Prudencial e Instituições Independentes a partir de março/2015.<br />7. Entre setembro/2017 e março/2018, o cálculo do número de agências inclui as sedes. A partir de junho/2018, o número de agências inclui as sedes, exceto para cooperativas. <br/>8. Conforme disposto na Circular nº 1.273, de 29 de dezembro de 1987, o Conglomerado Financeiro engloba tão somente as entidades supervisionadas pelo Banco Central, à exceção de administradoras de consórcio, instituições de pagamento, fintechs (SCDs e SEPs). Este conceito foi utilizado até o ano de 2013, com o surgimento do Conglomerado Prudencial, que incorpora todas as instituições autorizadas a funcionar pelo BC e aquelas não autorizadas, mas que são consolidadas por apresentarem algum risco prudencial. <br />",
+    "ri": "1. According to Law no. 4,595, of December 31, 1964, the financial institutions should report financial results on June 30 and December 31 of each year, mandatory, observing CMN’s accounting regulation. For instance, in March and September, revenues and expenses accounting data correspond to the first and third quarter accumulated data, respectively. The June and December statements correspond to the first and second half of the year accumulated data, respectively. <br />2. The report information is provided by the financial institutions and can differ from the press information, which complies with the corporation’s law. <br />3. NI: Not informed by the institution until the publication of this report. <br />4. In December, accounting data, capital information and credit information will be republished, for the last four quarters, with the last information received from the institutions. Therefore, the information can change with the resubmission of documents. <br />5. \"Column’s Composition\" and \"Column’s Composition in PDF\" allows to consult the columns composition. <br />6. Summarized capital information is available in the Summary Report from December/2000 to December/2014 for Financial Conglomerates and Independent Institutions and from March/2015 on for Prudential Conglomerates and Independent Institutions. <br />7. PTAX selling rate: http://www4.bcb.gov.br/pec/taxas/port/ptaxnpesq.asp?id=txcotacao <br />8. As provided in Circular No. 1,273, of December 29, 1987, the Financial Conglomerate covers only entities supervised by the Central Bank, with the exception of consortium administrators, payment institutions, fintechs. This concept was used until 2013, with the emergence of the Prudential Conglomerate, which brings together all institutions authorized to operate by the BC and those not authorized, but which are consolidated because they present some prudential risk.<br/>"
+  },
+  "infos": [
+    {
+      "id": 79670,
+      "n": "Instituição",
+      "d": "Nome da instituição",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79706,
+      "n": "Código",
+      "d": "Conglomerado ou CNPJ",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79728,
+      "n": "Conglomerado Prudencial",
+      "d": "Conglomerado Prudencial",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 79702,
+      "n": "Conglomerado Financeiro",
+      "d": "Código do Conglomerado Financeiro",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79703,
+      "n": "Conglomerado Prudencial",
+      "d": "Código do Conglomerado Prudencial",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79671,
+      "n": "TCB",
+      "d": "TCB - Tipo de Consolidado Bancário: \n(b1) Banco Comercial, Banco Múltiplo com Carteira Comercial ou Caixas Econômicas \n(b2) Banco Múltiplo sem Carteira Comercial ou Banco de Câmbio ou Banco de Investimento \n(b3S) Cooperativa de Crédito Singular \n(b3C) Central e Confederação de Cooperativas de Crédito \n(b4) Banco de Desenvolvimento \n(n1) Não bancário de Crédito \n(n2) Não bancário do Mercado de Capitais \n(n4) Instituições de Pagamento",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79676,
+      "n": "TC",
+      "d": "TC - Tipo de Controle: \n(1) Público \n(2) Privado Nacional \n(3) Privado com Controle Estrangeiro",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79680,
+      "n": "TI",
+      "d": "TI Tipo de Instituição: \n(1) Banco do Brasil - Banco Múltiplo \n(2) Banco Comercial \n(3) Banco Comercial Cooperativo \n(4) BNDES \n(5) Banco de Desenvolvimento \n(6) Caixa Econômica Federal \n(7) Caixa Econômica Estadual \n(8) Banco Múltiplo \n(9) Cooperativa de Crédito \n(10) Sociedade de Crédito ao Microempreendedor \n(11) Banco Múltiplo Cooperativo \n(13) Banco de Investimento \n(14) Sociedade de Crédito, Financiamento e Investimento \n(15) Sociedade Corretora de TVM \n(16) Sociedade Distribuidora de TVM \n(19) Sociedade de Arrendamento Mercantil \n(21) Sociedade Corretora de Câmbio \n(25) Associação de Poupança e Empréstimo \n(28) Banco Comercial Estrangeiro - Filial no país \n(29) Companhia Hipotecária \n(30) Agência de Fomento \n(31) Sociedade de Crédito Imobiliário - Repassadora \n(39) Banco de Câmbio\n(41) Instituições de Pagamento \n(43) Sociedades de Crédito Direto \n(44) Sociedades de Empréstimo entre Pessoas",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79672,
+      "n": "Cidade",
+      "d": "Cidade da sede da instituição",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79673,
+      "n": "UF",
+      "d": "Estado",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 79678,
+      "n": "Data",
+      "d": "Data-base",
+      "a": 1,
+      "ty": 0
+    },
+    {
+      "id": 78182,
+      "n": "Ativo Total",
+      "d": "[10000007] + [20000004]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 78183,
+      "n": "Carteira de Crédito Classificada",
+      "d": "[31000000]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 78184,
+      "n": "Passivo Circulante e Exigível a Longo Prazo e Resultados de Exercícios Futuros",
+      "d": "[40000008] + [50000005]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 78185,
+      "n": "Captações",
+      "d": "[41000007] + [42000006] + [43000005] + [46000002]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 78186,
+      "n": "Patrimônio Líquido",
+      "d": "[60000002] + [70000009]+ [80000006]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 79718,
+      "n": "Lucro Líquido",
+      "d": "[70000009]+[80000006]-[81956001]",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 79704,
+      "n": "Número de Agências",
+      "d": "Número de Agências, incluídas as sedes (exceto para cooperativas)",
+      "a": 1,
+      "ty": 1
+    },
+    {
+      "id": 79705,
+      "n": "Número de Postos de Atendimento",
+      "d": "Número de Postos de Atendimento",
+      "a": 1,
+      "ty": 1
+    }
+  ]
+}

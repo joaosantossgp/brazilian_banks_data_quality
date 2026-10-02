@@ -1,0 +1,179 @@
+{
+  "source": "https://github.com/mattpocock/skills",
+  "revision": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+  "installed_utc": "2026-10-01T01:20:07.5780947Z",
+  "selected": [
+    "wayfinder",
+    "grill-with-docs",
+    "to-spec",
+    "to-tickets",
+    "grilling",
+    "domain-modeling",
+    "setup-matt-pocock-skills",
+    "research",
+    "prototype"
+  ],
+  "requested": [
+    "wayfinder",
+    "grill-with-docs",
+    "to-spec",
+    "to-tickets"
+  ],
+  "direct_dependencies": [
+    "grilling",
+    "domain-modeling",
+    "setup-matt-pocock-skills"
+  ],
+  "conditional_wayfinder_handlers": [
+    "research",
+    "prototype"
+  ],
+  "license": "MIT",
+  "mode": "Repository-local copies, unchanged source plus LICENSE",
+  "files": [
+    {
+      "path": ".agents/skills/wayfinder/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/wayfinder/SKILL.md",
+      "sha256": "3362fa360948f8526e88ebe8184f5402f9b5f4d9dced2ba0ed2721f64ae3de5a"
+    },
+    {
+      "path": ".agents/skills/wayfinder/agents/openai.yaml",
+      "sha256": "3e698cdff8e84d0e900d8dec535060e9e6d16d923b313eefd881e958d164e37a"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/SKILL.md",
+      "sha256": "abc0fa7948db18b5fb0e1cc1c522ac5ff47d874e2da1e5df60619d79be11f38b"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/agents/openai.yaml",
+      "sha256": "81e6af95559517a292767439da8f46a468b4d88a6773a3316d511a428eb16ff3"
+    },
+    {
+      "path": ".agents/skills/to-spec/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/to-spec/SKILL.md",
+      "sha256": "c73a2250beac0479e384f5466e834bb54ce6e30b7f8705e9999ba840d9d59b36"
+    },
+    {
+      "path": ".agents/skills/to-spec/agents/openai.yaml",
+      "sha256": "55037139831219743dda1f716fe69eab3366e922529f69cc988fea3b1d34c74a"
+    },
+    {
+      "path": ".agents/skills/to-tickets/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/to-tickets/SKILL.md",
+      "sha256": "8082bc6ef165027c5df3215763055f4a9668878bf27f25f582db78a14c3ed3c1"
+    },
+    {
+      "path": ".agents/skills/to-tickets/agents/openai.yaml",
+      "sha256": "e396b8caaf6cdd95c94cf707a7ca2fa5c3a04b37ae5d4301b5b360a7ff7a34cb"
+    },
+    {
+      "path": ".agents/skills/grilling/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/grilling/SKILL.md",
+      "sha256": "d806733216b16e51adad834e724bfec5540a436d06395bfc75b843cda9f7404b"
+    },
+    {
+      "path": ".agents/skills/grilling/agents/openai.yaml",
+      "sha256": "ad75163922ff8263acdd25ebc37420e8fcf1fccb93483fd5742e9bd26f5c45f6"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/ADR-FORMAT.md",
+      "sha256": "b7021c31a1c2485b07356a8110fd1fd1ae4facbab3e210983789f425f867d95b"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/GLOSSARY-FORMAT.md",
+      "sha256": "61fa9f6f9231070461dd4f7d4cfad377c33013c1e5668e1e6c0a8e4500944b3b"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/SKILL.md",
+      "sha256": "b62d997256cc073e123d4303da8e9db00db0e28de9739660ca3e55ab76e09cdb"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/agents/openai.yaml",
+      "sha256": "ce496c77c77a090877bff10f198c9770fb52e23088351350ea0826380f948ff8"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/domain.md",
+      "sha256": "20ee347cfcb4bd2266a8b747c11ca6c3dec85ff4cc38319de88cc3cadc12c80b"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-github.md",
+      "sha256": "0809582ea8cf5f91fd72ae2b59aa62a07c1236ad194ef7dd40d9e2f01c3e753b"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-gitlab.md",
+      "sha256": "6fe462c8dbffdf90e66d2ee62f6fa74666d777d0933c244e2a22a295848cb3ab"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-local.md",
+      "sha256": "a604b658f0730eae3107671b09323ed8382bd546e82dc3bedc265bccbeb35021"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/SKILL.md",
+      "sha256": "32c466b3403b5e535d2fd85a353b4c14cbac512cdff9fec0650dec79899d48cd"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/triage-labels.md",
+      "sha256": "493d08d7a8007d3604cdf64d45717045034a5037c9e9917bae1ad9340fad75b8"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/agents/openai.yaml",
+      "sha256": "53d0bf3786862a1cb5013ca78f12013b166d0819823dae0d3f9eb13eee2acdf2"
+    },
+    {
+      "path": ".agents/skills/research/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/research/SKILL.md",
+      "sha256": "524b404b1ca373a8b00f63a64667ec4b0a61c3c9cf4e8f246e639be859bb6979"
+    },
+    {
+      "path": ".agents/skills/research/agents/openai.yaml",
+      "sha256": "73840328dfa6b689d81ee645d8aaf8570a0cc44d64a32b119ea6091d2828d412"
+    },
+    {
+      "path": ".agents/skills/prototype/LICENSE",
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/prototype/LOGIC.md",
+      "sha256": "8d7e31de7ce73b8e62f207e3f3ecbd90a7a54fdc728f8965f5f0739976f9959a"
+    },
+    {
+      "path": ".agents/skills/prototype/SKILL.md",
+      "sha256": "f74ae01f4fc454d3a4ef21271920f1706e626271e715dda0559e489f45c792c3"
+    },
+    {
+      "path": ".agents/skills/prototype/UI.md",
+      "sha256": "5ea83263ba72174c9055d58045f053d6577c0db6802c1e15bd1468dd16f78a0b"
+    },
+    {
+      "path": ".agents/skills/prototype/agents/openai.yaml",
+      "sha256": "cc1ce1ceaba1442c431dc76abb84b271ad72ecb94dcefee53130df742dc11787"
+    }
+  ]
+}

@@ -1,7 +1,48 @@
 # Brazilian banks data quality
 
-Engenharia de dados IF.data para a pesquisa de qualidade de dados de bancos brasileiros, com foco acadêmico em capital aberto.
+Base local de engenharia para a monografia de João sobre bancos brasileiros com **capital aberto**, preservando seu texto atual 2010–2024. O comportamento implementado é IF.data **individual/Resumo em 201012, 202312 e 202412**; a base multiuso financeira/prudencial/individual 2010–2026 é alvo de desenho separado. Unidade acadêmica, janela final, tratamento de holdings e elegibilidade temporal continuam decisões de João/orientador.
 
-Esta branch contém somente a base inicial e os templates de contribuição. O coletor, os testes, a arquitetura e os registros de evidência serão apresentados em uma pull request de implementação, para revisão antes da integração.
+Checkout autorizado em `LAPTOP-U0J6PT8Q`, na raiz deste repositório. Na preparação local de 2026-10-02 ainda não havia commit/push/publicação desta árvore; confirmar o estado remoto após a entrega. O Project privado não torna privado o repositório público nem suas Issues.
 
-Dados brutos, derivados volumosos, arquivos privados e backups locais não fazem parte desta publicação. A licença do código próprio ainda não foi escolhida; os notices das fontes de terceiros acompanham a implementação correspondente.
+## Entradas e contrato único
+
+- [Arquitetura atual, alvo e contratos](docs/architecture.md)
+- [Glossário de domínio](GLOSSARY.md) e [entrada operacional dos agentes](AGENTS.md)
+- [Spec aprovada da fundação](docs/superpowers/specs/2026-10-02-governance-research-design.md) e [plano autorizado](docs/superpowers/plans/2026-10-02-governance-foundation-plan.md)
+- [Tracker: tarefa, aceite e estado de publicação](docs/agents/issue-tracker.md)
+- [Ferramentas de pesquisa, proveniência e limites funcionais](docs/engineering/research-tooling-20261002.md)
+
+A autorização explícita de publicação de 2026-10-02 permite completar/revisar a fundação, CI offline mínimo, commit/push do conjunto revisado, bootstrap mínimo de main, draft PR e reconciliação das mesmas Issues/cards no Project /3 por ferramenta suportada. Os gates anteriores de não publicar/não implementar CI são histórico datado e foram substituídos para esta entrega. Não autoriza merge, deploy, nova coleta, capítulo, calendário, runtime/contas/chaves, mudança de segurança/permissões/tokens/proteções ou outro Project. Publicação e CI remotas continuam pendentes de confirmação; não há novo gate humano para o escopo já aprovado. O [conjunto exato e limites de licença](docs/engineering/governance-publication-proposal.md) orienta a publicação. A licença do código/documentação próprios não foi escolhida; MIT upstream não a substitui.
+
+## Resultado implementado e evidência preservada
+
+O piloto original 201012/202412 permanece preservado: [design](docs/superpowers/specs/2026-10-01-ifdata-pilot-design.md), [plano histórico](docs/superpowers/plans/2026-10-01-ifdata-pilot.md), [resultado](reports/pilot-20261001.md), [ledger](docs/engineering/pilot-execution.md) e [comparação das quatro referências MIT](docs/engineering/reference-comparison.md). Os comandos de aquisição desses registros são históricos, sem autorização de reexecução nesta fundação.
+
+A expansão limitada **202312 está concluída**, por portal oficial, individual/Resumo: 1.552 instituições, 8 indicadores, 12.416 observações. A composição tem 40.904 observações, 52 corpos de evidência verificados e 7 artefatos reproduzidos byte a byte. São resultados da verificação registrada no [ledger de expansão](docs/engineering/expansion-execution.md), [relatório](reports/expansion-20261001.md) e verificação local preservada (`reports/expansion-20261001.verification.json`, excluída da publicação), não uma execução nova de coleta ou testes por esta tarefa documental.
+
+O [dossiê temporal](docs/engineering/capital-aberto-identity-dossier.md) mantém oito relações emissor–IF.data desconhecidas. Cobertura compara snapshots recuperados; não prova universo histórico ou elegibilidade acadêmica. OData não foi tentado para 202312. Valores de fluxo em dezembro não se tornam anuais por convenção: a evidência existente registra julho–dezembro. CSVs derivados preservam tokens/unidades/hashes; `value_state` distingue null, vazio, NA, NI e zero.
+
+## Comandos locais verificados
+
+Executar deste checkout. As rotinas existentes foram verificadas na etapa anterior, conforme os ledgers; nesta fundação documental não foi repetida a suíte de base. Python 3.12+ e Node já existem no runtime Codex deste laptop. Não instalar runtime ou repetir coleta para esta entrega.
+
+```powershell
+$pilotPython = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+& $pilotPython -B -m unittest discover -s tests -v
+$pilotNode = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+& $pilotNode --test tests/test-portal-ready.cjs tests/test-budget.cjs
+
+# Replay offline para destino novo, preservando os derivados aceitos.
+$replayOutput = Join-Path $env:TEMP ("ifdata-replay-" + [guid]::NewGuid().ToString())
+& $pilotPython -B -m bank_quality replay --collection data/derived/expansion-20261001/collection.json --output $replayOutput
+```
+
+Replay verifica hashes dos corpos arquivados e reconstrói o derivado. O bruto precisa estar disponível localmente; referências documentais não substituem esses arquivos. Scripts de aceite/verificação que escrevem nos diretórios aceitos não são comandos de inspeção inocentes: avaliar destinos antes de executá-los. Disponibilidade de ferramentas e testes passando não demonstram validade econômica, contábil e financeira.
+
+## Pesquisa, rigor e decisões abertas
+
+Financeiro vem somente de IF.data; CVM/B3 são metadados temporais distintos. A [spec](docs/superpowers/specs/2026-10-02-governance-research-design.md) é autoridade para fontes primárias verificáveis, fórmulas/unidades/janelas/perímetros, quebras, versões, ausências, reprodução e incertezas. A [nota de desenho](docs/engineering/brainstorming-2010-2026-20261002.md) conserva a discussão e decisões anteriores; relatórios/variáveis da expansão, consulta, vínculos e filtro acadêmico exigem desenho/decisão posteriores.
+
+As nove skills Matt e Superpowers global permanecem; Context7 teve acesso verificado, exigindo checagem da versão efetivamente usada. Somente Feynman **deep-research** e **pdf-explore** estão ativas, com MIT/proveniência preservados. `/deepresearch` no Codex nativo permanece não validado; não ampliar instalação para contornar isso. O [registro de tooling](docs/engineering/research-tooling-20261002.md) contém versões, hashes e histórico.
+
+Redação acadêmica assistida é permitida sob direção, revisão e responsabilidade de João, com fontes/dados/citações/referências verificáveis e transparência institucional aplicável. Não há capítulo solicitado agora; paper-writing permanece inativa.

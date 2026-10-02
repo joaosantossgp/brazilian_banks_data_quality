@@ -1,0 +1,156 @@
+{
+  "checked_at_utc": "2026-10-02T03:20:12.9439121Z",
+  "hostname": "LAPTOP-U0J6PT8Q",
+  "branch": "feat/ifdata-two-quarter-pilot",
+  "scope": "Task 3 local governance verification; no collection, economic/accounting/financial recalculation, runtime installation or remote writes",
+  "changed_files": [
+    "reports/governance-foundation.verification.json",
+    ".superpowers/sdd/task-3-report.md"
+  ],
+  "foundation_source_changes_since_baseline": [
+    "AGENTS.md",
+    "README.md",
+    "docs/agents/issue-tracker.md",
+    "docs/superpowers/plans/2026-10-02-governance-foundation-plan.md",
+    "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+  ],
+  "foundation_additions_checked": [
+    "docs/architecture.md",
+    ".github/ISSUE_TEMPLATE/work-item.md",
+    ".github/pull_request_template.md"
+  ],
+  "checks": [
+    {
+      "command": "python -B -m unittest discover -s tests -v",
+      "status": "pass_reused_baseline",
+      "exit_code": 0,
+      "baseline_checked_at_utc": "2026-10-02T03:02:53.0990095Z",
+      "evidence": "54 Python tests passed",
+      "log": {
+        "path": ".superpowers/sdd/baseline-checks/python-tests.log",
+        "availability": "repository-relative local-only; excluded from publication",
+        "sha256": "a2c831e3d92f595c40a48f1de41933d1d6b64c00c30a023f60565ec542cc5c3f"
+      }
+    },
+    {
+      "command": "node tests/test-budget.cjs",
+      "status": "pass_reused_baseline",
+      "exit_code": 0,
+      "baseline_checked_at_utc": "2026-10-02T03:02:53.0990095Z",
+      "evidence": "byte, deadline and reserve guards passed",
+      "log": {
+        "path": ".superpowers/sdd/baseline-checks/node-budget.log",
+        "availability": "repository-relative local-only; excluded from publication",
+        "sha256": "1d05d724f2cc434f4cdf74bcc03e7fdb8ba2be05ef96922434c9268e0767dcb2"
+      }
+    },
+    {
+      "command": "node --test tests/test-portal-ready.cjs",
+      "status": "pass_reused_baseline",
+      "exit_code": 0,
+      "baseline_checked_at_utc": "2026-10-02T03:02:53.0990095Z",
+      "evidence": "2 portal-ready tests passed; 0 failures",
+      "log": {
+        "path": ".superpowers/sdd/baseline-checks/node-ready.log",
+        "availability": "repository-relative local-only; excluded from publication",
+        "sha256": "ecec4ebacecee0b5c2581833611e024a1f5241caed29ad90248938c52568bda8"
+      }
+    },
+    {
+      "command": "Get-FileHash -Algorithm SHA256 for every protected and source manifest entry",
+      "status": "pass",
+      "evidence": "405 protected files, 368910369 bytes, zero missing/changed; only authorized documentation source changes"
+    },
+    {
+      "command": "Get-FileHash -Algorithm SHA256 for every Matt/Feynman provenance entry; Get-ChildItem SKILL.md; inspect LICENSE",
+      "status": "pass",
+      "evidence": "36 Matt and 30 Feynman hashes match; two active and 14 inactive Feynman skills; MIT notices retained"
+    },
+    {
+      "command": "UTF-8 Markdown local target resolution/open and heading anchor resolution across eight foundation documents/templates",
+      "status": "pass",
+      "evidence": "66 local file links opened; 2 heading anchors resolved; no failures or replacement characters"
+    },
+    {
+      "command": "Read spec criteria, architecture, AGENTS, tracker, tooling and templates against task brief and approved publication delta",
+      "status": "pass_with_integration_concern",
+      "evidence": "Six rigor criteria referenced, human academic decisions reserved, deep-research runtime unvalidated; earlier authority wording requires Task 5 reconciliation before publication"
+    }
+  ],
+  "protected_files_unchanged": {
+    "status": "pass",
+    "count": 405,
+    "bytes": 368910369,
+    "missing_or_changed": [],
+    "manifest": {
+      "path": ".superpowers/sdd/baseline-manifest.json",
+      "availability": "repository-relative local-only; excluded from publication",
+      "sha256": "735d2beaea8d3c8f1a9660511b5936acae01b143ffc76c467feecd69c747c5dd"
+    }
+  },
+  "skill_verification": {
+    "status": "pass",
+    "matt_files": 36,
+    "feynman_files": 30,
+    "active_feynman_skills": [
+      "deep-research",
+      "pdf-explore"
+    ],
+    "inactive_feynman_skills": 14,
+    "feynman_source_bytes": 70870,
+    "upstream_license": "MIT",
+    "license_notice_files_checked": 11,
+    "matt_revision": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+    "feynman_revision": "e17f5fd0ea57775def66ebd2b16b40b39d3dc867",
+    "runtime_workflow": "not validated; file presence and matching hashes do not establish execution"
+  },
+  "rigor_criteria": [
+    {
+      "number": 1,
+      "title": "Proveniência e versões",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    },
+    {
+      "number": 2,
+      "title": "População temporal",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    },
+    {
+      "number": 3,
+      "title": "Semântica contábil",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    },
+    {
+      "number": 4,
+      "title": "Ausências e incertezas",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    },
+    {
+      "number": 5,
+      "title": "Reprodução",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    },
+    {
+      "number": 6,
+      "title": "Limitações e julgamento",
+      "status": "referenced_only",
+      "evidence": "docs/superpowers/specs/2026-10-02-governance-research-design.md"
+    }
+  ],
+  "published": false,
+  "limitations": [
+    "Baseline suites were not rerun: unchanged protected files and all other baseline software source files justify reuse; checks report original baseline execution time.",
+    "Software checks and document review do not establish economic, accounting or financial comparability, sample validity, causal validity or academic method adequacy.",
+    "No new data, formulas, sample eligibility, historical collection, manuscript drafting or Feynman workflow execution.",
+    "Baseline snapshots and logs are local-only evidence; their paths are provenance identifiers, not public download links.",
+    "Earlier no-publication/no-CI wording in README, AGENTS, architecture, tracker, spec and plan must be reconciled with the approved execution delta in Task 5.",
+    "No remote status was checked or changed by this task; published false is the state of this verification at recording time.",
+    "Retaining upstream MIT notices does not select a license for project-owned code."
+  ],
+  "next_gate": "Independent Task 3 review; complete Tasks 4/5 including authority reconciliation and CI; audit exact publication manifest, exclusions and hashes before already-authorized publication; verify remote SHAs and actual workflow checks. No redundant user publication approval gate."
+}
