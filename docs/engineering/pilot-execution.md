@@ -2,7 +2,7 @@
 
 Spec and plan are in `docs/superpowers/`. User approved the design and explicitly authorized inline autonomous execution, tests and local adjustments.
 
-Setup: hostname verified LAPTOP-U0J6PT8Q; real Projects directory located; absent target cloned as an empty repository; no other computer or unrelated project accessed. Nine selected Matt skills installed and pinned with MIT provenance. Superpowers exists in the global catalog and `catálogo global de skills`, so no local duplicate installed.
+Setup: authorized execution computer verified; real Projects directory located; absent target cloned as an empty repository; no other computer or unrelated project accessed. Nine selected Matt skills installed and pinned with MIT provenance. Superpowers exists in the global catalog and `catálogo global de skills`, so no local duplicate installed.
 
 Ruling: Keep the user's newly opened canonical checkout as the work location and use an unborn feature branch. An empty repository has no base commit for a linked worktree. No main implementation or duplicate checkout is needed. Cost if wrong: local branch naming only, reversible before any publication.
 
@@ -26,7 +26,7 @@ Independent Superpowers code review found three Important defensive defects: rep
 
 Final verification: `python -B -m unittest discover -s tests` — 29 passed. `node --check scripts/export-portal.cjs` passed. `scripts/verify-pilot.py` — 29 raw manifests/byte counts/hash verified, seven inventory artifacts byte-identical to offline regeneration, all 36 pinned Matt skill-file hashes verified, exactly nine installed directories. Detailed hashes/time: `reports/pilot-20261001.verification.json`. Metadata and raw-value audit scripts executed successfully. Commands and limitations in README.
 
-Git: unborn `feat/ifdata-two-quarter-pilot`, no commits/push/PR/merge/deploy. Raw/index/derived data and Playwright diagnostics ignored. Local README/design/plan/report/source/tests/skills are untracked reviewable files. Existing private GitHub Project remains canonical; no duplicate board/cards. No calendar, academic prose, global configuration, security, unrelated project or REA-CL14 access.
+Git: unborn `feat/ifdata-two-quarter-pilot`, no commits/push/PR/merge/deploy. Raw/index/derived data and Playwright diagnostics ignored. Local README/design/plan/report/source/tests/skills are untracked reviewable files. Existing private GitHub Project remains canonical; no duplicate board/cards. No calendar, academic prose, global configuration, security, unrelated project or access to other computers.
 
 Codex capability: commands can use the repo cwd, but no supported project-registration/association-inspection/chat-move tool is exposed. User manually opened project. No UI automation or internal database/config edits. If the conversation menu offers Move to project, user can select the opened project; conversations are not claimed moved.
 

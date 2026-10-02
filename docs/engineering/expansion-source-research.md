@@ -1,6 +1,6 @@
 # Expansion source research
 
-Research date: 2026-10-01. Planning/discovery only on LAPTOP-U0J6PT8Q in this checkout. Repository Matt research skill applied. No financial requests, new quarter shards, code changes, commits or publication. Existing archived official assets are the main evidence; bounded online reads were limited to official BCB, CVM and B3 pages.
+Research date: 2026-10-01. Planning/discovery only on the authorized computer in this checkout. Repository Matt research skill applied. No financial requests, new quarter shards, code changes, commits or publication. Existing archived official assets are the main evidence; bounded online reads were limited to official BCB, CVM and B3 pages.
 
 ## Timing and comparison gate
 

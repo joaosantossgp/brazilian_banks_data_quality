@@ -1,6 +1,6 @@
 # Descoberta limitada para expansão do IF.data
 
-Etapa de planejamento autorizada em 2026-10-01, no LAPTOP-U0J6PT8Q. **Nenhum dado financeiro de novo trimestre foi coletado.** Foram analisados os arquivos oficiais já arquivados e feito um GET adicional de catálogo (HTTP 200, 1.649.748 bytes). Evidência estruturada e inventário por trimestre: `expansion-discovery-20261001.json` e `.csv` neste diretório.
+Etapa de planejamento autorizada em 2026-10-01, no computador autorizado. **Nenhum dado financeiro de novo trimestre foi coletado.** Foram analisados os arquivos oficiais já arquivados e feito um GET adicional de catálogo (HTTP 200, 1.649.748 bytes). Evidência estruturada e inventário por trimestre: `expansion-discovery-20261001.json` e `.csv` neste diretório.
 
 ## Disponibilidade anunciada
 

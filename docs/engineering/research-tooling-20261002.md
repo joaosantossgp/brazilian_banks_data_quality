@@ -1,6 +1,6 @@
 # Configuração local de pesquisa — 2026-10-02
 
-Computador verificado: LAPTOP-U0J6PT8Q. Esta configuração é separada da implementação do produto, ainda em desenho. Não houve nova coleta financeira, commit, publicação, criação de credenciais ou alteração global.
+Computador verificado: computador autorizado. Esta configuração é separada da implementação do produto, ainda em desenho. Não houve nova coleta financeira, commit, publicação, criação de credenciais ou alteração global.
 
 ## Matt e Superpowers
 

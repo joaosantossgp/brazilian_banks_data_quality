@@ -4,7 +4,7 @@ Leia este arquivo antes de atuar neste checkout. O contrato aprovado está na [s
 
 ## Escopo e autoridade
 
-- Trabalhar somente em `LAPTOP-U0J6PT8Q`, neste checkout `raiz deste checkout`. Não acessar REA-CL14 nem o projeto CVM separado; preservar arquivos não relacionados.
+- Trabalhar somente neste checkout, no computador autorizado por João. Não acessar outros computadores nem o projeto CVM separado; preservar arquivos não relacionados.
 - Implementado: IF.data **individual/Resumo 201012, 202312 e 202412**. A expansão 202312 foi executada e validada localmente; [ledger e limitações](docs/engineering/expansion-execution.md). A base 2010–2026 financeira principal, prudencial/individual complementares é alvo, ainda não implementado. Financeiro é IF.data; CVM/B3 fornecem apenas metadados.
 - A autorização explícita de publicação de 2026-10-02 permite completar/revisar a fundação, CI offline mínimo, commit/push do conjunto revisado, bootstrap mínimo de main, draft PR e reconciliação das mesmas Issues/cards no Project /3 por ferramenta suportada. Os gates anteriores de não publicar/não implementar CI são histórico datado e foram substituídos para esta entrega. Não autoriza merge, deploy, nova coleta, capítulo, calendário, runtime/contas/chaves, mudança de segurança/permissões/tokens/proteções ou outro Project. Publicação e CI remotas continuam pendentes de confirmação; não há novo gate humano para o escopo já aprovado.
 - Na preparação local sem HEAD, usar snapshots imutáveis/diff para revisão. O commit/push autorizado segue somente o manifesto revisado, bootstrap mínimo e draft PR; não criar commits por conveniência. CI usa apenas testes offline existentes, sem coleta/upload/deploy; não alterar proteções de branches.

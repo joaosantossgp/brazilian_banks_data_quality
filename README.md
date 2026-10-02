@@ -2,7 +2,7 @@
 
 Base local de engenharia para a monografia de João sobre bancos brasileiros com **capital aberto**, preservando seu texto atual 2010–2024. O comportamento implementado é IF.data **individual/Resumo em 201012, 202312 e 202412**; a base multiuso financeira/prudencial/individual 2010–2026 é alvo de desenho separado. Unidade acadêmica, janela final, tratamento de holdings e elegibilidade temporal continuam decisões de João/orientador.
 
-Checkout autorizado em `LAPTOP-U0J6PT8Q`, na raiz deste repositório. Na preparação local de 2026-10-02 ainda não havia commit/push/publicação desta árvore; confirmar o estado remoto após a entrega. O Project privado não torna privado o repositório público nem suas Issues.
+Checkout no computador autorizado, na raiz deste repositório. Na preparação local de 2026-10-02 ainda não havia commit/push/publicação desta árvore; confirmar o estado remoto após a entrega. O Project privado não torna privado o repositório público nem suas Issues.
 
 ## Entradas e contrato único
 

@@ -1,6 +1,6 @@
 # Dossiê de identidade: emissores de capital aberto e unidades IF.data
 
-Etapa 2 executada em 2026-10-01, no LAPTOP-U0J6PT8Q. Esta entrega separa o emissor observado no cadastro CVM/B3 atual, os candidatos observados nos cadastros individuais IF.data de 201012/202412 e qualquer vínculo legal/temporal entre eles. Não produz junção de valores financeiros nem define a amostra da tese.
+Etapa 2 executada em 2026-10-01, no computador autorizado. Esta entrega separa o emissor observado no cadastro CVM/B3 atual, os candidatos observados nos cadastros individuais IF.data de 201012/202412 e qualquer vínculo legal/temporal entre eles. Não produz junção de valores financeiros nem define a amostra da tese.
 
 O ledger `data/derived/expansion-20261001/identity-evidence.csv` (somente local, excluído da publicação) contém **8 registros de candidatos**, pertencentes a três casos e dois períodos: BB (2), Bradesco (2), Itaú Holding (2) e o banco operacional como candidato distinto do caso Itaú (2). Todos os vínculos emissor–unidade IF.data permanecem `unknown`. Ausência de prova não significa que a relação não existe nem exclusão definitiva da amostra. O ledger inclui os resultados reproduzíveis da API, linhas cadastrais originais, localizadores, URLs, corpos, manifests, hashes e horários de recuperação.
 

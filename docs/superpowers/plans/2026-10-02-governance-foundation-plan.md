@@ -1,6 +1,6 @@
 # Fundação de governança — Implementation Plan
 
-**Autoridade vigente em 2026-10-02:** publicação e CI mínimos explicitamente aprovados; o complemento final deste documento prevalece sobre gates anteriores, preservados como histórico datado. Não solicitar nova aprovação do mesmo escopo. Verificação remota permanece pendente.
+**Autoridade vigente em 2026-10-02:** publicação e CI mínimos explicitamente aprovados; o complemento final deste documento prevalece sobre gates anteriores, preservados como histórico datado. Não solicitar nova aprovação do mesmo escopo. Verificação da publicação inicial e do CI concluída; evidência de encerramento abaixo. A reconciliação do Project continua separada.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,18 +12,18 @@
 
 ## Global Constraints
 
-- Computador autorizado: LAPTOP-U0J6PT8Q. Checkout: `raiz deste checkout`. Nunca acessar REA-CL14 ou o projeto CVM separado.
+- Ambiente: computador autorizado para esta tarefa. Checkout: `raiz deste checkout`. Nunca acessar outros computadores não autorizados ou o projeto CVM separado.
 - Spec aprovada: [governance-research-design](../specs/2026-10-02-governance-research-design.md), incluindo a alteração explícita de João sobre redação assistida, aprovação explícita registrada em 2026-10-02.
 - A amostra acadêmica é filtro posterior, sem limitar armazenamento. A monografia mantém seu texto atual 2010-2024, foco capital aberto e decisões metodológicas humanas.
 - Financeiro somente IF.data; CVM/B3 somente metadados. Perspectivas financeira, prudencial e individual permanecem separadas; este plano não adquire novos períodos nem define relatórios/variáveis da expansão.
 - Redação assistida pode ser usada sob orientação, revisão e responsabilidade de João, com fontes verificáveis, sem fabricação de dados/citações/referências e respeitando transparência institucional aplicável. Não redigir capítulo nesta tarefa nem reativar paper-writing automaticamente.
 - Nove skills Matt intactas, Superpowers global, Context7 para documentação técnica da versão usada; apenas Feynman deep-research/pdf-explore ativas, MIT/proveniência preservados. `/deepresearch` não foi validado no Codex nativo; não instalar runtime para contornar essa limitação.
 - Não alterar calendário, permissões, segredos, segurança ou configuração global. Não sobrescrever bruto, evidências anteriores ou arquivos não relacionados.
-- João aprovou este plano e execução com agentes por tarefa, com revisão entre etapas. Nenhum commit, push, PR, merge, deploy, Issue ou alteração do Project está autorizado por esta entrega. A etapa de publicação exige aprovação concreta posterior; a preferência da skill por commits frequentes não revoga este limite.
+- **Limite da aprovação inicial, superado para publicação pelo complemento Task 5:** João aprovou este plano e execução com agentes por tarefa, com revisão entre etapas. Naquele estágio, nenhum commit, push, PR, merge, deploy, Issue ou alteração do Project estava autorizado por esta entrega. A etapa de publicação exige aprovação concreta posterior; a preferência da skill por commits frequentes não revoga este limite.
 
 ## Contexto que o executor deve conhecer
 
-Checkout sem commits, branch `feat/ifdata-two-quarter-pilot`; os arquivos existentes estão locais. O piloto/expansão implementados abrangem apenas 201012, 202312 e 202412, individual/Resumo, 40.904 observações. A interface do coletor continua limitada; documentação de base alvo não autoriza ampliar sua allowlist. O dossiê conserva oito relações históricas desconhecidas.
+**Na preparação inicial:** checkout sem commits, branch `feat/ifdata-two-quarter-pilot`; os arquivos existentes estavam locais. A publicação posterior está registrada no encerramento da Task 5 abaixo. O piloto/expansão implementados abrangem apenas 201012, 202312 e 202412, individual/Resumo, 40.904 observações. A interface do coletor continua limitada; documentação de base alvo não autoriza ampliar sua allowlist. O dossiê conserva oito relações históricas desconhecidas.
 
 Referências existentes: `docs/engineering/expansion-execution.md`, `reports/expansion-20261001.verification.json` (evidência somente local, excluída da publicação), `docs/engineering/capital-aberto-identity-dossier.md`, `docs/engineering/research-tooling-20261002.md`, `third_party/mattpocock-skills/provenance.json` e `third_party/feynman/provenance.json`. O Project único é `https://github.com/users/joaosantossgp/projects/3`; seu estado atual deve vir de leitura suportada ou do coordenador, não da descrição histórica dos seis rascunhos.
 
@@ -39,7 +39,7 @@ Set-Location -LiteralPath $foundationRepo
 & $foundationGit -c "safe.directory=$foundationRepo" status --short --branch
 ```
 
-Esperado: hostname LAPTOP-U0J6PT8Q, checkout correto e estado real registrado. Se encontrar alterações concorrentes, preservar e ajustar o plano ao diff observado. Usar worktree apenas se necessário e viável; um checkout sem commits não permite tratar uma base de worktree como existente. Não criar commit só para viabilizar isolamento. Não automatizar a UI Codex.
+Esperado: computador autorizado conferido, checkout correto e estado real registrado. Se encontrar alterações concorrentes, preservar e ajustar o plano ao diff observado. Usar worktree apenas se necessário e viável; um checkout sem commits não permite tratar uma base de worktree como existente. Não criar commit só para viabilizar isolamento. Não automatizar a UI Codex.
 
 ## Arquivos e responsabilidades
 
@@ -217,18 +217,18 @@ João escolheu a opção 1 abaixo; a implementação local está autorizada. Op�
 1. **Subagent-driven (recomendado pelo Superpowers):** agente por tarefa, com revisão entre tarefas, usando subagent-driven-development. Adequado para revisão independente; tasks com arquivos compartilhados seguem sequenciais.
 2. **Inline:** execução nesta sessão com executing-plans e checkpoints. Menor coordenação para esta fundação documental pequena.
 
-A escolha autoriza executar a fundação local dentro deste plano; não autoriza coletar história, redigir capítulo, instalar runtime, alterar calendário ou publicar. Qualquer nova decisão metodológica volta a João. O gate de publicação da Task 4 continua necessário, com a proposta completa em mãos.
+A escolha inicial autorizou executar a fundação local dentro deste plano; não autorizava coletar história, redigir capítulo, instalar runtime, alterar calendário ou publicar. O gate de publicação da Task 4 foi atendido pela autorização posterior da Task 5 e pela publicação verificada abaixo. Coleta histórica e novas decisões metodológicas permanecem fora desta entrega.
 
 
 ## Complemento vinculante de execução
 
 AGENTS é a entrada operacional do agente, não apenas uma descrição: escopo/arquitetura/comandos/limites, objetivo/dependências/aceite da tarefa, Issue real ou “não publicada” com tarefa local, justificativa/fonte para decisões, evidência de conclusão e atualização das incertezas. Task 1 implementa esse contrato; Task 2 reflete vínculo/aceite/revisão nos templates; Task 3 distingue software de conferência econômica, contábil e financeira; Task 4 prepara a publicação concreta sem executá-la. Rigor financeiro não autoriza inventar cálculo, indicador, amostra ou recomendação de investimento.
 
-O checkout não tem HEAD e não há autorização de commit; snapshots imutáveis e pacotes de diff da árvore de arquivos substituem BASE/HEAD para revisão. Não criar commit ou outro checkout por conveniência do workflow. Agentes implementadores são sequenciais; reviewer é leitura apenas. Novos testes que apenas espelhem documentação não são necessários; conferir links/frontmatter e utilizar os testes existentes conforme a tarefa.
+Na preparação sem HEAD e sem autorização de commit, snapshots imutáveis e pacotes de diff da árvore de arquivos substituíram BASE/HEAD para revisão. Após a publicação autorizada, commits reais identificam a base e o diff de revisões posteriores. Não criar commit ou outro checkout por conveniência do workflow. Agentes implementadores são sequenciais; reviewer é leitura apenas. Novos testes que apenas espelhem documentação não são necessários; conferir links/frontmatter e utilizar os testes existentes conforme a tarefa.
 
 ## Autoridade efetiva e Task 5 — publicação aprovada em 2026-10-02
 
-A autorização explícita de publicação de 2026-10-02 permite completar/revisar a fundação, CI offline mínimo, commit/push do conjunto revisado, bootstrap mínimo de main, draft PR e reconciliação das mesmas Issues/cards no Project /3 por ferramenta suportada. Os gates anteriores de não publicar/não implementar CI são histórico datado e foram substituídos para esta entrega. Não autoriza merge, deploy, nova coleta, capítulo, calendário, runtime/contas/chaves, mudança de segurança/permissões/tokens/proteções ou outro Project. Publicação e CI remotas continuam pendentes de confirmação; não há novo gate humano para o escopo já aprovado. Todas as restrições anteriores de commit/push/CI e o gate posterior da Task 4/handoff são histórico da autorização anterior; este complemento prevalece. Tasks 1–4 foram revisadas PASS; não repetir etapas por essa atualização.
+A autorização explícita de publicação de 2026-10-02 permite completar/revisar a fundação, CI offline mínimo, commit/push do conjunto revisado, bootstrap mínimo de main, draft PR e reconciliação das mesmas Issues/cards no Project /3 por ferramenta suportada. Os gates anteriores de não publicar/não implementar CI são histórico datado e foram substituídos para esta entrega. Não autoriza merge, deploy, nova coleta, capítulo, calendário, runtime/contas/chaves, mudança de segurança/permissões/tokens/proteções ou outro Project. Publicação e CI iniciais foram confirmadas pelos links de encerramento abaixo; não há novo gate humano para o escopo já aprovado. Todas as restrições anteriores de commit/push/CI e o gate posterior da Task 4/handoff são histórico da autorização anterior; este complemento prevalece. Tasks 1–4 foram revisadas PASS; não repetir etapas por essa atualização.
 
 ### Task 5: CI mínimo e conjunto público exato
 
@@ -238,8 +238,23 @@ A autorização explícita de publicação de 2026-10-02 permite completar/revis
 - [x] Reconciliar autoridade vigente e links com o conjunto publicado; evidências excluídas são descritas como somente locais.
 - [x] Preparar workflow CI, push/pull_request, contents read, Linux/Python 3.12/Node 22, actions v6 pinadas, sem instalação/coleta/upload/deploy; usar unittest, budget e portal-ready existentes.
 - [x] Atualizar proposta e manifesto com paths/bytes/SHA-256 exatos; licença própria não escolhida e notices MIT preservados.
-- [ ] Revisão independente; checks offline na árvore curada, hashes protegidos e links ao conjunto exato.
-- [ ] Publicar bootstrap de quatro arquivos em main e feature/draft PR revisada; não fazer merge.
-- [ ] Confirmar SHAs/conteúdo/templates/PR e runs/checks CI reais; reconciliar Project /3 somente após leitura suportada dos mesmos itens, sem IDs fabricados ou ampliação de escopos.
+- [x] Revisão independente e final; checks offline na árvore curada, hashes protegidos e links ao conjunto exato verificados.
+- [x] Bootstrap de quatro arquivos em main e feature/draft PR revisada publicados; sem merge.
+- [x] SHAs/conteúdo/templates/PR e runs/checks CI reais confirmados no commit inicial.
+- [ ] Reconciliação do Project /3 e vínculos das mesmas Issues: trabalho separado do coordenador, somente após leitura suportada, sem IDs fabricados ou ampliação de escopos; esta correção não altera Project/Issues.
 
-Aceite: software offline verificado separadamente da validade econômica/contábil/financeira, fontes protegidas intactas, privacidade revisada, conjunto exato e estado remoto observado. Bloqueio atual de Project CLI: read:project ausente; não renovar escopos/tokens nem duplicar cards.
+Aceite: software offline verificado separadamente da validade econômica/contábil/financeira, fontes protegidas intactas, privacidade revisada, conjunto exato e estado remoto observado. Bloqueio observado na preparação de Project CLI: read:project ausente; não renovar escopos/tokens nem duplicar cards.
+
+### Encerramento comprovado da publicação inicial — 2026-10-02
+
+Tasks 1–5 e revisão final concluídas. As instruções/checklists das Tasks 1–4 acima preservam o plano original e seus gates históricos; não são tarefas a executar novamente. A expansão financeira permanece desenho separado, sem nova coleta autorizada por este encerramento.
+
+| Resultado | Evidência verificada |
+| --- | --- |
+| Bootstrap main, quatro arquivos | [commit 2c0d5a7](https://github.com/joaosantossgp/brazilian_banks_data_quality/commit/2c0d5a766cc9ea197b37a0a062c5efb124bcbd02) |
+| Feature inicial, 119 arquivos / 808.531 bytes | [commit 00d6fe4](https://github.com/joaosantossgp/brazilian_banks_data_quality/commit/00d6fe46828955cfde9db4d2de1377c0fe20ff2b) |
+| PR aberto em rascunho, base main | [Publicação do piloto e da fundação](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1) |
+| CI push e pull_request no commit inicial | [push: sucesso](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37044529701); [PR: sucesso](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37044656911) |
+| Planejamento da expansão, não implementação | [Planejar expansão 2010–2026 e atualização](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2) |
+
+Os runs comprovam o commit inicial, não commits posteriores; cada atualização exige checks próprios. O manifesto auditado permanece snapshot imutável daquela publicação. A fonte corrente de estado remoto é o GitHub; não inferir sincronização de todo o Project, merge, validade metodológica ou base histórica completa deste registro. Licença própria não escolhida e notices MIT preservados. O bloqueio anterior de aprovação da publicação foi resolvido pela autorização direta específica do usuário.

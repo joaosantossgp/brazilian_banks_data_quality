@@ -1,6 +1,6 @@
 # Fechamento documental da expansão IF.data
 
-Computador conferido: **LAPTOP-U0J6PT8Q**. Repositório: `raiz deste checkout`.
+Ambiente de execução: **computador autorizado e conferido**. Repositório: `raiz deste checkout`.
 
 João autorizou a execução da etapa, incluindo dezembro/2023. A execução local já foi validada; este fechamento documental não autoriza nova coleta ou escala. Unidade, janela final e elegibilidade de capital aberto permanecem decisões humanas. Fechamento documental reconferido em 2026-10-02T00:05:03.274180+00:00.
 
