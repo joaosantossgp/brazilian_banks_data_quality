@@ -1,0 +1,626 @@
+{
+  "status": "task5_local_exact_manifest_pending_independent_review_and_remote_verification",
+  "audience": "public",
+  "publication_approved": true,
+  "published": false,
+  "project_owned_license": "not selected",
+  "upstream_license": "MIT notices retained; original code not licensed by inference",
+  "pending_changes": [
+    "independent Task5 review and curated-tree offline tests/hash verification",
+    "remote SHAs, templates, draft PR and actual CI verification",
+    "Project3 current supported read and same-card Issue reconciliation"
+  ],
+  "excluded": [
+    "data/raw/",
+    "data/runs/",
+    "data/derived/",
+    "data/*.collection.json",
+    "expansion-stage/",
+    ".scratch/",
+    ".superpowers/",
+    ".tools/",
+    ".playwright-cli/",
+    "caches and environments",
+    "third_party/feynman/inactive-20261002/",
+    "third_party/feynman/provenance-before-selection-20261002.json",
+    "reports/expansion-20261001.verification.json"
+  ],
+  "files": [
+    {
+      "path": ".agents/skills/domain-modeling/ADR-FORMAT.md",
+      "bytes": 2780,
+      "sha256": "b7021c31a1c2485b07356a8110fd1fd1ae4facbab3e210983789f425f867d95b"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/GLOSSARY-FORMAT.md",
+      "bytes": 2360,
+      "sha256": "61fa9f6f9231070461dd4f7d4cfad377c33013c1e5668e1e6c0a8e4500944b3b"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/SKILL.md",
+      "bytes": 3420,
+      "sha256": "b62d997256cc073e123d4303da8e9db00db0e28de9739660ca3e55ab76e09cdb"
+    },
+    {
+      "path": ".agents/skills/domain-modeling/agents/openai.yaml",
+      "bytes": 104,
+      "sha256": "ce496c77c77a090877bff10f198c9770fb52e23088351350ea0826380f948ff8"
+    },
+    {
+      "path": ".agents/skills/feynman/AGENTS.md",
+      "bytes": 7253,
+      "sha256": "9f9f8404d24811bd46b0b2fbe6bc31f64cc17e7bf968ed13271056258e532789"
+    },
+    {
+      "path": ".agents/skills/feynman/CONTRIBUTING.md",
+      "bytes": 7813,
+      "sha256": "368510bec8959a3fc4573ac004370fb1fb14bb911254bcbc6dfdbc9b5ffca430"
+    },
+    {
+      "path": ".agents/skills/feynman/LICENSE",
+      "bytes": 1072,
+      "sha256": "a108cc5a8e90d79d1daea6a7891db062537af9587f8eb10f81702137bbc192d5"
+    },
+    {
+      "path": ".agents/skills/feynman/deep-research/SKILL.md",
+      "bytes": 613,
+      "sha256": "23186e93b91124936b402349a236af45b3aabcf70828e30d9177b32c2cc6d57a"
+    },
+    {
+      "path": ".agents/skills/feynman/pdf-explore/SKILL.md",
+      "bytes": 903,
+      "sha256": "f4cd06493e362883820b5af7994e9f5e96cb2cec375138d7c72a7a2fd5e52a0e"
+    },
+    {
+      "path": ".agents/skills/feynman/prompts/deepresearch.md",
+      "bytes": 9573,
+      "sha256": "a751b61ce8d6d74857fcfdb7b4fbc69ed2f5e2848b09001e3803dae1d0dd7908"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/SKILL.md",
+      "bytes": 254,
+      "sha256": "abc0fa7948db18b5fb0e1cc1c522ac5ff47d874e2da1e5df60619d79be11f38b"
+    },
+    {
+      "path": ".agents/skills/grill-with-docs/agents/openai.yaml",
+      "bytes": 150,
+      "sha256": "81e6af95559517a292767439da8f46a468b4d88a6773a3316d511a428eb16ff3"
+    },
+    {
+      "path": ".agents/skills/grilling/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/grilling/SKILL.md",
+      "bytes": 2015,
+      "sha256": "d806733216b16e51adad834e724bfec5540a436d06395bfc75b843cda9f7404b"
+    },
+    {
+      "path": ".agents/skills/grilling/agents/openai.yaml",
+      "bytes": 116,
+      "sha256": "ad75163922ff8263acdd25ebc37420e8fcf1fccb93483fd5742e9bd26f5c45f6"
+    },
+    {
+      "path": ".agents/skills/prototype/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/prototype/LOGIC.md",
+      "bytes": 6103,
+      "sha256": "8d7e31de7ce73b8e62f207e3f3ecbd90a7a54fdc728f8965f5f0739976f9959a"
+    },
+    {
+      "path": ".agents/skills/prototype/SKILL.md",
+      "bytes": 2957,
+      "sha256": "f74ae01f4fc454d3a4ef21271920f1706e626271e715dda0559e489f45c792c3"
+    },
+    {
+      "path": ".agents/skills/prototype/UI.md",
+      "bytes": 7025,
+      "sha256": "5ea83263ba72174c9055d58045f053d6577c0db6802c1e15bd1468dd16f78a0b"
+    },
+    {
+      "path": ".agents/skills/prototype/agents/openai.yaml",
+      "bytes": 103,
+      "sha256": "cc1ce1ceaba1442c431dc76abb84b271ad72ecb94dcefee53130df742dc11787"
+    },
+    {
+      "path": ".agents/skills/research/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/research/SKILL.md",
+      "bytes": 806,
+      "sha256": "524b404b1ca373a8b00f63a64667ec4b0a61c3c9cf4e8f246e639be859bb6979"
+    },
+    {
+      "path": ".agents/skills/research/agents/openai.yaml",
+      "bytes": 97,
+      "sha256": "73840328dfa6b689d81ee645d8aaf8570a0cc44d64a32b119ea6091d2828d412"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/SKILL.md",
+      "bytes": 6963,
+      "sha256": "32c466b3403b5e535d2fd85a353b4c14cbac512cdff9fec0650dec79899d48cd"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/agents/openai.yaml",
+      "bytes": 157,
+      "sha256": "53d0bf3786862a1cb5013ca78f12013b166d0819823dae0d3f9eb13eee2acdf2"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/domain.md",
+      "bytes": 2093,
+      "sha256": "20ee347cfcb4bd2266a8b747c11ca6c3dec85ff4cc38319de88cc3cadc12c80b"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-github.md",
+      "bytes": 3776,
+      "sha256": "0809582ea8cf5f91fd72ae2b59aa62a07c1236ad194ef7dd40d9e2f01c3e753b"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-gitlab.md",
+      "bytes": 3855,
+      "sha256": "6fe462c8dbffdf90e66d2ee62f6fa74666d777d0933c244e2a22a295848cb3ab"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/issue-tracker-local.md",
+      "bytes": 1840,
+      "sha256": "a604b658f0730eae3107671b09323ed8382bd546e82dc3bedc265bccbeb35021"
+    },
+    {
+      "path": ".agents/skills/setup-matt-pocock-skills/triage-labels.md",
+      "bytes": 1060,
+      "sha256": "493d08d7a8007d3604cdf64d45717045034a5037c9e9917bae1ad9340fad75b8"
+    },
+    {
+      "path": ".agents/skills/to-spec/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/to-spec/SKILL.md",
+      "bytes": 3118,
+      "sha256": "c73a2250beac0479e384f5466e834bb54ce6e30b7f8705e9999ba840d9d59b36"
+    },
+    {
+      "path": ".agents/skills/to-spec/agents/openai.yaml",
+      "bytes": 140,
+      "sha256": "55037139831219743dda1f716fe69eab3366e922529f69cc988fea3b1d34c74a"
+    },
+    {
+      "path": ".agents/skills/to-tickets/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/to-tickets/SKILL.md",
+      "bytes": 5776,
+      "sha256": "8082bc6ef165027c5df3215763055f4a9668878bf27f25f582db78a14c3ed3c1"
+    },
+    {
+      "path": ".agents/skills/to-tickets/agents/openai.yaml",
+      "bytes": 151,
+      "sha256": "e396b8caaf6cdd95c94cf707a7ca2fa5c3a04b37ae5d4301b5b360a7ff7a34cb"
+    },
+    {
+      "path": ".agents/skills/wayfinder/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": ".agents/skills/wayfinder/SKILL.md",
+      "bytes": 12036,
+      "sha256": "3362fa360948f8526e88ebe8184f5402f9b5f4d9dced2ba0ed2721f64ae3de5a"
+    },
+    {
+      "path": ".agents/skills/wayfinder/agents/openai.yaml",
+      "bytes": 149,
+      "sha256": "3e698cdff8e84d0e900d8dec535060e9e6d16d923b313eefd881e958d164e37a"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/work-item.md",
+      "bytes": 870,
+      "sha256": "c12af1631c3e2e63acdc6656f77b564dbf22ddc5fa92d95ca1e7f9659eb232d1"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "bytes": 397,
+      "sha256": "2af80fae2cf5991dc8c5e14b330494861f9ab454dbf2b0645fa6b2dfa728ef3e"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 834,
+      "sha256": "dff54df82b08c293232d48b7a835a71f7a5c8b56e0ff8ce6ea03738365960220"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 327,
+      "sha256": "8d6ef7e8ec3225fec15e70e6f407185080a3d8d2ccbcd03fbd982690625c434d"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 7902,
+      "sha256": "e7be9a8e89d1e001e9a5edc86cecd3993dc8351a43f3892c6fb9051b088b023a"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "bytes": 2922,
+      "sha256": "fcfcba12259c05accf1c326f2ab3d8cd345c250534e4e1476f331b3663a2b8e2"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6526,
+      "sha256": "f96e42198fca50f4a647de05aebef760ca72232726f2cbefdde9b93ffaf0cf3d"
+    },
+    {
+      "path": "bank_quality/__init__.py",
+      "bytes": 64,
+      "sha256": "c2848dd40e34107cb75e591d56df34fab99e3bde03df76cbfc5dbb8aa770382d"
+    },
+    {
+      "path": "bank_quality/__main__.py",
+      "bytes": 1882,
+      "sha256": "97b4f97e463045161a332edd37a6fafbe08c361d88ad191bbf9fa8f2d92c6281"
+    },
+    {
+      "path": "bank_quality/archive.py",
+      "bytes": 4237,
+      "sha256": "69b51682a69f2d893a2b2680f8bd0bca51bbf0b136f6cfda1c2c155712a72f5b"
+    },
+    {
+      "path": "bank_quality/coverage.py",
+      "bytes": 2235,
+      "sha256": "b5c5c545d5696866c407731b576995bf700eb79e35dd805e4290b917c90b166e"
+    },
+    {
+      "path": "bank_quality/ifdata.py",
+      "bytes": 8500,
+      "sha256": "55cad0944943f267beb67f39de62b2dba23a8e14417a056c22ddd1cb4511fa3c"
+    },
+    {
+      "path": "bank_quality/inventory.py",
+      "bytes": 6518,
+      "sha256": "99ec6599997dfb23324f4ed2cdd8800b80c3388ba8710bc5b9e033cd513edf65"
+    },
+    {
+      "path": "bank_quality/metadata.py",
+      "bytes": 6380,
+      "sha256": "4770a1afd2b33b9a907d9ba3a816be289b80cbc4f0aac67db21d7d4fe9fa6777"
+    },
+    {
+      "path": "bank_quality/portal.py",
+      "bytes": 8035,
+      "sha256": "4eacb8fb941c51a4752464329a3587764d1123551d86a26c8e0691a0ff1324c6"
+    },
+    {
+      "path": "bank_quality/replay.py",
+      "bytes": 3268,
+      "sha256": "682236ab94462bc7d3bf26e825d3bb41b7c3154eb1198a1bbfa16ff00ed6d2cd"
+    },
+    {
+      "path": "bank_quality/schema-202312.json",
+      "bytes": 13722,
+      "sha256": "1ecbe6915d82b602767c3d71ef8b450bf68b37d5a886578c121fd57b7955da59"
+    },
+    {
+      "path": "docs/agents/domain.md",
+      "bytes": 359,
+      "sha256": "4fcc0e11ffb0e1e7202253da4099bf652fe1cb0d3b56921ca34d3059592a4527"
+    },
+    {
+      "path": "docs/agents/issue-tracker.md",
+      "bytes": 4902,
+      "sha256": "4ef290faeeda69ee31d05756374ec6124beaa1aff53013dded02432342da70db"
+    },
+    {
+      "path": "docs/architecture.md",
+      "bytes": 4651,
+      "sha256": "34c737f2c17000094c012aa04b55f3a2ec5e8ef8d99f8f82141aecd42cfdeeed"
+    },
+    {
+      "path": "docs/engineering/brainstorming-2010-2026-20261002.md",
+      "bytes": 29129,
+      "sha256": "14d226b32acb4537197a4629f1933f7633c6bee37ad1fdd8ac3c05b0caf8a825"
+    },
+    {
+      "path": "docs/engineering/capital-aberto-identity-dossier.md",
+      "bytes": 15411,
+      "sha256": "a02b48e78aec13e181312c00c4b31e6176b06063eb63d44b03843a99517e1ec4"
+    },
+    {
+      "path": "docs/engineering/expansion-discovery-20261001.csv",
+      "bytes": 8869,
+      "sha256": "8b4f35294301064f2a4263fcaf1fdd540bd99a2ec8803c421d726b95764417d9"
+    },
+    {
+      "path": "docs/engineering/expansion-discovery-20261001.json",
+      "bytes": 295404,
+      "sha256": "f2a871843105cff4bdfe1ecd565447043fbba8a874de7fc7a4dd65a3b1d475b8"
+    },
+    {
+      "path": "docs/engineering/expansion-discovery-20261001.md",
+      "bytes": 6773,
+      "sha256": "33c1e5b2f56f42f859bdb1eb12164e9a05a777a04f17c964ec37588c5a5fb7af"
+    },
+    {
+      "path": "docs/engineering/expansion-execution.md",
+      "bytes": 8023,
+      "sha256": "64f13007cadbbd3d3d65ba438abba42527d10ec2df34754f8638e955fec3c6d3"
+    },
+    {
+      "path": "docs/engineering/expansion-source-research.md",
+      "bytes": 7624,
+      "sha256": "00644852e845d74946c8c754fd7661617f88be71c87df05c145168490e27ae32"
+    },
+    {
+      "path": "docs/engineering/feynman-source-research-20261002.md",
+      "bytes": 8110,
+      "sha256": "ef21f0d265e48d75047448dcc0b78803ba37f2d7881af1c91dbb61f81ba294fa"
+    },
+    {
+      "path": "docs/engineering/governance-publication-proposal.md",
+      "bytes": 8576,
+      "sha256": "dd4d65db51e81b94e213f719211cf01023b160caaf1d3be08ee2296d3ea77f55"
+    },
+    {
+      "path": "docs/engineering/governance-source-research-20261002.md",
+      "bytes": 6833,
+      "sha256": "c643500283192a22eceff5ce9b32788e054c25df0b87135b48e3ee7072183c03"
+    },
+    {
+      "path": "docs/engineering/pilot-execution.md",
+      "bytes": 7332,
+      "sha256": "09a76e5b64338f6c188ec3ce73699bd82de61203a3a77178147e5625e32f537a"
+    },
+    {
+      "path": "docs/engineering/reference-comparison.md",
+      "bytes": 2062,
+      "sha256": "b5d19b527c40613ae06d1f97edb9b65d45da46074b4deb858e2d6da67c914ce9"
+    },
+    {
+      "path": "docs/engineering/research-tooling-20261002.md",
+      "bytes": 8298,
+      "sha256": "ae76b92cfdee466638c098382ef5f3184d1613de43ed684552f5864d83cbd0df"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-01-ifdata-expansion.md",
+      "bytes": 8869,
+      "sha256": "cc39e3486e3d99f2ce99fb39d581249d18f7c14f36331b5da9dbf2ac44a9afeb"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-01-ifdata-pilot.md",
+      "bytes": 5709,
+      "sha256": "10895f4b313cfcfc16fa1de850d41d88b1f26cc8bd6b5d4992627d1c9e3a80da"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-02-governance-foundation-plan.md",
+      "bytes": 24479,
+      "sha256": "0f13f640b134575fc7f68db81bffcf78560c06f956b34709dfcb5bda425b2a56"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-01-ifdata-expansion-design.md",
+      "bytes": 6656,
+      "sha256": "4cbb520845cf0dd04359b828c70f6948985079ac3b60e5571f970781dcabe6da"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-01-ifdata-pilot-design.md",
+      "bytes": 5380,
+      "sha256": "d35326842df8d484f406072490f80ca1e9ccd8d2ed1ccb6618461f252898b491"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-02-governance-research-design.md",
+      "bytes": 13643,
+      "sha256": "da082504039d3ebaee52ae7036f6396f5835080ea8f3aa4cbf3728bbf1d68b5a"
+    },
+    {
+      "path": "reports/expansion-20261001-coverage.md",
+      "bytes": 713,
+      "sha256": "4547fd965163736cbbc193d4dcb0af56e77477ce609a7b71ec87020d6a4ad634"
+    },
+    {
+      "path": "reports/expansion-20261001.md",
+      "bytes": 1930,
+      "sha256": "95b5aeb103b066ce7bb1dd8f5fbc44f0378629920edd152639b5737d95cfb705"
+    },
+    {
+      "path": "reports/governance-foundation.verification.json",
+      "bytes": 7195,
+      "sha256": "bb89ff1e26736eeaed1439ec14a2447ced00a2507d032d31c8f9b8dc848b7c59"
+    },
+    {
+      "path": "reports/governance-publication-manifest.json",
+      "bytes": 21316,
+      "sha256": null,
+      "self_reference": true
+    },
+    {
+      "path": "reports/pilot-20261001.md",
+      "bytes": 7666,
+      "sha256": "3be5314d209be23d50ad59c9b787855ba53b95e0a9c95b9e7edfb46238b648ab"
+    },
+    {
+      "path": "reports/pilot-20261001.verification.json",
+      "bytes": 2518,
+      "sha256": "ab9b7502bbeb0a835768ba0ca72ef46cef52ee7b5b2e54cdf716c8e021859aa2"
+    },
+    {
+      "path": "reports/standalone-validation-20261001.json",
+      "bytes": 1007,
+      "sha256": "a0664cdb5b4cc7e164af25f8d5722dae504bd8c343eda2e94ff0812c3f1a490f"
+    },
+    {
+      "path": "scripts/accept-existing.py",
+      "bytes": 2368,
+      "sha256": "888e77715dee1b12f5876cf631a7e66ce4c019da7f16e3a27af76a1ac75308ac"
+    },
+    {
+      "path": "scripts/archive-portal-inputs.py",
+      "bytes": 1867,
+      "sha256": "3592d01c38b4da09a9a0f5f08f894b51be8ae7573f962eaf76dcc7a7d4ff9cd5"
+    },
+    {
+      "path": "scripts/audit-coverage.py",
+      "bytes": 3138,
+      "sha256": "e86bd2bb52abc51b327a480647e4c24cf4fe4d96bcae69cd4df862b3c988d0b5"
+    },
+    {
+      "path": "scripts/audit-raw-values.py",
+      "bytes": 2566,
+      "sha256": "53ca9718ec06add05d18093bc2b103f6a9d8d2c86b031d22e6acee5db1cebd09"
+    },
+    {
+      "path": "scripts/budget.cjs",
+      "bytes": 696,
+      "sha256": "7133ae075908edbad7843a46a2ffaa88565773724a17cbd7f52e21e2783c13c3"
+    },
+    {
+      "path": "scripts/compare-standalone.py",
+      "bytes": 2943,
+      "sha256": "8f3d1b95b4a28c4396bb06cc89b9251ef523a13f08215aac15054b8e38af440a"
+    },
+    {
+      "path": "scripts/export-portal.cjs",
+      "bytes": 8109,
+      "sha256": "47b2438446c031fbc207f0d4bb2075ddf3f84bd2a4a1e03d0b413311400dc77e"
+    },
+    {
+      "path": "scripts/metadata-sample.py",
+      "bytes": 2857,
+      "sha256": "2e025889a73263e2ef459157716d8280bd51528cf645bd6a44156a40c76d4cd1"
+    },
+    {
+      "path": "scripts/portal-ready.cjs",
+      "bytes": 601,
+      "sha256": "e7d0d83e23c506859096dbc68dc3e91e8fef822e7c217b2739c246be6c1b364f"
+    },
+    {
+      "path": "scripts/run-pilot.ps1",
+      "bytes": 542,
+      "sha256": "54e47066acb85e694b0ce6cb3ad6eaed6885ab80b11b9db671e053f5d9647923"
+    },
+    {
+      "path": "scripts/verify-expansion.py",
+      "bytes": 7605,
+      "sha256": "8940bec5f83aa90315d4a22e7fcaaa2520c3d79ff4d98b42ca5b4df7692b458b"
+    },
+    {
+      "path": "scripts/verify-pilot.py",
+      "bytes": 2510,
+      "sha256": "46e2877736f770d4ae3df0871ebf727c306c65e5419d3b2f96a87b4898fae41f"
+    },
+    {
+      "path": "tests/test-budget.cjs",
+      "bytes": 450,
+      "sha256": "bb6e4258fc81bd0b1ffc2110dc4f432eb51f53af64f743af83a8d98caac0c26f"
+    },
+    {
+      "path": "tests/test-portal-ready.cjs",
+      "bytes": 897,
+      "sha256": "fea308149aac5b5b4123f2b73c56aaafc49689999df4ee77898be41c93ab90c1"
+    },
+    {
+      "path": "tests/test_archive.py",
+      "bytes": 3806,
+      "sha256": "0274b76e9a938b2b5bd685a50d531a31c310be1bfe70a79fc4c078d433a96dbc"
+    },
+    {
+      "path": "tests/test_coverage.py",
+      "bytes": 1818,
+      "sha256": "289348e7815d780da066cbdcff317ba402acb9e5c2c3b7c46cef099b177f9354"
+    },
+    {
+      "path": "tests/test_expansion.py",
+      "bytes": 4837,
+      "sha256": "c2d446db07a98ef76e36717e692c751f069d107d35fa2de9e735f8ba912199eb"
+    },
+    {
+      "path": "tests/test_ifdata.py",
+      "bytes": 4341,
+      "sha256": "7b4e00360e8996a16a8f95e43904dc996570a0f20b59c53b397ce9728e971565"
+    },
+    {
+      "path": "tests/test_inventory.py",
+      "bytes": 3592,
+      "sha256": "641c95ffde5c46ab62bdc6239f1bf2929003d648783cd2db9dc077732ae89629"
+    },
+    {
+      "path": "tests/test_metadata.py",
+      "bytes": 8280,
+      "sha256": "cdcbbd95e08a2fa4641a8b31e477b133e1a059648fb33c508c598dc31458da42"
+    },
+    {
+      "path": "tests/test_portal.py",
+      "bytes": 2893,
+      "sha256": "c7e6b1f76c8a31df9afff6204f824ded6af55278133222487953e1ba281f6d9b"
+    },
+    {
+      "path": "tests/test_replay.py",
+      "bytes": 2436,
+      "sha256": "37817a5f61608546dd1eac5d4b94cccb9967038c9f28de6eb37495b0820759b3"
+    },
+    {
+      "path": "third_party/feynman/LICENSE",
+      "bytes": 1072,
+      "sha256": "a108cc5a8e90d79d1daea6a7891db062537af9587f8eb10f81702137bbc192d5"
+    },
+    {
+      "path": "third_party/feynman/provenance.json",
+      "bytes": 12508,
+      "sha256": "af726fb2f087cd96c44ed1f43c74ef31c5a3d7ff5053b234d3b94236ac13bde4"
+    },
+    {
+      "path": "third_party/feynman/selection-20261002.json",
+      "bytes": 3325,
+      "sha256": "ebf3f1a96bd89ecd9b5d3ea58d7e68bc08faa6b735a1cee0262c351e334a720f"
+    },
+    {
+      "path": "third_party/mattpocock-skills/LICENSE",
+      "bytes": 1089,
+      "sha256": "4981c5f6a90eb3a969dacabb9350f5a75695ff3910b39b6534952908dfdc5ff7"
+    },
+    {
+      "path": "third_party/mattpocock-skills/provenance.json",
+      "bytes": 6513,
+      "sha256": "c0597c9607713bef9a6ac9035f00e98909e933b1fc0613166b3151a9055e201e"
+    },
+    {
+      "path": "third_party/references/alexcamargos--bacen-ifdata-scraper/LICENSE",
+      "bytes": 1112,
+      "sha256": "73cd1f322990ba8bc3df3f469d69c91df0940b0c082acf3b6477ebaec80d59dc"
+    },
+    {
+      "path": "third_party/references/enzoomoreira--ifdata-bcb/LICENSE",
+      "bytes": 1090,
+      "sha256": "a9e71d9f3f69b051c26da48bbd2cf940a30e8afa5c9f94518b6fa36c3da4cd82"
+    },
+    {
+      "path": "third_party/references/knuppe--bacen_ifdata/LICENSE",
+      "bytes": 1092,
+      "sha256": "7409bc9fc07bbd65f58d6c6717db75b4b9bfd9414712e907c1938bbaf59cb27c"
+    },
+    {
+      "path": "third_party/references/wilsonfreitas--python-bcb/LICENSE",
+      "bytes": 1090,
+      "sha256": "9a4ca6a45de7ca0dfec7b8cd9d21fd6a32281228562033d47141985d57c16d5a"
+    }
+  ]
+}

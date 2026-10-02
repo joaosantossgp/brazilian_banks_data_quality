@@ -1,0 +1,27 @@
+{
+  "201012": {
+    "observations": 15808,
+    "institutions": 1976,
+    "all_semantic_source_fields_identical": true,
+    "official_csv_byte_identical": true,
+    "archived_manifests_verified": 20,
+    "export_index": "data\\raw\\standalone-validation-20261001\\portal-export-201012-5d4ce66d-9d2c-424d-954c-7500959ffab5.json"
+  },
+  "202412": {
+    "observations": 12680,
+    "institutions": 1585,
+    "all_semantic_source_fields_identical": true,
+    "official_csv_byte_identical": true,
+    "archived_manifests_verified": 23,
+    "export_index": "data\\raw\\standalone-validation-20261001\\portal-export-202412-70374b2c-8973-4768-a914-99a2fa0b6706.json"
+  },
+  "inventory_byte_identical_files": [
+    "institutions.csv",
+    "variables.csv",
+    "missingness.csv",
+    "structural-presence.csv",
+    "duplicates.csv",
+    "inventory.json"
+  ],
+  "observation_provenance_difference": "Fresh immutable source paths/hashes change; every semantic row field and CSV token matches."
+}

@@ -1,0 +1,281 @@
+{
+  "source": "https://github.com/Companion-Inc/feynman",
+  "release": "v0.5.22",
+  "revision": "e17f5fd0ea57775def66ebd2b16b40b39d3dc867",
+  "installed_utc": "2026-10-01T22:26:01.75539-03:00",
+  "license": "MIT",
+  "scope": "repository-local .agents/skills/feynman",
+  "installation": "Exact skills-only installer layout copied from pinned official commit archive; no installer executed. Added upstream LICENSE because official script omits it. No terminal/runtime/packages/accounts installed.",
+  "source_archive_sha256": "82dac00b137286edd72831308b2b07a01a45379df6835896d0dff5cc72bd25b2",
+  "inspected_installer_url": "https://feynman.is/install-skills.ps1",
+  "inspected_installer_sha256": "0dbeb009d1499a73b914fb460a673f4929773455bde7abab740de03852ff619b",
+  "skill_count": 2,
+  "source_file_count": 30,
+  "source_bytes": 70870,
+  "workflow_verification": "Files verified byte-for-byte; Feynman slash-runtime execution in native Codex not verified and unavailable in exposed tools. Installation is not a successful research workflow run.",
+  "files": [
+    {
+      "source_path": "AGENTS.md",
+      "path": ".agents/skills/feynman/AGENTS.md",
+      "bytes": 7253,
+      "sha256": "9f9f8404d24811bd46b0b2fbe6bc31f64cc17e7bf968ed13271056258e532789",
+      "original_path": ".agents/skills/feynman/AGENTS.md",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "CONTRIBUTING.md",
+      "path": ".agents/skills/feynman/CONTRIBUTING.md",
+      "bytes": 7813,
+      "sha256": "368510bec8959a3fc4573ac004370fb1fb14bb911254bcbc6dfdbc9b5ffca430",
+      "original_path": ".agents/skills/feynman/CONTRIBUTING.md",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "LICENSE",
+      "path": ".agents/skills/feynman/LICENSE",
+      "bytes": 1072,
+      "sha256": "a108cc5a8e90d79d1daea6a7891db062537af9587f8eb10f81702137bbc192d5",
+      "original_path": ".agents/skills/feynman/LICENSE",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "prompts/audit.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/audit.md",
+      "bytes": 1154,
+      "sha256": "4b43a5539316e3389a2a5fccd1edf5b7794f7081c0ce0844a14951c95b4b2ff7",
+      "original_path": ".agents/skills/feynman/prompts/audit.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/autoresearch.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/autoresearch.md",
+      "bytes": 3107,
+      "sha256": "23a68576e9901dbf28e99e3bfb90194813336e29eea35707d3707415f7536bab",
+      "original_path": ".agents/skills/feynman/prompts/autoresearch.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/compare.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/compare.md",
+      "bytes": 1351,
+      "sha256": "8b7ae8120a3623542bde34d02be3232d9908bd74412001ca8a15945146320437",
+      "original_path": ".agents/skills/feynman/prompts/compare.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/deepresearch.md",
+      "path": ".agents/skills/feynman/prompts/deepresearch.md",
+      "bytes": 9573,
+      "sha256": "a751b61ce8d6d74857fcfdb7b4fbc69ed2f5e2848b09001e3803dae1d0dd7908",
+      "original_path": ".agents/skills/feynman/prompts/deepresearch.md",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "prompts/draft.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/draft.md",
+      "bytes": 1958,
+      "sha256": "89770e70d49354ae50fcf49f95a2b6ab16c660970fbe322d1af47c8e93677959",
+      "original_path": ".agents/skills/feynman/prompts/draft.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/lit.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/lit.md",
+      "bytes": 3861,
+      "sha256": "e89c6c95d192a3d286cca01f41f6d56bb5cbd170927d3c2386b6c1ef7baf114d",
+      "original_path": ".agents/skills/feynman/prompts/lit.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/log.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/log.md",
+      "bytes": 609,
+      "sha256": "59a10ea82b68446471005983740d1c5c2c0b18003d423223a218b3ffbd729e58",
+      "original_path": ".agents/skills/feynman/prompts/log.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/recipe.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/recipe.md",
+      "bytes": 3275,
+      "sha256": "bb3970971c892d094bfdfc43361489dce6d1f9a95926f0d94f6ec8452fe8a2a4",
+      "original_path": ".agents/skills/feynman/prompts/recipe.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/replicate.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/replicate.md",
+      "bytes": 2736,
+      "sha256": "97735a2a12d8062fdef0122533d27ffc239ecc0b8d26c473e51c111df0193d8e",
+      "original_path": ".agents/skills/feynman/prompts/replicate.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/review.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/review.md",
+      "bytes": 3197,
+      "sha256": "8533df183509a4578392ad0f86c366b40514b95785c45eb20a194a87b114c65c",
+      "original_path": ".agents/skills/feynman/prompts/review.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "prompts/summarize.md",
+      "path": "third_party/feynman/inactive-20261002/prompts/summarize.md",
+      "bytes": 9563,
+      "sha256": "1950c25d79f13138295b267ef89fa37a58f65666a8821041bb5ffeba3589496c",
+      "original_path": ".agents/skills/feynman/prompts/summarize.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/alpha-research/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/alpha-research/SKILL.md",
+      "bytes": 2078,
+      "sha256": "b1b386dd1ee1dad159d2c7ab6d298f9d1bff962c1f54a4f831f376332a1c359a",
+      "original_path": ".agents/skills/feynman/alpha-research/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/autoresearch/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/autoresearch/SKILL.md",
+      "bytes": 760,
+      "sha256": "5b9bb3bb7f37ee4fa94d9f077818ecf7f84f8c97ecbf92aabca606267c9bcccf",
+      "original_path": ".agents/skills/feynman/autoresearch/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/deep-research/SKILL.md",
+      "path": ".agents/skills/feynman/deep-research/SKILL.md",
+      "bytes": 613,
+      "sha256": "23186e93b91124936b402349a236af45b3aabcf70828e30d9177b32c2cc6d57a",
+      "original_path": ".agents/skills/feynman/deep-research/SKILL.md",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "skills/docker/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/docker/SKILL.md",
+      "bytes": 2680,
+      "sha256": "e6b97a0f613c3c3acdf13445c90fa1265204e6441fb3043e77b76654a80e7416",
+      "original_path": ".agents/skills/feynman/docker/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/eli5/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/eli5/SKILL.md",
+      "bytes": 1120,
+      "sha256": "cb5fcdde93ec83443e4601c0d5a9a2355c1b30ad1baf35e9605448fa6bed8918",
+      "original_path": ".agents/skills/feynman/eli5/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/literature-review/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/literature-review/SKILL.md",
+      "bytes": 579,
+      "sha256": "9e958e9000ef5f8c1f16387538e149ef2994d32620c379acf27e3c7467b9748e",
+      "original_path": ".agents/skills/feynman/literature-review/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/ml-training-recipe/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/ml-training-recipe/SKILL.md",
+      "bytes": 627,
+      "sha256": "6fd96341ceb8676a9f5fc0219295be742bad0658f1fe0e693f02265aa8696f3c",
+      "original_path": ".agents/skills/feynman/ml-training-recipe/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/paper-code-audit/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/paper-code-audit/SKILL.md",
+      "bytes": 563,
+      "sha256": "3b64a35487375e24f6472562a9caf6274a09fd181dbc9f3eaf67bf67a33dff78",
+      "original_path": ".agents/skills/feynman/paper-code-audit/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/paper-writing/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/paper-writing/SKILL.md",
+      "bytes": 554,
+      "sha256": "21f3a395441563bdf6acdd2944f05fed344e732f73d2bea292d196de355f5623",
+      "original_path": ".agents/skills/feynman/paper-writing/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/pdf-explore/SKILL.md",
+      "path": ".agents/skills/feynman/pdf-explore/SKILL.md",
+      "bytes": 903,
+      "sha256": "f4cd06493e362883820b5af7994e9f5e96cb2cec375138d7c72a7a2fd5e52a0e",
+      "original_path": ".agents/skills/feynman/pdf-explore/SKILL.md",
+      "activation_status": "active-resource"
+    },
+    {
+      "source_path": "skills/preview/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/preview/SKILL.md",
+      "bytes": 798,
+      "sha256": "7173ee6876da36ee30390f99485790f9fc5e8f15409c7b053bea17fd7161541f",
+      "original_path": ".agents/skills/feynman/preview/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/replication/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/replication/SKILL.md",
+      "bytes": 746,
+      "sha256": "a27460b7d6503c54d60f2e8940bf86bc357134469684153609f1b0b339ab41f4",
+      "original_path": ".agents/skills/feynman/replication/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/research-review/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/research-review/SKILL.md",
+      "bytes": 551,
+      "sha256": "0d816c8ba856052bbafc8d908ec62aa3d55f86c6f517d26e2ddf3f006b6b5cbc",
+      "original_path": ".agents/skills/feynman/research-review/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/session-log/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/session-log/SKILL.md",
+      "bytes": 508,
+      "sha256": "2c1ff81ed99bef2e11f2ce1e4f04519daa9cd29cedcb27015798034d247b36d7",
+      "original_path": ".agents/skills/feynman/session-log/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/session-search/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/session-search/SKILL.md",
+      "bytes": 738,
+      "sha256": "091302b1c6974a105d2e807e1ec0a7171f1c341cbab74acb1bd7e61204e98ad9",
+      "original_path": ".agents/skills/feynman/session-search/SKILL.md",
+      "activation_status": "inactive-backup"
+    },
+    {
+      "source_path": "skills/source-comparison/SKILL.md",
+      "path": "third_party/feynman/inactive-20261002/skills/source-comparison/SKILL.md",
+      "bytes": 530,
+      "sha256": "9f1027bd6f3cf957fe5195fec6bc78c68a23a910700c86230efdf6c111c15a99",
+      "original_path": ".agents/skills/feynman/source-comparison/SKILL.md",
+      "activation_status": "inactive-backup"
+    }
+  ],
+  "original_skill_count": 16,
+  "active_skills": [
+    "deep-research",
+    "pdf-explore"
+  ],
+  "inactive_skills": [
+    "alpha-research",
+    "autoresearch",
+    "docker",
+    "eli5",
+    "literature-review",
+    "ml-training-recipe",
+    "paper-code-audit",
+    "paper-writing",
+    "preview",
+    "replication",
+    "research-review",
+    "session-log",
+    "session-search",
+    "source-comparison"
+  ],
+  "inactive_backup": "third_party/feynman/inactive-20261002",
+  "selection_utc": "2026-10-02T01:38:38.7989323Z"
+}

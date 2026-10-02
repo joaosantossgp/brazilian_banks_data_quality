@@ -1,0 +1,38 @@
+# Expansion source research
+
+Research date: 2026-10-01. Planning/discovery only on the authorized computer in this checkout. Repository Matt research skill applied. No financial requests, new quarter shards, code changes, commits or publication. Existing archived official assets are the main evidence; bounded online reads were limited to official BCB, CVM and B3 pages.
+
+## Timing and comparison gate
+
+The official archived catalog's individual-institution Resumo is `trel.id=93`, `trel.s.id=1006`. In both 202409 and 202412, report note 1 explicitly defines September revenues/expenses as July–September accumulated and December as July–December accumulated. March and June cover January–March and January–June. Quarterly publication therefore does not make every result column a standalone quarter. Note 4 says reports can change after resubmitted documents and republication. [Official catalog](https://www3.bcb.gov.br/ifdata/rest/relatorios2000a2024), members `dt=202409/202412`, `files[f=ifdata/<period>/trel<period>_93.json].trel.rp/ri`.
+
+The 202412 composition identifies Net Income (`info.id=79718`) as `[70000009]+[80000006]-[81956001]`; the report points to it through column `id=13928, ifd=79718`. Total Assets (`78182`) is `[10000007]+[20000004]`; Stockholders' Equity (`78186`) is `[60000002]+[70000009]+[80000006]`. These balance-sheet measures represent reporting-date positions; Net Income represents accumulated income/expense results. The stock/flow classification follows those accounting labels/formulas together with note 1, rather than a generic quarter label. [Official column metadata](https://www3.bcb.gov.br/ifdata/rest/arquivos?nomeArquivo=ifdata%2F202412%2Finfo202412.json).
+
+Planning recommendation: 202409 versus 202412 is useful for adjacent-date stock comparisons and for testing flow-window handling. Do not compare the two profit amounts as equal-duration quarterly profits. Deriving Q4 as December minus September is conditional on the same reporting entity, consolidation scope, accounting definition and compatible revision vintage; preserve both source values and the derivation separately. This condition is material: archived Resumo `ge` is `14/04/2025` for 202409 but `15/04/2026` for 202412. **Unknown:** whether both observations incorporate mutually consistent revisions. Matching column IDs alone does not resolve that.
+
+## Confirmed 2025 boundary
+
+The archived official [IF.data portal](https://www3.bcb.gov.br/ifdata/index.html), `textoBase`, section `Atualização Contábil - Cosif 2025`, states that the new Cosif took effect on 2025-01-01 and accounting-report structure was updated, principally assets and results; liabilities retained a similar structure. It directs readers to IN BCB 426–433 through the [official norms search](https://www.bcb.gov.br/estabilidadefinanceira/buscanormas). The client separately routes the [2000–2024 portal](https://www3.bcb.gov.br/ifdata/index2024.html) to `rest/relatorios2000a2024`, and the current portal to `rest/relatorios2025a2030`.
+
+Recommendation: treat 2025 onward as a separate schema/methodology tranche, with an explicit cross-boundary comparability review. **Unknown:** field-by-field continuity, transformations or equivalence of similarly named variables. Neither the portal split nor unchanged labels establish those mappings. No 2025 observations were collected. The BCB normative display page for [IN 426](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?tipo=Instru%C3%A7%C3%A3o%20Normativa%20BCB&numero=426) returned a JavaScript-required shell in the bounded read; the normative text was not verified here.
+
+## Historical universe and entity decisions
+
+[CVM's official cadastro documentation](https://dados.cvm.gov.br/dataset/cia_aberta-cad) says the dataset contains registration information for the latest business day, with daily updates. The archived [cadastro CSV](https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv) is thus a current snapshot. Registration dates earlier than a reference date and current `ATIVO` status do not establish uninterrupted active registration at that date. Registration alone does not establish historical equity listing. **Unknown:** historical registration/category/status intervals, cancellations/reinstatements, and securities/listing eligibility at each proposed reference date.
+
+The archived [official B3 company application](https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/?language=pt-br) responses contain current `status`, issuer prefix, CVM code, CNPJ and `dateListing`, without a historical status/ticker interval panel. The existing sample for Banco do Brasil, Bradesco and Itaú Unibanco Holding correctly leaves historical listing and tickers unknown. The Bradesco response also contains multiple legal entities and a `31/12/9999` listing-date value for some entries; name search or date presence is insufficient. **Unknown:** uninterrupted equity listing, historical share classes/tickers, listing/cancellation events and entity successor relationships. Retain exact URLs from the sample; do not infer them from a company name or issuer prefix.
+
+The portal methodology distinguishes individual legal entities (CNPJ, unconsolidated) from financial and prudential conglomerates. Current B3 metadata identifies `ITAU UNIBANCO HOLDING S.A.` (CVM 19348/CNPJ 60872504000123); it does not identify which IF.data institution or conglomerate should represent that listed holding in the thesis. **Decision required:** the analytical unit and a dated, evidenced relationship between issuer/holding, regulated bank and consolidation scope. **Unknown:** such historical mappings; no mapping was attempted. Preserve issuer identity, historical registration, equity listing and IF.data reporting unit as separate evidence fields.
+
+## Archived evidence pointers
+
+All bodies below are in `data/raw/discovery-20261001/`, with matching `.json` manifests retaining exact URLs, response details, retrieval times and hashes.
+
+- Catalog: `20261001T012952763821Z_portal_catalog_retry_1e8743faa0be4262b5c2b64c02dad2f7.bin`; SHA-256 `2428b8a436e142682cd63eb6155717f58f2524582dcca427654032f45f6acf07`; retrieved 2026-10-01T01:30:04.206286Z. Includes both quarter report notes, structures and generation dates. No September financial shard was read or requested.
+- Column composition: `20261001T013235163159Z_portal_info_202412_4b180f95c53d44d4b5f3a4444c586e20.bin`; SHA-256 `9c09219eeb7aa558e0ac74e32b905ba940ec00b0bc01f761b1d086aef86cca28`.
+- 2025 methodology: `20261001T012756759142Z_portal_56229187f15948a0a353b4b194b7cb3f.bin`; SHA-256 `234fcb9158bd25b222625418f2d775d438a8db8df1585e65ef1b40c7a7fb0153`. Earlier portal: `20261001T012820520704Z_portal2024_8d85bdfd34dc4e81b52a360e00439840.bin`.
+- CVM snapshot: `20261001T015632921533Z_cvm_cadastro_ee4a3cd3d46d4fd8acae79f4ebca1a88.bin`; SHA-256 `5b648b892a52706b09da97241514743e3682b35b6c8781742fe384b1e50f8796`.
+- B3 exact URLs/hashes/identity fields: `data/derived/pilot-20261001/temporal-metadata-sample.csv`; corresponding bodies `20261001T020158134000Z_b3_current_metadata_c1aa82fa60c14f718e51ea7b02163c94.bin`, `20261001T020158268142Z_b3_current_metadata_3e2258400ddf4b0b8110e5a567f3151d.bin`, and `20261001T020158377108Z_b3_current_metadata_920e7679a30544fe9ed629dd059e1572.bin`. These are dated current evidence, not historical universe membership.
+
+Bounded-read limitations: the CVM dictionary resource returned a Unicode-decoding fetch error, and a B3 public companies-page route returned B3's error page. No claims rely on those failed reads. No secondary sources were used.
+

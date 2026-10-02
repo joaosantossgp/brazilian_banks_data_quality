@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {Budget}=require('../scripts/budget.cjs');
+const b=new Budget(8,100,0);
+assert.equal(b.take(5,1),5);
+assert.equal(b.take(5,2),3);
+assert.equal(b.bytes,8);
+assert.equal(b.exceeded,true);
+assert.throws(()=>b.checkTime(101),/time/);
+assert.throws(()=>new Budget(10,100,0).checkSpace(149,150),/reserve/);
+new Budget(10,100,0).checkSpace(150,150);
+console.log('byte, deadline and reserve guards passed');

@@ -1,0 +1,68 @@
+{
+  "source_revision": "e17f5fd0ea57775def66ebd2b16b40b39d3dc867",
+  "release": "v0.5.22",
+  "user_instruction": "aprovação explícita registrada em 2026-10-02",
+  "active_skills": [
+    "deep-research",
+    "pdf-explore"
+  ],
+  "inactive_skills": [
+    "alpha-research",
+    "autoresearch",
+    "docker",
+    "eli5",
+    "literature-review",
+    "ml-training-recipe",
+    "paper-code-audit",
+    "paper-writing",
+    "preview",
+    "replication",
+    "research-review",
+    "session-log",
+    "session-search",
+    "source-comparison"
+  ],
+  "active_shared_resources": [
+    "prompts/deepresearch.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ],
+  "backup": "third_party/feynman/inactive-20261002",
+  "preserved_source_files": 30,
+  "deleted_files": 0,
+  "rationale": {
+    "deep-research": "Requested multi-source technical/economic/accounting deep research with citation/provenance checks; conditional until slash runtime is available, not a replacement for Matt research.",
+    "pdf-explore": "Cross-page primary PDF evidence, tables, methodology and page attribution with available PDF tools; no specific Feynman terminal requirement in skill.",
+    "alpha-research": "Specific alpha CLI/auth unavailable; not a declared dependency of the kept skills.",
+    "autoresearch": "Experiment/benchmark loop outside current task; overlaps implementation workflow.",
+    "docker": "No container execution requested; avoid runtime expansion.",
+    "eli5": "Communication guidance does not require another active skill.",
+    "literature-review": "Separate slash workflow overlaps deep research; not needed for current evidence gathering.",
+    "ml-training-recipe": "ML training is outside project scope.",
+    "paper-code-audit": "Paper replication/audit not requested; software review remains Superpowers.",
+    "paper-writing": "Assisted academic writing is permitted under Joao direction/review/responsibility, but no chapter is requested in this foundation task; keep inactive until concrete need rather than automatically reactivate.",
+    "preview": "Extra rendering workflow/dependencies not needed for Library Markdown delivery.",
+    "replication": "No scientific experiment replication requested.",
+    "research-review": "Separate runtime workflow duplicates review stage within deep research.",
+    "session-log": "Existing project execution/documentary ledger supplies continuity.",
+    "session-search": "Feynman sessions/runtime not present; no transcript search requested.",
+    "source-comparison": "Matt research and cited technical notes cover bounded comparisons; extra slash workflow unnecessary."
+  },
+  "dependencies": {
+    "deep-research": [
+      "/deepresearch runtime expansion",
+      "researcher/verifier/reviewer for decomposed runs; direct path exists in prompt",
+      "source fetching and citation/provenance verification capabilities"
+    ],
+    "pdf-explore": [
+      "available PDF reading/extraction/screenshots as applicable",
+      "page/source evidence retained"
+    ],
+    "runtime_installed": false,
+    "deep_workflow_validated": false,
+    "new_credentials": false
+  },
+  "prior_paper_writing_rationale": "Outside current academic IA restrictions and technical research scope.",
+  "academic_authorization_update": "aprovação explícita registrada em 2026-10-02"
+}

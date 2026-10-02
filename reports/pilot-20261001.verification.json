@@ -1,0 +1,72 @@
+{
+  "verified_at_utc": "2026-10-01T03:35:30.713278+00:00",
+  "raw_manifests_verified": 29,
+  "failed_diagnostic_captures_retained": [
+    "portal-state-201012.capture.json",
+    "portal-state-202412.capture.json"
+  ],
+  "replay_byte_identical_files": {
+    "observations.csv": "8305e065deb4f51c1be63f34840a9eab0a643ac8180983259536f09d9d398f22",
+    "institutions.csv": "8f7a95da6d8dd9542fc6495b6cd1180c54ecf4e437f009fbd2b9d5f012836893",
+    "variables.csv": "5a6e236892b08d42b00fcbf2909cc6dfe0cf9c0033fb19504329d6ac30b6e1b2",
+    "missingness.csv": "f27866ca1af1a1e733e1d145737bc99e203dde67efc973c661cef53e0f9ec5d1",
+    "structural-presence.csv": "e46228b0aae70aac5d7508aed87f2210ede08496f8ed4d2ab4943965b5a10daa",
+    "duplicates.csv": "063232e761b0805c7651a4b0d7a4f788d715c898e1c1059de860dd68e8101bfc",
+    "inventory.json": "1be7640af41562b938f4963ec56aae34721ac6c52870b02f86cb274084f67d1a"
+  },
+  "skill_files_verified": 36,
+  "active_matt_skills": [
+    "domain-modeling",
+    "grill-with-docs",
+    "grilling",
+    "prototype",
+    "research",
+    "setup-matt-pocock-skills",
+    "to-spec",
+    "to-tickets",
+    "wayfinder"
+  ],
+  "inventory": {
+    "quarters": {
+      "201012": {
+        "values_complete": true,
+        "cadastro_complete": false,
+        "source_mode": "official_portal_csv_fallback",
+        "observations": 15808,
+        "institutions": 1976,
+        "variables": 8,
+        "observed_unique_cells": 15808,
+        "expected_cells_within_observed_population": 15808,
+        "unobserved_cells": 0,
+        "structurally_absent_variables": 1,
+        "duplicate_extra_rows": 0,
+        "value_states": {
+          "numeric": 12089,
+          "blank": 2685,
+          "zero": 842,
+          "NI": 192
+        }
+      },
+      "202412": {
+        "values_complete": true,
+        "cadastro_complete": false,
+        "source_mode": "official_portal_csv_fallback",
+        "observations": 12680,
+        "institutions": 1585,
+        "variables": 8,
+        "observed_unique_cells": 12680,
+        "expected_cells_within_observed_population": 12680,
+        "unobserved_cells": 0,
+        "structurally_absent_variables": 1,
+        "duplicate_extra_rows": 0,
+        "value_states": {
+          "numeric": 9985,
+          "zero": 2653,
+          "NI": 42
+        }
+      }
+    },
+    "classification": "Raw source tokens; no imputation, aggregation or identity mapping",
+    "structural_comparison_complete": true
+  }
+}
