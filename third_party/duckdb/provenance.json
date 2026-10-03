@@ -1,0 +1,15 @@
+{
+  "dependency": "duckdb",
+  "version": "1.5.6",
+  "source": "https://pypi.org/project/duckdb/1.5.6/",
+  "metadata_verified_date": "2026-10-03",
+  "license": "MIT",
+  "license_sha256": "c8dd1b346eacc9c7334e2b8881b2a795d6b942c71e05e25c209696e3c7483931",
+  "license_source": "Official wheel duckdb-1.5.6.dist-info/licenses/LICENSE; copied unchanged",
+  "runtime": "Python 3.12, project-local .venv; no transitive dependencies installed",
+  "wheels": {
+    "duckdb-1.5.6-cp312-cp312-win_amd64.whl": "09ff51b230219f0d8b47fc8a1e17fb595ba9fab0c3d96a6de4d00b8ff86b3cf1",
+    "duckdb-1.5.6-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl": "bc9619ed7d4ffa117b5155d84b44794366bb6635178d78ed5e13a6024845c757"
+  },
+  "project_owned_license": "Not selected; this notice applies only to DuckDB"
+}

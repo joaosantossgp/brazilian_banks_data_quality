@@ -18,6 +18,8 @@ Corpos/manifests e índices locais → verificação de integridade → inventá
 
 ## Base alvo, ainda não implementada
 
+A camada de análise local foi decidida e implementada inicialmente sobre o piloto existente: [DuckDB + Parquet](adr/0001-duckdb-parquet.md), com [contrato offline](superpowers/specs/2026-10-03-offline-parquet-design.md) e [medidas/limites](engineering/offline-parquet-20261003.md). `parquet.py` captura os sete arquivos do inventário, preserva as colunas originais e os complementos, acrescenta DECIMAL após perfil e grava Parquet comprimido por referência. Um coordenador reserva o destino; manifesto escrito por último aceita o conjunto. Falha mantém arquivos para diagnóstico sem aceite; reuso verifica conteúdo e hashes. Consultas abrem a lista explícita do snapshot em DuckDB em memória. Essa implementação não estende a aquisição histórica nem define o modelo econômico final.
+
 Aquisição IF.data → bruto imutável/versionado → inventários por referência/perspectiva/relatório → metadados temporais CVM/B3 e vínculos comprovados → recortes documentados para monografia e outros projetos.
 
 A direção técnica é trimestral 2010–2026 com atualização; **financeiro principal**, **prudencial** e **individual complementares**, separados. Não emendar perímetros, regimes ou conceitos por nome. Registro CVM, listagem e identidade são atributos distintos; desconhecido não significa negativo. Financeiro vem somente de IF.data; CVM/B3 não acrescentam observações financeiras.

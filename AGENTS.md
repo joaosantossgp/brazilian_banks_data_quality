@@ -12,6 +12,8 @@ Leia este arquivo antes de atuar neste checkout. O contrato aprovado está na [s
 
 ## Antes de executar uma tarefa
 
+**Entrega offline de 2026-10-03:** a direção e execução Python + DuckDB + Parquet foram autorizadas, com [ADR](docs/adr/0001-duckdb-parquet.md), [spec](docs/superpowers/specs/2026-10-03-offline-parquet-design.md) e [plano](docs/superpowers/plans/2026-10-03-offline-parquet.md). Trabalhar em branch local; não publicar/push/PR/merge neste turno. Converter apenas o inventário existente (40.904 observações, três referências), preservar bruto e CSV/JSON, usar destino novo ignorado em `data/curated/`. DuckDB é dependência única na `.venv` local; nenhum runtime global, servidor ou outro projeto é alterado. Tarefa ainda não publicada como Issue. Registro de execução: [evidência offline](docs/engineering/offline-parquet-20261003.md).
+
 1. Ler arquitetura/glossário, spec e apenas o brief da tarefa designada com restrições complementares. Confirmar objetivo, dependências satisfeitas, arquivos autorizados e aceite observável; limites locais/externos vêm antes da escolha de ferramenta.
 2. Registrar o **link real da Issue**. Se ainda não publicada, declarar **“não publicada — tarefa local”** e apontar ao brief/ticket local existente, sem inventar número, URL ou estado remoto. O [tracker](docs/agents/issue-tracker.md) define a autoridade de cada superfície.
 3. Registrar base de revisão e arquivos a tocar; usar o snapshot existente quando disponível e preservar código, dados, bruto, relatórios e histórico fora do escopo. Capturar evidência necessária sem nova coleta implícita.

@@ -10,6 +10,10 @@ def main():
     offline=commands.add_parser('replay',help='Verify raw hashes and rebuild inventories without network')
     offline.add_argument('--collection',type=Path,required=True)
     offline.add_argument('--output',type=Path,required=True)
+    parquet=commands.add_parser('parquet',help='Convert an accepted inventory offline into a NEW Parquet snapshot')
+    parquet.add_argument('--inventory',type=Path,required=True)
+    parquet.add_argument('--output',type=Path,required=True)
+    parquet.add_argument('--workers',type=int,choices=(1,2),default=1)
     pilot=commands.add_parser('collect',help='Collect the two approved quarters into a NEW run directory')
     pilot.add_argument('--run',type=Path,required=True)
     pilot.add_argument('--no-fallback',action='store_true')
@@ -17,6 +21,10 @@ def main():
     pilot.add_argument('--portal-only',action='store_true',help='Official portal fallback with no new OData availability claim')
     args=parser.parse_args()
     if args.command=='replay': result=replay(args.collection,args.output)
+    elif args.command=='parquet':
+        from .parquet import convert_inventory
+        try: result=convert_inventory(args.inventory,args.output,args.workers)
+        except (ValueError,OSError) as error: parser.error(str(error))
     else:
         args.run.mkdir(parents=True,exist_ok=False)
         result=collect(args.run,tuple(args.periods),allow_fallback=not args.no_fallback,portal_only=args.portal_only)

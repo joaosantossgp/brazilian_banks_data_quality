@@ -1,0 +1,5 @@
+# Official DuckDB wheels: Python 3.12, Windows amd64 and Linux x86_64.
+# MIT; no transitive dependencies. PyPI metadata verified 2026-10-03.
+duckdb==1.5.6 \
+    --hash=sha256:09ff51b230219f0d8b47fc8a1e17fb595ba9fab0c3d96a6de4d00b8ff86b3cf1 \
+    --hash=sha256:bc9619ed7d4ffa117b5155d84b44794366bb6635178d78ed5e13a6024845c757

@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Install offline Parquet dependency
+        # One official binary dependency for offline Parquet tests; no financial data requests.
+        run: python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-duckdb.txt
       - name: Python tests
         run: python -B -m unittest discover -s tests -v
       - name: Budget guards
