@@ -44,6 +44,8 @@ def path(value, scope=False):
     require(not any(c in value for c in "\\:*?[]"), "unsupported path syntax")
     name = value[:-1] if scope and value.endswith("/") else value
     require(all(part not in ("", ".", "..") for part in name.split("/")), "noncanonical path")
+    require(all(not part.endswith((".", " ")) for part in name.split("/")),
+            "noncanonical Windows path component")
     return value
 
 

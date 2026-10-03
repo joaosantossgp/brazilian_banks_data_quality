@@ -128,6 +128,33 @@ class ScopeTests(unittest.TestCase):
                 self.change(name)
                 self.reject("INPUT")
 
+    def test_windows_trailing_aliases_in_inventory_fail_closed(self):
+        self.policy["tasks"]["converter-fixture"]["allowed_paths"] = ["scripts/"]
+        for name in ["scripts/check_pr_scope.py.", "scripts/check_pr_scope.py ",
+                     "scripts./check_pr_scope.py", "scripts /check_pr_scope.py"]:
+            with self.subTest(name=name, endpoint="filename"):
+                self.change(name)
+                self.reject("INPUT")
+            with self.subTest(name=name, endpoint="previous_filename"):
+                self.change("scripts/new.py", "renamed", name)
+                self.reject("INPUT")
+
+    def test_windows_trailing_aliases_in_policy_fail_closed(self):
+        original = copy.deepcopy(self.policy)
+        for field in ["forbidden_paths", "sensitive_paths", "shared_paths",
+                      "allowed_paths", "task_forbidden_paths"]:
+            for name in ["scripts/check_pr_scope.py.", "scripts/check_pr_scope.py ",
+                         "scripts./", "scripts /", "docs./research/", "docs /research/"]:
+                with self.subTest(field=field, name=name):
+                    self.policy = copy.deepcopy(original)
+                    if field == "allowed_paths":
+                        self.policy["tasks"]["converter-fixture"][field] = [name]
+                    elif field == "task_forbidden_paths":
+                        self.policy["tasks"]["converter-fixture"]["forbidden_paths"] = [name]
+                    else:
+                        self.policy[field] = [name]
+                    self.reject("POLICY")
+
     def test_missing_rename_source_fails(self):
         self.change("bank_quality/parquet.py", "renamed")
         self.reject("INPUT")
