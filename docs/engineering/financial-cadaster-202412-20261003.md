@@ -66,7 +66,7 @@ P/P24, `getValueFromIfd`, bytes **17354/17356**, lê `cad["c"+ifd.lid]` quando `
 | `c23` | Conglomerado financeiro / 79713 | `/600` |
 | `c22` | Conglomerado prudencial / 79728 | `/615` |
 
-D foi adquirido com contexto de seleção individual 1006; o próprio catálogo anuncia o mesmo `info202412.json` para a referência, e as colunas de Resumo 92 ligam os conceitos acima. Esse uso documental não altera o contexto de aquisição de D nem prova vintage cadastral idêntico.
+D foi adquirido com contexto de seleção individual 1006; o próprio catálogo anuncia o mesmo `info202412.json` para a referência. Entre as propriedades da tabela acima, as colunas de Resumo 92 em O `/99/files/28/trel/c` ligam apenas Nome (79670), Código (79706), TCB (79671), TD (79675) e Data-base (79678). Segmento (79677), códigos financeiro/prudencial (79702/79703) e nomes financeiro/prudencial (79713/79728) estão comprovados nos localizadores de D, sem associação a essas colunas do Resumo 92. Esse uso documental não altera o contexto de aquisição de D nem prova vintage cadastral idêntico.
 
 A conferência de C5 cobre o array inteiro, pointers `/0` a `/1421`: exatamente 38 chaves `c0..c37`, presentes em todos os registros e com valores string. `c0`: 1.422 únicos, nenhum vazio, duplicado ou espaço de padding; `c1`: 1.422 ocorrências de `202412`. Os strings originais e seus estados foram preservados. Não foram preenchidos vazios nem reinterpretados como zero/NA/NI; os tokens zero observados em outros campos permanecem distintos de vazio.
 
