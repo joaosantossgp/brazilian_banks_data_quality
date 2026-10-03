@@ -1,6 +1,6 @@
 # Contrato de Issue: domínio, workflow, skills e prontidão
 
-Data: 2026-10-03. Frente: [Definir workflow e validar escopo de PR, Issue 17](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/17). Base de desenho: `main` `4faea4770f57679f5b649543ff86ad1715ebf2f9`. Status: desenho preparado para revisão escrita; implementação e alterações remotas desta revisão ainda não realizadas.
+Data: 2026-10-03. Frente: [Definir workflow e validar escopo de PR, Issue 17](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/17). Base de desenho: `main` `4faea4770f57679f5b649543ff86ad1715ebf2f9`. Desenho aprovado por João, com complemento explícito de nomenclatura, labels obrigatórias e diagram-design para imagens/SVG. Publicação e implementação são confirmadas pela Issue/PR, não por este status do desenho.
 
 Complementa a [spec da fundação](2026-10-02-governance-research-design.md). O [tracker](../../agents/issue-tracker.md) continua sendo a referência operacional; [AGENTS](../../../AGENTS.md), [arquitetura](../../architecture.md), [glossário](../../../GLOSSARY.md) e ADRs conservam seus contratos. Este documento não é outro tracker.
 
@@ -39,6 +39,39 @@ Proposta de catálogo enxuto para a implementação, a ser aplicada de forma coo
 | `area:governance` | Entrada, decomposição, dependências, nomenclatura, responsabilidades e integração | Matt `triage`, `wayfinder`, `to-spec`, `to-tickets`; Superpowers planejamento, coordenação, revisão/verificação |
 
 Esse mapeamento não manda executar todas as skills da linha. `area:converter`, `area:contract-2025` e `area:academic-indicators` são classificações existentes por frente; sua migração será explícita e preservará números, links e histórico. Roles existentes descrevem responsabilidade, separadamente de área e estado. Não criar uma label para cada skill nem atribuir labels a arquivos de skill como se fossem Issues.
+
+## Nomenclatura e labels obrigatórias
+
+Título obrigatório: **`[Tipo] Verbo + resultado ou recorte`**. Tipos: `Mapa`, `Decisão`, `Pesquisa`, `Entrega`, `Governança`. Exemplos: `[Pesquisa] Validar contrato financeiro 2024/2025`; `[Entrega] Converter inventário offline para Parquet`; `[Decisão] Definir unidade, população e janela da monografia`. O título descreve o resultado; estado, executor e lista de skills ficam nos campos próprios.
+
+Toda Issue aberta tem quatro dimensões de labels:
+
+| Dimensão | Cardinalidade | Catálogo |
+|---|---|---|
+| Tipo | Exatamente uma | `kind:map`, `kind:decision`, `kind:research`, `kind:task`, `kind:governance`, respectivamente aos cinco prefixos |
+| Responsabilidade | Exatamente uma principal | `role:research`, `role:implementation`, `role:review`, `role:integration` |
+| Área | Uma ou mais | `area:research`, `area:domain`, `area:data`, `area:docs`, `area:infra`, `area:governance` |
+| Estado operacional | Exatamente uma | `status:needs-triage`, `status:ready`, `status:blocked`, `status:in-progress`, `status:in-review`, `status:done` |
+
+`status:needs-triage` representa entrada ainda sem contrato completo. `status:in-review` exige resultado entregue e revisão/checks pendentes. `status:done` exige aceite confirmado, mesmo em Issue encerrada. Durante a migração deste lote, somente Issues abertas são atualizadas; entregas encerradas anteriores mantêm labels/títulos históricos. Categorias `bug`/`enhancement` e estados de triage Matt são opcionais e distintos deste estado operacional; sua projeção não pode contradizer dependências/prontidão reais. Não exigir priority, lane ou persona como quinta dimensão.
+
+Labels identificam metadados; não autenticam o executor nem ampliam seu escopo. Antes de escrever, conferir o catálogo e preservar labels não substituídas pela migração. Estados e tipo devem concordar com contrato/título. O template e a entrada do agente exigem a conferência; não há validador required remoto desses campos neste lote.
+
+## Documentação visual: diagram-design
+
+`diagram-design:diagram-design` passa a integrar a seleção de skills para documentar workflow, arquitetura, dependências ou outro conteúdo cuja compreensão beneficie de diagrama. Áreas pertinentes: `area:docs`, `area:governance`, `area:data` e `area:infra`, conforme o assunto. Usar a instalação disponibilizada por João; não copiar/reinstalar o plugin ou modificar metadados upstream.
+
+Entregável público sempre **SVG ou imagem**, embutido por Markdown, com descrição textual e referências ao contrato. HTML pode servir como fonte temporária local de renderização, mas não é entregue como única documentação visual nem publicado neste lote. O diagrama tem título/descrição acessíveis; conferir conteúdo, legibilidade, recortes e conectores na imagem renderizada. Gráficos não acrescentam componentes, dependências ou fatos financeiros sem evidência.
+
+O diagrama desta entrega mostra contrato → prontidão/dependências → execução paralela → revisão/verificação → conclusão conforme workflow. Uma Issue bloqueada fica fora da execução; áreas não dividem trilhas exclusivas. Ele é ilustrativo e não demonstra paralelismo executado sobre tarefas reais.
+
+## Complemento solicitado: organização estrutural
+
+Após aprovar o workflow e escolher o padrão visual da skill, João solicitou um mecanismo para manter os agentes alinhados à organização de arquivos/pastas. A implementação deste lote acrescenta destinos canônicos e responsabilidades ao `docs/architecture.md` existente, campo de impacto estrutural na Issue e conferência desse impacto na revisão independente do PR.
+
+O executor justifica novos arquivos/pastas e movimentos/deletes dentro da allowlist; prefere o destino responsável existente e evita contratos/trackers concorrentes. Revisor compara inventário real com allowlist, destinos, dependências e exclusões; integrador confirma atualização da arquitetura/ADR quando a estrutura aprovada mudar. Nova raiz/camada fora do escopo exige decisão de escopo antes da escrita. O lote mantém os arquivos históricos nos destinos existentes, sem reorganização de código/dados ou instalação de checker de estrutura na CI.
+
+Esse complemento usa a arquitetura única e conferência documental/revisão. Enforcement automatizado de organização permanece uma futura tarefa própria com comportamento reproduzível e regressões; não se afirma garantia automática a partir de instruções Markdown. Estilo claro padrão escolhido fica registrado em AGENTS/guia, sem modificar o plugin global.
 
 ## Workflow por natureza do trabalho
 
@@ -95,12 +128,13 @@ A primeira entrega usa os mecanismos existentes e conferência explícita de pro
 
 ## Aceite do workflow
 
-1. Uma Issue de pesquisa, uma de implementação e uma de decisão possuem domínio, etapas e skills concretas, sem placeholders de contrato.
+1. Issues abertas aplicáveis possuem domínio, etapas e skills concretas, sem placeholders de contrato; o guia inclui exemplos de pesquisa, decisão e implementação histórica, preservando a Issue 15 já encerrada.
 2. Duas tarefas prontas na mesma área podem ser selecionadas em paralelo; blocker real impede a afetada mesmo com labels corretas.
 3. Issue sem domínio, workflow ou skills não é marcada pronta; ausência de `status:blocked` não basta.
 4. Decisões metodológicas e aquisição não autorizada permanecem pendentes; revisão por agente é registrada como técnica, sem alegar aprovação humana/GitHub elegível.
 5. Skills condicionais têm gatilho e alternativa/limitação explícitos; não exigir todo o catálogo nem alegar Feynman indisponível como executado.
 6. Documentação, Issue e resultado remoto correspondem; revisões e checks citam o head efetivamente entregue. Dados, artefatos aceitos, upstream e Project são preservados fora do escopo.
+7. Arquitetura única define destinos/responsabilidades; Issue declara impacto estrutural e revisão de PR verifica inventário/allowlist/destinos, sem alegar enforcement automático ou reorganizar o histórico.
 
 ## Referências técnicas
 

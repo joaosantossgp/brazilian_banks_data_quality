@@ -1,5 +1,7 @@
 # Categorias e estados de triagem
 
+**Contrato vigente:** o [workflow](workflow.md) exige exatamente uma `kind:*`, uma `role:*`, uma `status:*` e ao menos uma `area:*`. O mapeamento upstream abaixo é auxiliar de triagem, não substitui essas quatro dimensões. `ready-for-agent` somente pode coexistir com `status:ready` quando o contrato e todas as pendências externas para iniciar estiverem satisfeitos; conflitos de estado devem ser resolvidos antes do claim. Os nomes sem prefixo abaixo não precisam ser criados para executar esta migração.
+
 Configuração local de Avaliar e encaminhar pedidos — `/triage`, solicitada em 2026-10-03. Fonte: skill Matt instalada na revisão `d81f3a183412e71a5b1e84ca21bc1a35eea03a60`. [AGENTS](../../AGENTS.md#agent-skills) aponta para este mapeamento; operações e autoridade ficam no [tracker único](issue-tracker.md#adaptação-de-triagem--pedido-explícito-2026-10-03).
 
 | Categoria upstream | Nome de label proposto | Significado |
