@@ -43,6 +43,8 @@ def _read_inputs(source):
         raise ValueError('Inventory counts or completeness do not match observations')
     seen = set()
     for row in rows:
+        if row['report'] != 'Resumo':
+            raise ValueError('Observation report is outside the approved Resumo scope')
         key = (row['period'], row['source_row'])
         if not row['source_row'].isdigit() or int(row['source_row']) < 1 or key in seen:
             raise ValueError('Invalid or repeated source row locator')

@@ -113,13 +113,13 @@ def run(repo, output, report, resume=False, measurements=None):
             'numeric_selection': "SELECT period, institution_id, account, numeric_value FROM observations WHERE period='202412' AND value_state IN ('numeric','zero') ORDER BY institution_id, account",
         }
         for name, sql in sql_queries.items():
-            measurements = []
+            query_timings = []
             result = None
             for _ in range(5):
                 started = time.perf_counter()
                 result = connection.execute(sql).fetchall()
-                measurements.append(time.perf_counter() - started)
-            queries[name] = {'sql': sql, 'seconds': measurements, 'median_seconds': statistics.median(measurements), 'returned_rows': len(result)}
+                query_timings.append(time.perf_counter() - started)
+            queries[name] = {'sql': sql, 'seconds': query_timings, 'median_seconds': statistics.median(query_timings), 'returned_rows': len(result)}
             if name == 'states':
                 queries[name]['result'] = result
     if hashes(repo / 'data/raw') != before_raw or hashes(source) != before_inputs:

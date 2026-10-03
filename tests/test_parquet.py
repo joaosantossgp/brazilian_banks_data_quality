@@ -226,6 +226,15 @@ class ExactParquetTests(unittest.TestCase):
                 with self.api().snapshot_connection(output) as connection:
                     self.assertEqual(connection.execute('SELECT numeric_value FROM observations').fetchone()[0], Decimal(token))
 
+    def test_unapproved_report_is_rejected_before_reserving_destination(self):
+        fixture(self.source)
+        observations = self.source / 'observations.csv'
+        body = observations.read_text(encoding='utf-8')
+        observations.write_text(body.replace('Resumo', 'DifferentReport'), encoding='utf-8', newline='')
+        with self.assertRaisesRegex(ValueError, 'report|Resumo'):
+            self.api().convert_inventory(self.source, self.output)
+        self.assertFalse(self.output.exists())
+
     def test_benchmark_relative_output_and_resume_preserve_snapshot(self):
         # A path representation bug must not force replay or overwrite a valid snapshot.
         self.api()
@@ -249,6 +258,7 @@ class ExactParquetTests(unittest.TestCase):
             with patch.object(benchmark, 'replay', side_effect=offline_replay):
                 first = benchmark.run(self.root, Path('data/curated/measured'), self.root / 'report.json')
             self.assertEqual(first['observations'], 12)
+            self.assertFalse(first['measurements_recovered_from_prior_completed_runs'])
             self.assertEqual(len(first['conversion_runs']), 2)
             active = self.root / first['active_snapshot']
             before = {p.relative_to(active).as_posix(): (p.read_bytes(), p.stat().st_mtime_ns) for p in active.rglob('*') if p.is_file()}
@@ -257,6 +267,7 @@ class ExactParquetTests(unittest.TestCase):
             after = {p.relative_to(active).as_posix(): (p.read_bytes(), p.stat().st_mtime_ns) for p in active.rglob('*') if p.is_file()}
             self.assertEqual(before, after)
             self.assertEqual(second['replay']['byte_identical_inventory_files'], 7)
+            self.assertFalse(second['measurements_recovered_from_prior_completed_runs'])
             self.assertEqual(len(second['conversion_runs']), 2)
             original_convert = benchmark.convert_inventory
             def reuse_only(source, destination, **kwargs):

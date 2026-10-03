@@ -51,4 +51,4 @@
 - [x] Verificar hashes protegidos e reconstruir inventário em destino novo via replay; comparar sete arquivos byte a byte.
 - [x] Executar conversão de uma e duas workers em novos destinos ignorados; validar 40.904 observações e conteúdo integral, DECIMAL e inventários complementares; reutilizar um snapshot e confirmar idempotência.
 - [x] Medir bytes de bruto, derivados CSV/JSON, curado, metadados, staging/duplicação e .venv; cronometar consulta de estados e seleção numérica por referência; guardar comandos/resultados sem caminhos pessoais nos documentos técnicos.
-- [ ] Revisar branch completa com reviewer independente; corrigir achados relevantes com RED/GREEN e suíte verde. Fazer commit local somente dos arquivos desta tarefa, com bruto e curado ignorados. Entregar caminho, branch, números reais, limites e pendências, sem publicação.
+- [x] Revisar branch completa com reviewer independente; corrigir achados relevantes com RED/GREEN e suíte verde. Fazer commit local somente dos arquivos desta tarefa, com bruto e curado ignorados. Entregar caminho, branch, números reais, limites e pendências, sem publicação.
