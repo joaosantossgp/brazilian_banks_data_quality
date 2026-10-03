@@ -17,6 +17,8 @@
 - Uma dependência DuckDB oficial local; nenhuma instalação global, servidor ou edição de projetos pausados.
 - Documentos sem identificadores pessoais; branch local sem push, PR, merge, deploy ou permissão.
 
+**Atualização de autorização — 2026-10-03:** a restrição acima descreve a execução offline original. João posteriormente autorizou reconciliar com `main`, revisar e publicar a entrega por branch/PR e atualizar Issues/Project. Frente: [Issue 15](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/15). Merge, deploy, nova coleta e alteração de credenciais/proteções permanecem fora desta publicação.
+
 ## Review Focus
 
 - Tokens exponentiais, negativos, zeros e limites DECIMAL devem manter o valor exato ou rejeitar.

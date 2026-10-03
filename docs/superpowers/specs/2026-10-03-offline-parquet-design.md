@@ -1,6 +1,6 @@
 # Piloto offline em Parquet, consultado por DuckDB
 
-Decisão e execução autorizadas em 2026-10-03: Python + DuckDB + Parquet para a monografia local. A autorização inclui plano, implementação, execução offline e ajustes; não exige nova aprovação da mesma direção. Esta tarefa local ainda não foi publicada como Issue. O projeto existente continua sendo a autoridade remota quando uma publicação futura for autorizada.
+Decisão e execução autorizadas em 2026-10-03: Python + DuckDB + Parquet para a monografia local. A autorização inclui plano, implementação, execução offline e ajustes; não exige nova aprovação da mesma direção. A tarefa está na [Issue 15](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/15). Na autorização posterior do mesmo dia, João permitiu reconciliar com `main`, revisar e publicar branches/PRs e atualizar as mesmas Issues/Project; merge não está incluído. O projeto existente continua sendo a autoridade remota.
 
 Converter o inventário aceito de 40.904 observações, individual/Resumo, referências 201012, 202312 e 202412, para um destino novo. CSV e JSON existentes são o contrato de entrada desta conversão; bruto preservado e replay verificam sua origem. Isso não recupera precisão anterior eventualmente perdida na produção do inventário. Não adquirir novas fontes, extrapolar história, definir indicadores, amostra final ou vínculos CVM/B3.
 
