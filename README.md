@@ -2,7 +2,7 @@
 
 **Atualização de estado — 2026-10-03:** a fundação e o piloto do [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1) foram integrados em main em 2026-10-02T18:37:51Z, no [merge 3234c20](https://github.com/joaosantossgp/brazilian_banks_data_quality/commit/3234c20); [CI pós-merge 37048733876](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876) concluiu com sucesso. O instante exato é o registro da auditoria coordenada; as páginas públicas confirmam merge, data, commit e sucesso. Menções abaixo ao draft, ausência de merge ou confirmação pendente são histórico da preparação/publicação inicial, não o estado corrente. Isso não confirma publicação do novo conversor, sincronização atual do Project ou autorização para futuras integrações.
 
-Base local de engenharia para a monografia de João sobre bancos brasileiros com **capital aberto**, preservando seu texto atual 2010–2024. O comportamento implementado é IF.data **individual/Resumo em 201012, 202312 e 202412**; a base multiuso financeira/prudencial/individual 2010–2026 é alvo de desenho separado. Unidade acadêmica, janela final, tratamento de holdings e elegibilidade temporal continuam decisões de João/orientador.
+Base local de engenharia para a monografia de João sobre bancos brasileiros com **capital aberto**, preservando seu texto atual 2010–2024. O comportamento implementado é IF.data **individual/Resumo em 201012, 202312 e 202412**, além da admissão offline **financeira/Resumo 202412 (1005/92)**; a base multiuso financeira/prudencial/individual 2010–2026 é alvo de desenho separado. Unidade acadêmica, janela final, tratamento de holdings e elegibilidade temporal continuam decisões de João/orientador.
 
 Checkout no computador autorizado, na raiz deste repositório. A fundação e o piloto foram integrados em `main` pelo [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1), commit `3234c20`, com [CI aprovado](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876). O Project privado não torna privado o repositório público nem suas Issues.
 
@@ -17,6 +17,8 @@ Checkout no computador autorizado, na raiz deste repositório. A fundação e o 
 A autorização explícita de publicação de 2026-10-02 permite completar/revisar a fundação, CI offline mínimo, commit/push do conjunto revisado, bootstrap mínimo de main, draft PR e reconciliação das mesmas Issues/cards no Project /3 por ferramenta suportada. Os gates anteriores de não publicar/não implementar CI são histórico datado e foram substituídos para esta entrega. Não autoriza merge, deploy, nova coleta, capítulo, calendário, runtime/contas/chaves, mudança de segurança/permissões/tokens/proteções ou outro Project. Publicação da fundação e CI pós-merge estão confirmados na atualização datada acima; não há novo gate humano para o escopo já aprovado. O [conjunto exato e limites de licença](docs/engineering/governance-publication-proposal.md) orienta a publicação. A licença do código/documentação próprios não foi escolhida; MIT upstream não a substitui.
 
 ## Resultado implementado e evidência preservada
+
+Na [Issue 25](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/25), o leitor financeiro offline admitiu cinco fontes arquivadas de 202412: 1.422 registros cadastrais, oito variáveis e 11.334 observações. A grade conserva 42 posições monetárias sem armazenamento; replay reproduziu cinco arquivos byte a byte. O [registro de execução](docs/engineering/financial-snapshot-202412-execution-20261003.md) separa integridade técnica, limites de unidade/janela/vintage e publicação. As saídas `financial-*` têm contrato próprio e não entram no conversor Parquet individual.
 
 Em 2026-10-03 foi aceita a camada local Python + DuckDB + Parquet, conforme [ADR](docs/adr/0001-duckdb-parquet.md), [desenho](docs/superpowers/specs/2026-10-03-offline-parquet-design.md) e [plano](docs/superpowers/plans/2026-10-03-offline-parquet.md). A preparação original foi somente local; a autorização posterior de João inclui reconciliar, revisar e publicar esta entrega por branch/PR, acompanhada na [Issue 15](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/15). O comando offline `parquet` preserva os campos originais como texto e acrescenta DECIMAL exato, sem substituir bruto/CSV/JSON ou criar banco persistido. Os resultados medidos estão no [registro de execução](docs/engineering/offline-parquet-20261003.md).
 
@@ -51,6 +53,13 @@ Para preparar a dependência Parquet em outro checkout, criar `.venv` com Python
 ```
 
 Consulta direta em Python: `from pathlib import Path; from bank_quality.parquet import snapshot_connection`; `with snapshot_connection(Path('data/curated/offline-pilot-20261003/snapshot')) as con: result = con.execute('SELECT period, value_state, count(*) FROM observations GROUP BY period, value_state').fetchall()`. A view `observations` fixa os arquivos do manifesto validado. Cada abertura verifica hashes, schema, contagens, tokens e DECIMAL; não usa glob nem junta revisões.
+
+Admissão financeira offline verificada, usando o índice explícito de cinco manifests já arquivados. O contrato do índice e a reprodução estão no [registro financeiro](docs/engineering/financial-snapshot-202412-execution-20261003.md#entrada-e-reprodução). Ambos os destinos abaixo precisam estar ausentes; para repetir, escolher outros destinos novos. Nenhum pedido HTTP é feito pelo leitor.
+
+```powershell
+& .\.venv\Scripts\python.exe -B scripts/admit-financial.py --index data/runs/financial-admission-202412-20261003/sources-reviewed.json --output data/derived/financial-202412-20261003
+& .\.venv\Scripts\python.exe -B scripts/admit-financial.py --index data/runs/financial-admission-202412-20261003/sources-reviewed.json --output data/derived/financial-202412-20261003-replay
+```
 
 ## Pesquisa, rigor e decisões abertas
 
