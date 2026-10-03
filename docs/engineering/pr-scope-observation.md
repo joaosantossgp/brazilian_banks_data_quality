@@ -2,6 +2,8 @@
 
 Frente: [Governança de workflow e escopo, Issue 17](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/17). O workflow e os owners estão na [matriz do tracker único](../agents/issue-tracker.md#etapas-skills-entregáveis-gates-e-owners). Este documento especifica o checker/handoff técnico; não guarda estado de Issues/Project.
 
+**Preparação da publicação — 2026-10-03:** João autorizou reconciliar, revisar e publicar esta entrega por branch/PR e atualizar as mesmas Issues/Project. A branch `codex/governance-scope-observation` é dependente de `codex/offline-duckdb-parquet`; o diff próprio tem 21 paths, incluindo os cinco arquivos oficiais de triage e sua proveniência. Os conflitos documentais em AGENTS/README foram reconciliados preservando o contrato e código do conversor e o registro datado de autorização. O PR deve apontar para a branch do conversor até sua integração, sem misturar os 17 paths da Issue 15 no diff desta frente. Política sem tarefas/bindings e owner não atribuído continuam bootstrap: não há enforcement remoto nem validação deste PR pela política proposta. Revisão humana externa ao checker continua necessária antes de integrar o bootstrap. Estado de publicação/checks fica na Issue 17 e no PR real; testes locais e revisão de código não comprovam funcionamento de runner/coletor remoto.
+
 ## Resultado local e bootstrap
 
 `scripts/check_pr_scope.py` executa offline em Python 3.12, biblioteca padrão, sem coleta financeira ou leitura/execução do código do PR. Usa somente política JSON e nomes/status dos arquivos. Começa em **observação, não required**: retorna falha quando necessário; observação permite avaliar diagnóstico sem proteção obrigatória, nunca ocultar erro como sucesso.
