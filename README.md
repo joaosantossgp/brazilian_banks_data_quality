@@ -2,7 +2,7 @@
 
 Base local de engenharia para a monografia de João sobre bancos brasileiros com **capital aberto**, preservando seu texto atual 2010–2024. O comportamento implementado é IF.data **individual/Resumo em 201012, 202312 e 202412**; a base multiuso financeira/prudencial/individual 2010–2026 é alvo de desenho separado. Unidade acadêmica, janela final, tratamento de holdings e elegibilidade temporal continuam decisões de João/orientador.
 
-Checkout no computador autorizado, na raiz deste repositório. Na preparação local de 2026-10-02 ainda não havia commit/push/publicação desta árvore; confirmar o estado remoto após a entrega. O Project privado não torna privado o repositório público nem suas Issues.
+Checkout no computador autorizado, na raiz deste repositório. A fundação e o piloto foram integrados em `main` pelo [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1), commit `3234c20`, com [CI aprovado](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876). O Project privado não torna privado o repositório público nem suas Issues.
 
 ## Entradas e contrato único
 
@@ -16,6 +16,8 @@ A autorização explícita de publicação de 2026-10-02 permite completar/revis
 
 ## Resultado implementado e evidência preservada
 
+Em 2026-10-03 foi aceita a camada local Python + DuckDB + Parquet, conforme [ADR](docs/adr/0001-duckdb-parquet.md), [desenho](docs/superpowers/specs/2026-10-03-offline-parquet-design.md) e [plano](docs/superpowers/plans/2026-10-03-offline-parquet.md). A preparação original foi somente local; a autorização posterior de João inclui reconciliar, revisar e publicar esta entrega por branch/PR, acompanhada na [Issue 15](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/15). O comando offline `parquet` preserva os campos originais como texto e acrescenta DECIMAL exato, sem substituir bruto/CSV/JSON ou criar banco persistido. Os resultados medidos estão no [registro de execução](docs/engineering/offline-parquet-20261003.md).
+
 O piloto original 201012/202412 permanece preservado: [design](docs/superpowers/specs/2026-10-01-ifdata-pilot-design.md), [plano histórico](docs/superpowers/plans/2026-10-01-ifdata-pilot.md), [resultado](reports/pilot-20261001.md), [ledger](docs/engineering/pilot-execution.md) e [comparação das quatro referências MIT](docs/engineering/reference-comparison.md). Os comandos de aquisição desses registros são históricos, sem autorização de reexecução nesta fundação.
 
 A expansão limitada **202312 está concluída**, por portal oficial, individual/Resumo: 1.552 instituições, 8 indicadores, 12.416 observações. A composição tem 40.904 observações, 52 corpos de evidência verificados e 7 artefatos reproduzidos byte a byte. São resultados da verificação registrada no [ledger de expansão](docs/engineering/expansion-execution.md), [relatório](reports/expansion-20261001.md) e verificação local preservada (`reports/expansion-20261001.verification.json`, excluída da publicação), não uma execução nova de coleta ou testes por esta tarefa documental.
@@ -27,7 +29,7 @@ O [dossiê temporal](docs/engineering/capital-aberto-identity-dossier.md) manté
 Executar deste checkout. As rotinas existentes foram verificadas na etapa anterior, conforme os ledgers; nesta fundação documental não foi repetida a suíte de base. Python 3.12+ e Node já existem no runtime Codex deste laptop. Não instalar runtime ou repetir coleta para esta entrega.
 
 ```powershell
-$pilotPython = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+$pilotPython = Join-Path $PWD '.venv\Scripts\python.exe'
 & $pilotPython -B -m unittest discover -s tests -v
 $pilotNode = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
 & $pilotNode --test tests/test-portal-ready.cjs tests/test-budget.cjs
@@ -38,6 +40,15 @@ $replayOutput = Join-Path $env:TEMP ("ifdata-replay-" + [guid]::NewGuid().ToStri
 ```
 
 Replay verifica hashes dos corpos arquivados e reconstrói o derivado. O bruto precisa estar disponível localmente; referências documentais não substituem esses arquivos. Scripts de aceite/verificação que escrevem nos diretórios aceitos não são comandos de inspeção inocentes: avaliar destinos antes de executá-los. Disponibilidade de ferramentas e testes passando não demonstram validade econômica, contábil e financeira.
+
+Para preparar a dependência Parquet em outro checkout, criar `.venv` com Python 3.12 e instalar somente o pin oficial: `python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-duckdb.txt`, usando o Python da `.venv`. O arquivo pinado contém wheels oficiais para Windows amd64 e Linux x86_64, ambos Python 3.12; outras combinações exigem verificar o wheel correspondente. Replay e coleta não importam DuckDB; a suíte ampliada precisa dele.
+
+```powershell
+# Conversão offline; destino novo ou reuso validado de entrada idêntica.
+& .\.venv\Scripts\python.exe -B -m bank_quality parquet --inventory data/derived/expansion-20261001/inventory --output data/curated/offline-pilot-20261003/snapshot --workers 1
+```
+
+Consulta direta em Python: `from pathlib import Path; from bank_quality.parquet import snapshot_connection`; `with snapshot_connection(Path('data/curated/offline-pilot-20261003/snapshot')) as con: result = con.execute('SELECT period, value_state, count(*) FROM observations GROUP BY period, value_state').fetchall()`. A view `observations` fixa os arquivos do manifesto validado. Cada abertura verifica hashes, schema, contagens, tokens e DECIMAL; não usa glob nem junta revisões.
 
 ## Pesquisa, rigor e decisões abertas
 

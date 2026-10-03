@@ -1,5 +1,9 @@
 # Entrada operacional dos agentes
 
+**Autorização de publicação — 2026-10-03:** João autorizou reconciliar a entrega com `main`, revisar o conjunto final, publicar branches/PRs e atualizar as mesmas Issues e o Project /3. Conversor: [Issue 15](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/15); governança: [Issue 17](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/17). A restrição de trabalho somente local abaixo registra a preparação anterior. Esta autorização não inclui merge, nova coleta, deploy ou alterações de segurança/credenciais/proteções. Estado de publicação e checks deve ser verificado nas Issues/PRs reais.
+
+**Fundação confirmada — 2026-10-03:** o [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1) foi integrado em `main`, commit `3234c20`, com [CI pós-merge aprovado](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876). Pendências de publicação/revisão da fundação mencionadas abaixo são histórico; não confirmam os checks da nova entrega.
+
 Leia este arquivo antes de atuar neste checkout. O contrato aprovado está na [spec da fundação](docs/superpowers/specs/2026-10-02-governance-research-design.md), com complemento operacional e rigor **econômico, contábil e financeiro**. [Arquitetura](docs/architecture.md), [glossário](GLOSSARY.md), [tracker](docs/agents/issue-tracker.md), [plano autorizado](docs/superpowers/plans/2026-10-02-governance-foundation-plan.md) e [tooling](docs/engineering/research-tooling-20261002.md) são as referências comuns ao README; não criar contratos ou trackers concorrentes.
 
 ## Escopo e autoridade
@@ -11,6 +15,8 @@ Leia este arquivo antes de atuar neste checkout. O contrato aprovado está na [s
 - A monografia conserva 2010–2024 e capital aberto. Unidade final, janela, holdings, amostra/eligibilidade, método e implicações econômicas, contábeis e financeiras pertencem a João/orientador. Nunca inventar indicadores, cálculos, identidades ou recomendações de investimento.
 
 ## Antes de executar uma tarefa
+
+**Entrega offline de 2026-10-03:** a direção e execução Python + DuckDB + Parquet foram autorizadas, com [ADR](docs/adr/0001-duckdb-parquet.md), [spec](docs/superpowers/specs/2026-10-03-offline-parquet-design.md) e [plano](docs/superpowers/plans/2026-10-03-offline-parquet.md). Trabalhar em branch local; não publicar/push/PR/merge neste turno. Converter apenas o inventário existente (40.904 observações, três referências), preservar bruto e CSV/JSON, usar destino novo ignorado em `data/curated/`. DuckDB é dependência única na `.venv` local; nenhum runtime global, servidor ou outro projeto é alterado. Tarefa ainda não publicada como Issue. Registro de execução: [evidência offline](docs/engineering/offline-parquet-20261003.md).
 
 1. Ler arquitetura/glossário, spec e apenas o brief da tarefa designada com restrições complementares. Confirmar objetivo, dependências satisfeitas, arquivos autorizados e aceite observável; limites locais/externos vêm antes da escolha de ferramenta.
 2. Registrar o **link real da Issue**. Se ainda não publicada, declarar **“não publicada — tarefa local”** e apontar ao brief/ticket local existente, sem inventar número, URL ou estado remoto. O [tracker](docs/agents/issue-tracker.md) define a autoridade de cada superfície.
