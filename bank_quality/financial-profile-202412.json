@@ -1,0 +1,375 @@
+{
+  "contract": "ifdata-financial-profile-202412-v1",
+  "selection": {
+    "period": 202412,
+    "perspective": 1005,
+    "report": 92
+  },
+  "report": {
+    "id": 92,
+    "n": "Resumo",
+    "s": [
+      {
+        "id": 1005
+      }
+    ],
+    "c": [
+      {
+        "id": 18408,
+        "ip": null,
+        "ifd": 79670,
+        "o": 0,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 8,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18409,
+        "ip": null,
+        "ifd": 79706,
+        "o": 1,
+        "a": false,
+        "na": true,
+        "nc": true,
+        "fid": 9,
+        "co": "#025C75",
+        "nac": "if ((value >= 200000000)&&(value <= 299999999)) {    return value - 200000000;}else {    return value;}",
+        "sc": []
+      },
+      {
+        "id": 18410,
+        "ip": null,
+        "ifd": 79671,
+        "o": 2,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18411,
+        "ip": null,
+        "ifd": 79679,
+        "o": 3,
+        "a": false,
+        "na": true,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "if((cad.c3=='n4') && (cad.c31 == '' || cad.c31 == 2)){ return '';} else {return value;}",
+        "sc": []
+      },
+      {
+        "id": 18412,
+        "ip": null,
+        "ifd": 79675,
+        "o": 4,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18413,
+        "ip": null,
+        "ifd": 79676,
+        "o": 5,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18414,
+        "ip": null,
+        "ifd": 79672,
+        "o": 6,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18415,
+        "ip": null,
+        "ifd": 79673,
+        "o": 7,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 1,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18416,
+        "ip": null,
+        "ifd": 79678,
+        "o": 8,
+        "a": false,
+        "na": false,
+        "nc": false,
+        "fid": 14,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18417,
+        "ip": null,
+        "ifd": 78182,
+        "o": 9,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18418,
+        "ip": null,
+        "ifd": 78183,
+        "o": 10,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18419,
+        "ip": null,
+        "ifd": 78184,
+        "o": 11,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18420,
+        "ip": null,
+        "ifd": 78185,
+        "o": 12,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18421,
+        "ip": null,
+        "ifd": 78186,
+        "o": 13,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18422,
+        "ip": null,
+        "ifd": 79718,
+        "o": 14,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 13,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18423,
+        "ip": null,
+        "ifd": 79704,
+        "o": 15,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 2,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      },
+      {
+        "id": 18424,
+        "ip": null,
+        "ifd": 79705,
+        "o": 16,
+        "a": true,
+        "na": false,
+        "nc": false,
+        "fid": 2,
+        "co": "#025C75",
+        "nac": "",
+        "sc": []
+      }
+    ],
+    "fx": "",
+    "cp": "Resumo<br />Valores monetários em R$ mil<br />",
+    "rp": "1. De acordo com a Lei nº 4.595, de 31 de dezembro de 1964, as instituições financeiras devem apurar resultados em 30 de junho e em 31 de dezembro de cada ano, obrigatoriamente, com observância às regras contábeis estabelecidas pelo CMN. Dessa forma, em março e setembro, os dados contábeis referentes às receitas e às despesas correspondem aos saldos acumulados entre janeiro e março e entre julho e setembro, respectivamente. Os demonstrativos de resultado de junho e dezembro registram os valores acumulados entre janeiro e junho e entre julho e dezembro, respectivamente. <br />2. Os dados constantes deste relatório são fornecidos pelas próprias instituições, podendo apresentar diferenças em relação aos dados divulgados na imprensa em atendimento à legislação societária pelas instituições financeiras constituídas sob a forma de sociedade anônima. <br />3. NI: Não informado pela instituição até a publicação do relatório.<br />4. Na data-base de dezembro, serão republicados os dados contábeis, de capital e de crédito dos últimos quatro trimestres, com as informações mais recentes recebidas das instituições. Dessa forma, os dados poderão ser alterados no caso de reapresentação de documentos. <br />5. O recurso de \"Composição de Colunas\" e \"Composição de Colunas em PDF\" permite consultar as rubricas contábeis de cada coluna do relatório. <br />6. As informações resumidas de Capital estão disponíveis no relatório Resumo para as instituições selecionadas do tipo Conglomerados Financeiros e Instituições Independentes de dezembro/2000 até dezembro/2014 e para as instituições selecionadas do tipo Conglomerado Prudencial e Instituições Independentes a partir de março/2015.<br />7. Entre setembro/2017 e março/2018, o cálculo do número de agências inclui as sedes. A partir de junho/2018, o número de agências inclui as sedes, exceto para cooperativas. <br />8. Para as entidades individuais do segmento (n4) Instituições de Pagamento que pertencem a Conglomerados Prudenciais, não liderados por Instituição de Pagamento, a informação do segmento apresentada na coluna SR - Segmento é a do respectivo conglomerado (Resolução nº 4.553/2017)."
+  },
+  "metrics": [
+    {
+      "position": 9,
+      "fid": 13,
+      "info": {
+        "id": 78182,
+        "n": "Ativo Total",
+        "ni": "Total Assets",
+        "d": "[10000007] + [20000004]",
+        "di": "[10000007] + [20000004]",
+        "a": 1,
+        "td": 3,
+        "lid": 78182,
+        "ty": 1
+      }
+    },
+    {
+      "position": 10,
+      "fid": 13,
+      "info": {
+        "id": 78183,
+        "n": "Carteira de Crédito Classificada",
+        "ni": "Loan, Lease and Other Credit Operations by Risk Level",
+        "d": "[31000000]",
+        "di": "[31000000]",
+        "a": 1,
+        "td": 3,
+        "lid": 78183,
+        "ty": 1
+      }
+    },
+    {
+      "position": 11,
+      "fid": 13,
+      "info": {
+        "id": 78184,
+        "n": "Passivo Circulante e Exigível a Longo Prazo e Resultados de Exercícios Futuros",
+        "ni": "Short and Long Term Liabilities and Deferred Income",
+        "d": "[40000008] + [50000005]",
+        "di": "[40000008] + [50000005]",
+        "a": 1,
+        "td": 3,
+        "lid": 78184,
+        "ty": 1
+      }
+    },
+    {
+      "position": 12,
+      "fid": 13,
+      "info": {
+        "id": 78185,
+        "n": "Captações",
+        "ni": "Funding",
+        "d": "[41000007] + [42000006] + [43000005] + [46000002]",
+        "di": "[41000007] + [42000006] + [43000005] + [46000002]",
+        "a": 1,
+        "td": 3,
+        "lid": 78185,
+        "ty": 1
+      }
+    },
+    {
+      "position": 13,
+      "fid": 13,
+      "info": {
+        "id": 78186,
+        "n": "Patrimônio Líquido",
+        "ni": "Stockholders’ Equity",
+        "d": "[60000002] + [70000009]+ [80000006]",
+        "di": "[60000002] + [70000009]+ [80000006]",
+        "a": 1,
+        "td": 3,
+        "lid": 78186,
+        "ty": 1
+      }
+    },
+    {
+      "position": 14,
+      "fid": 13,
+      "info": {
+        "id": 79718,
+        "n": "Lucro Líquido",
+        "ni": "Net Income",
+        "d": "[70000009]+[80000006]-[81956001]",
+        "di": "[70000009]+[80000006]-[81956001]",
+        "a": 1,
+        "td": 3,
+        "lid": 78187,
+        "ty": 1
+      }
+    },
+    {
+      "position": 15,
+      "fid": 2,
+      "info": {
+        "id": 79704,
+        "n": "Número de Agências",
+        "ni": "Branches",
+        "d": "Número de Agências, incluídas as sedes (exceto para cooperativas)",
+        "di": "Number of institution/conglomerate branches, including headquarters (except for credit union)",
+        "a": 1,
+        "td": 1,
+        "lid": 16,
+        "ty": 1
+      }
+    },
+    {
+      "position": 16,
+      "fid": 2,
+      "info": {
+        "id": 79705,
+        "n": "Número de Postos de Atendimento",
+        "ni": "Banking Service Outposts",
+        "d": "Número de Postos de Atendimento",
+        "di": "Number of banking service outposts of the institution/conglomerate",
+        "a": 1,
+        "td": 1,
+        "lid": 17,
+        "ty": 1
+      }
+    }
+  ],
+  "formatter_fragments": [
+    "formatMoneyEx((value / 1000.0), 0)"
+  ],
+  "source_baseline": {
+    "catalog_sha256": "2428b8a436e142682cd63eb6155717f58f2524582dcca427654032f45f6acf07",
+    "dictionary_sha256": "9c09219eeb7aa558e0ac74e32b905ba940ec00b0bc01f761b1d086aef86cca28",
+    "portal_sha256": "234fcb9158bd25b222625418f2d775d438a8db8df1585e65ef1b40c7a7fb0153",
+    "evidence": "docs/engineering/financial-snapshot-202412-contract-20261003.md"
+  },
+  "limitation": "Metadata baseline only; no numeric observations or academic eligibility. Raw BRL unit inferred from archived formatter; stock window inferred from concepts; income window from report note."
+}
