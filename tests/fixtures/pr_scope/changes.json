@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "pr_number": 42,
+  "policy_version": "fixture-v1",
+  "base_sha": "1111111111111111111111111111111111111111",
+  "head_sha": "2222222222222222222222222222222222222222",
+  "complete": true,
+  "changed_files": 2,
+  "files": [
+    {"status": "modified", "filename": "bank_quality/parquet.py"},
+    {"status": "added", "filename": "tests/test_parquet.py"}
+  ]
+}

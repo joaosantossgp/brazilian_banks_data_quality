@@ -1,5 +1,7 @@
 # Fundação de governança — Implementation Plan
 
+**Atualização de estado — 2026-10-03:** a fundação e o piloto do [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1) foram integrados em main em 2026-10-02T18:37:51Z, no [merge 3234c20](https://github.com/joaosantossgp/brazilian_banks_data_quality/commit/3234c20); [CI pós-merge 37048733876](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876) concluiu com sucesso. O instante exato é o registro da auditoria coordenada; as páginas públicas confirmam merge, data, commit e sucesso. Menções abaixo ao draft, ausência de merge ou confirmação pendente são histórico da preparação/publicação inicial, não o estado corrente. Isso não confirma publicação do novo conversor, sincronização atual do Project ou autorização para futuras integrações.
+
 **Autoridade vigente em 2026-10-02:** publicação e CI mínimos explicitamente aprovados; o complemento final deste documento prevalece sobre gates anteriores, preservados como histórico datado. Não solicitar nova aprovação do mesmo escopo. Verificação da publicação inicial e do CI concluída; evidência de encerramento abaixo. A reconciliação do Project continua separada.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -258,3 +260,7 @@ Tasks 1–5 e revisão final concluídas. As instruções/checklists das Tasks 1
 | Planejamento da expansão, não implementação | [Planejar expansão 2010–2026 e atualização](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2) |
 
 Os runs comprovam o commit inicial, não commits posteriores; cada atualização exige checks próprios. O manifesto auditado permanece snapshot imutável daquela publicação. A fonte corrente de estado remoto é o GitHub; não inferir sincronização de todo o Project, merge, validade metodológica ou base histórica completa deste registro. Licença própria não escolhida e notices MIT preservados. O bloqueio anterior de aprovação da publicação foi resolvido pela autorização direta específica do usuário.
+
+## Atualização datada do encerramento e proposta seguinte — 2026-10-03
+
+A fundação do PR 1 já foi integrada e o CI pós-merge passou, conforme a atualização no início. Os checklists e limites de autorização anteriores preservam a sequência histórica; não instruem reexecução. O novo [workflow operacional](../../agents/issue-tracker.md#etapas-skills-entregáveis-gates-e-owners) e [checker em observação](../../engineering/pr-scope-observation.md) são candidatos separados, sem execução financeira, commit/push ou integração remota por esta proposta. O plano de conversão offline e seus resultados permanecem documentos próprios; este complemento não os publica.

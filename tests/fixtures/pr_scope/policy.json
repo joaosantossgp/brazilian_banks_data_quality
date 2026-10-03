@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "version": "fixture-v1",
+  "mode": "observation",
+  "integrator": "integration-owner",
+  "forbidden_paths": ["data/", ".git/", ".agents/", "third_party/"],
+  "sensitive_paths": ["AGENTS.md", ".github/", "scripts/check_pr_scope.py", "tests/test_pr_scope.py"],
+  "shared_paths": ["AGENTS.md", ".github/governance/scope-policy.json"],
+  "tasks": {
+    "converter-fixture": {
+      "owner": "converter-owner", "role": "role:implementation", "area": "area:converter",
+      "state": "ready", "issue": "local-fixture", "branch": "fixture/converter",
+      "allowed_paths": ["bank_quality/parquet.py", "tests/test_parquet.py"],
+      "forbidden_paths": ["bank_quality/archive.py"], "dependencies": []
+    },
+    "research-fixture": {
+      "owner": "research-owner", "role": "role:research", "area": "area:contract-2025",
+      "state": "ready", "issue": "local-fixture", "branch": "fixture/research",
+      "allowed_paths": ["docs/research/contract-2025/"], "forbidden_paths": [], "dependencies": []
+    },
+    "integration-fixture": {
+      "owner": "integration-owner", "role": "role:integration", "area": "area:converter",
+      "state": "ready", "issue": "local-fixture", "branch": "fixture/integration",
+      "allowed_paths": ["AGENTS.md", ".github/governance/scope-policy.json"],
+      "forbidden_paths": [], "dependencies": []
+    }
+  },
+  "pr_bindings": {"42": "converter-fixture", "43": "research-fixture", "44": "integration-fixture"}
+}
