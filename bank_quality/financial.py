@@ -16,6 +16,7 @@ from .inventory import classify
 CONTRACT = 'ifdata-financial-snapshot-202412-v1'
 SELECTION = {'period': 202412, 'perspective': 1005, 'report': 92}
 ROLES = {'catalog', 'cadaster', 'dictionary', 'portal', 'numeric'}
+PROFILE_PATH = Path(__file__).with_name('financial-profile-202412.json')
 FIELDS = ['contract', 'period', 'perspective', 'perspective_id', 'report_id', 'institution_id',
           'ifd', 'td', 'area', 'lid', 'fid', 'variable', 'presence', 'value_state', 'raw_value',
           'numeric_value', 'source_kind', 'source_role', 'source_body', 'source_sha256',
@@ -128,8 +129,7 @@ def _read(index_path):
              and _canonical(index.get('selection')) == _canonical(SELECTION), 'Wrong financial source scope')
     _require(isinstance(index.get('sources'), dict) and set(index['sources']) == ROLES,
              'An explicit index of all five financial sources is required')
-    profile_path = Path(__file__).with_name('financial-profile-202412.json')
-    profile_body = profile_path.read_bytes()
+    profile_body = PROFILE_PATH.read_bytes()
     profile = _json(profile_body)
     _require(_canonical(profile['selection']) == _canonical(SELECTION), 'Invalid installed financial profile')
     bodies, sources = {}, {}
@@ -143,6 +143,8 @@ def _read(index_path):
         bodies[role], sources[role] = _source(role, source_path)
         sources[role]['indexed_manifest'] = name
     portal = bodies['portal'].decode('utf-8')
+    _require(sources['portal']['sha256'] == profile['source_baseline']['portal_sha256'],
+             'Archived portal body differs from the reviewed profile baseline')
     _require(all(fragment in portal for fragment in profile['formatter_fragments']),
              'Archived monetary formatter differs from the reviewed profile')
     catalog = _json(bodies['catalog'])
@@ -156,8 +158,13 @@ def _read(index_path):
     for name in ('cadastro202412_1005.json', 'info202412.json', 'dados202412_1.json'):
         _require(sum(item.get('f') == 'ifdata/202412/' + name for item in files) == 1,
                  'Selected input file is missing or duplicated in the official catalog')
-    selectors = [selector for item in files for selector in item.get('sel', [])
-                 if isinstance(selector, dict) and type(selector.get('id')) is int and selector['id'] == 1005]
+    selectors = []
+    for item in files:
+        group = item.get('sel', [])
+        _require(isinstance(group, list) and all(isinstance(selector, dict) for selector in group),
+                 'Invalid selected catalog selector array')
+        selectors.extend(selector for selector in group
+                         if type(selector.get('id')) is int and selector['id'] == 1005)
     _require(len(selectors) == 1 and selectors[0].get('n') ==
              'Conglomerados Financeiros e Instituições Independentes', 'Wrong financial selector')
     reports = [(i, item['trel']) for i, item in enumerate(files) if isinstance(item.get('trel'), dict)

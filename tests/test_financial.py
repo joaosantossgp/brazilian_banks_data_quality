@@ -47,6 +47,11 @@ class FinancialTests(unittest.TestCase):
                 '{"e":99999,"v":[{"i":78182,"v":99}]}]}'
         }
         self.write_sources()
+        # Synthetic portal asset only; production CLI always uses its installed profile.
+        fixture_profile = copy.deepcopy(PROFILE)
+        fixture_profile['source_baseline']['portal_sha256'] = hashlib.sha256((self.root / 'portal.bin').read_bytes()).hexdigest()
+        self.profile_path = self.root / 'profile.json'
+        self.profile_path.write_text(json.dumps(fixture_profile), encoding='utf-8')
 
     def write_sources(self):
         names = {'catalog': 'relatorios2000a2024', 'cadaster': 'cadastro202412_1005.json',
@@ -75,7 +80,17 @@ class FinancialTests(unittest.TestCase):
             module = importlib.import_module('bank_quality.financial')
         except ModuleNotFoundError:
             self.fail('Financial admission is not implemented')
-        return module.admit(self.index, destination or self.output)
+        with patch.object(module, 'PROFILE_PATH', self.profile_path, create=True):
+            return module.admit(self.index, destination or self.output)
+
+    def cli(self, destination):
+        launcher = ('import sys,runpy; from pathlib import Path; sys.path.insert(0,sys.argv[1]); '
+                    'import bank_quality.financial as f; f.PROFILE_PATH=Path(sys.argv[2]); '
+                    'script=sys.argv[3]; sys.argv=[script]+sys.argv[4:]; '
+                    'runpy.run_path(script,run_name="__main__")')
+        return subprocess.run([sys.executable, '-B', '-c', launcher, str(ROOT), str(self.profile_path),
+                               str(ROOT / 'scripts/admit-financial.py'), '--index', str(self.index),
+                               '--output', str(destination)], cwd=self.root, text=True, capture_output=True)
 
     def rows(self, name):
         with (self.output / name).open(encoding='utf-8', newline='') as source:
@@ -181,12 +196,27 @@ class FinancialTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.admit()
 
     def test_cli_from_other_directory_has_no_network_and_keeps_errors_visible(self):
-        process = subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/admit-financial.py'), '--index', str(self.index), '--output', str(self.output)], cwd=self.root, text=True, capture_output=True)
+        process = self.cli(self.output)
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(json.loads(process.stdout)['observations'], 17)
-        again = subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/admit-financial.py'), '--index', str(self.index), '--output', str(self.output)], cwd=self.root, text=True, capture_output=True)
+        again = self.cli(self.output)
         self.assertNotEqual(again.returncode, 0)
         self.assertIn('exist', again.stderr.lower())
+
+    def test_changed_portal_with_commented_approved_fragment_is_rejected(self):
+        self.data['portal'] = '/* ' + PROFILE['formatter_fragments'][0] + ' */ function getTdClass(){return value/1000000;}'
+        self.write_sources()
+        with self.assertRaises(ValueError): self.admit()
+        self.assertFalse((self.output / 'manifest.json').exists())
+
+    def test_malformed_selector_has_explicit_cli_error(self):
+        self.data['catalog'][0]['files'][3]['sel'] = None
+        self.write_sources()
+        process = self.cli(self.output)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        self.assertIn('selector', process.stderr.lower())
+        self.assertNotIn('Traceback', process.stderr)
+        self.assertFalse((self.output / 'manifest.json').exists())
 
     def test_partial_manifest_write_never_publishes_acceptance(self):
         module = importlib.import_module('bank_quality.financial')
