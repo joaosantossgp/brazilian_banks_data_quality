@@ -1,11 +1,46 @@
 {
   "schema_version": 1,
-  "version": "2026-10-03-observation-bootstrap",
+  "version": "2026-10-03-observation-bootstrap-matt-triage",
   "mode": "observation",
   "integrator": "integration-owner-unassigned",
-  "forbidden_paths": ["data/", ".git/", ".venv/", ".scratch/", ".superpowers/", ".agents/", ".codex/", "third_party/mattpocock-skills/", "third_party/feynman/"],
-  "sensitive_paths": [".github/", "AGENTS.md", "README.md", ".gitignore", "GLOSSARY.md", "requirements-duckdb.txt", "scripts/check_pr_scope.py", "tests/test_pr_scope.py", "tests/fixtures/pr_scope/", "docs/agents/issue-tracker.md", "docs/engineering/pr-scope-observation.md", "docs/superpowers/specs/2026-10-02-governance-research-design.md", "docs/superpowers/plans/2026-10-02-governance-foundation-plan.md"],
-  "shared_paths": ["README.md", "AGENTS.md", "docs/agents/issue-tracker.md", "docs/architecture.md", "GLOSSARY.md", ".github/"],
+  "forbidden_paths": [
+    "data/",
+    ".git/",
+    ".venv/",
+    ".scratch/",
+    ".superpowers/",
+    ".agents/",
+    ".codex/",
+    "third_party/mattpocock-skills/",
+    "third_party/feynman/"
+  ],
+  "sensitive_paths": [
+    ".github/",
+    "AGENTS.md",
+    "README.md",
+    ".gitignore",
+    "GLOSSARY.md",
+    "requirements-duckdb.txt",
+    "scripts/check_pr_scope.py",
+    "tests/test_pr_scope.py",
+    "tests/fixtures/pr_scope/",
+    "docs/agents/issue-tracker.md",
+    "docs/engineering/pr-scope-observation.md",
+    "docs/superpowers/specs/2026-10-02-governance-research-design.md",
+    "docs/superpowers/plans/2026-10-02-governance-foundation-plan.md",
+    "docs/agents/domain.md",
+    "docs/agents/triage-labels.md"
+  ],
+  "shared_paths": [
+    "README.md",
+    "AGENTS.md",
+    "docs/agents/issue-tracker.md",
+    "docs/architecture.md",
+    "GLOSSARY.md",
+    ".github/",
+    "docs/agents/domain.md",
+    "docs/agents/triage-labels.md"
+  ],
   "tasks": {},
   "pr_bindings": {}
 }

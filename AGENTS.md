@@ -56,3 +56,23 @@ Cada executor recebe uma allowlist limitada. Pesquisa não escreve no checkout d
 No handoff, entregar base/head, inventário completo de arquivos incluindo origem/destino de renames e deletes, diff/patch, comandos/saídas, incertezas e revisão independente. Identificar integração necessária nos arquivos compartilhados. Coordenação privada não vai ao repositório; material público usa Issue/frente/branch. Skills upstream não ampliam autorização, nem justificam reinstalação, commit, publicação ou alteração de proteção.
 
 O [checker de escopo](docs/engineering/pr-scope-observation.md) começa em **observação, não required**. Sua política e seu código devem vir da base confiável. O primeiro PR de bootstrap precisa de revisão humana externa ao próprio checker; política ainda não integrada não valida a si mesma. Não ativar ruleset, branch protection ou CODEOWNERS exigido nesta proposta.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues neste repositório, com acompanhamento das mesmas Issues no Project existente /3. Configuração e operações autorizadas: [tracker único](docs/agents/issue-tracker.md#configuração-matt-aplicada). PRs as a request surface: **no**. Skills não podem publicar, criar labels ou modificar o board sem autorização e ferramenta verificada.
+
+### Triage labels
+
+Categorias/estados de Avaliar e encaminhar pedidos — `/triage`: [mapeamento local](docs/agents/triage-labels.md), sem alterar labels remotas ou permissões.
+
+### Domain docs
+
+Layout **single-context**: [GLOSSARY.md](GLOSSARY.md) e [docs/adr/](docs/adr/). Regras de leitura: [domain.md](docs/agents/domain.md). Glossário, ADRs e spec existentes são reutilizados; o setup não cria domínio, metodologia ou tracker concorrentes.
+
+### Invocação e seleção
+
+Configurar workflow Matt — `/setup-matt-pocock-skills` foi aplicado como procedimento guiado pelas instruções locais em 2026-10-03. As nove skills originais permanecem; `/triage` foi acrescentada por pedido explícito em 2026-10-03, totalizando dez no [manifesto de origem](third_party/mattpocock-skills/provenance.json), revisão `d81f3a183412e71a5b1e84ca21bc1a35eea03a60`, MIT; os 36 arquivos das nove skills originais estão intactos; somente a cópia oficial de triage e sua licença foram acrescentadas, sem instalação global. Nomes legíveis e identificadores originais ficam no [guia do tracker](docs/agents/issue-tracker.md#nomes-legíveis-e-identificadores-das-skills).
+
+`/triage` está instalada e tem [mapeamento local de categorias/estados](docs/agents/triage-labels.md). Essas labels não foram criadas/aplicadas no GitHub; o worker do board verifica nomes existentes e executa somente a ação autorizada. Roles/áreas existentes continuam informativas e distintas dos estados de triagem. `disable-model-invocation: true` exige solicitação/invocação explícita em mecanismo disponível; execução deste procedimento não comprova slash command registrado ou autodisparado nesta interface. Matt organiza direção/pesquisa/spec/tickets; Superpowers mantém desenho/plano/TDD/debug/review/verificação, e Feynman/Context7 continuam condicionais nos limites já documentados.
