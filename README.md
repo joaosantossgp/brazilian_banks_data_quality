@@ -9,7 +9,7 @@ Checkout no computador autorizado, na raiz deste repositório. A fundação e o 
 ## Entradas e contrato único
 
 - [Arquitetura atual, alvo e contratos](docs/architecture.md)
-- [Modelo lógico aprovado da base IF.data](docs/superpowers/specs/2026-10-04-logical-data-model-design.md), com ER SVG/PNG; aprovado por João em 2026-10-04. O [plano do primeiro Parquet financeiro 202412](docs/superpowers/plans/2026-10-04-financial-parquet.md), na [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29), aguarda revisão antes do código; não há Parquet financeiro implementado ainda.
+- [Modelo lógico aprovado da base IF.data](docs/superpowers/specs/2026-10-04-logical-data-model-design.md), com ER SVG/PNG; aprovado por João em 2026-10-04. O [primeiro Parquet financeiro 202412](docs/engineering/financial-parquet-20261004.md), na [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29), implementa o [plano Native autorizado](docs/superpowers/plans/2026-10-04-financial-parquet.md): grade completa e observações consultáveis, com contratos individuais preservados. Expansão histórica e apresentação consolidada para análise continuam entregas próprias.
 - [Glossário de domínio](GLOSSARY.md) e [entrada operacional dos agentes](AGENTS.md)
 - [Spec aprovada da fundação](docs/superpowers/specs/2026-10-02-governance-research-design.md) e [plano autorizado](docs/superpowers/plans/2026-10-02-governance-foundation-plan.md)
 - [Tracker: tarefa, aceite e estado de publicação](docs/agents/issue-tracker.md)
@@ -61,6 +61,10 @@ Admissão financeira offline verificada, usando o índice explícito de cinco ma
 & .\.venv\Scripts\python.exe -B scripts/admit-financial.py --index data/runs/financial-admission-202412-20261003/sources-reviewed.json --output data/derived/financial-202412-20261003
 & .\.venv\Scripts\python.exe -B scripts/admit-financial.py --index data/runs/financial-admission-202412-20261003/sources-reviewed.json --output data/derived/financial-202412-20261003-replay
 ```
+
+O financeiro 1005/92/202412 também tem conversor próprio: `scripts/convert-financial.py`, com `--source`, `--source-manifest-sha256` e `--output` obrigatórios. Exige os cinco arquivos admitidos, hash externo do manifest e destino novo; não usa o comando Parquet individual acima. [Comandos, hashes, esquema e resultado da execução](docs/engineering/financial-parquet-20261004.md).
+
+Na consulta financeira, cada linha é uma unidade IF.data × variável dentro do snapshot/referência. A view `financial_cells` conserva a grade completa; `financial_observations` seleciona `presence='stored'`. As 32 colunas da admissão são texto preservado; `numeric_decimal` é DECIMAL exato; cinco chaves/identificadores acrescentados pela view delimitam snapshot, ocorrência e binding. `snapshot_connection` exige o path e o hash final esperados e valida integralmente o conjunto antes da consulta. Uma apresentação com variáveis em colunas e séries históricas exige seleção/comparabilidade e contrato próprios.
 
 ## Pesquisa, rigor e decisões abertas
 
