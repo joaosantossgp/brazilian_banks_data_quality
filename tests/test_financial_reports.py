@@ -345,6 +345,30 @@ class FinancialReportsTests(unittest.TestCase):
         with patch.object(self.module(), 'PROFILE_PATH', self.profile_path):
             with self.assertRaises(ValueError): self.module().validate_admission(manifest, bodies)
 
+    def test_numeric_source_pointer_array_indexes_are_canonical(self):
+        # Keep entity index 1 present with an empty information array, so its
+        # nonzero absence pointer is validated independently of stored cells.
+        self.data['numeric'] = self.data['numeric'].replace(
+            '{"e":222,"v":[{"i":700,"v":-0.00}]}', '{"e":222,"v":[]}')
+        self.write_sources(); self.profile['source_pins'] = self.pins; self.save_profile()
+        manifest = self.admit()
+        bodies = {e['path']: (self.output / e['path']).read_bytes() for e in manifest['files']}
+        with patch.object(self.module(), 'PROFILE_PATH', self.profile_path):
+            valid = self.module().validate_admission(manifest, bodies)
+            self.assertTrue(any(r['source_pointer'] == '/values/0/v/0/v' for r in valid['cells']))
+            self.assertTrue(any(r['source_pointer'] == '/values/0/v/1/v' for r in valid['cells']))
+            self.assertTrue(any(r['source_pointer'] == '/values/1/v' for r in valid['cells']))
+            for original, padded in ((b'/values/0/', b'/values/00/'),
+                                     (b'/values/0/v/1/v', b'/values/0/v/01/v'),
+                                     (b'/values/1/v', b'/values/01/v')):
+                with self.subTest(pointer=padded):
+                    changed = {name: body.replace(original, padded) for name, body in bodies.items()}
+                    candidate = copy.deepcopy(manifest)
+                    for entry in candidate['files']:
+                        entry.update(bytes=len(changed[entry['path']]), sha256=sha(changed[entry['path']]))
+                    with self.assertRaisesRegex(ValueError, 'source pointer'):
+                        self.module().validate_admission(candidate, changed)
+
 
 if __name__ == '__main__':
     unittest.main()

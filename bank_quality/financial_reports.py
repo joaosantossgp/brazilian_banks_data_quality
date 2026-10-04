@@ -410,7 +410,7 @@ def validate_admission(manifest, bodies):
                 token = {'presence': 'stored', 'source_pointer': f'/{p}/c{node["lid"]}',
                          'raw_value': raw, 'source_kind': kind, 'value_state': state, 'numeric_value': number}
             elif row['presence'] == 'stored':
-                _require(re.fullmatch(r'/values/[0-9]+/v/[0-9]+/v', row['source_pointer']) is not None,
+                _require(re.fullmatch(r'/values/(?:0|[1-9][0-9]*)/v/(?:0|[1-9][0-9]*)/v', row['source_pointer']) is not None,
                          'Invalid stored numeric source pointer')
                 kind, raw = row['source_kind'], row['raw_value']
                 _require(kind in ('json_number', 'json_string', 'json_null'), 'Invalid numeric source type')
@@ -430,7 +430,7 @@ def validate_admission(manifest, bodies):
                 _require(row['presence'] in ('entity_not_stored', 'information_not_stored'), 'Invalid cell presence')
                 pointer = row['source_pointer']
                 _require(pointer == '/values' if row['presence'] == 'entity_not_stored' else
-                         re.fullmatch(r'/values/[0-9]+/v', pointer) is not None, 'Invalid absence source pointer')
+                         re.fullmatch(r'/values/(?:0|[1-9][0-9]*)/v', pointer) is not None, 'Invalid absence source pointer')
                 token = {'presence': row['presence'], 'source_pointer': pointer, 'raw_value': '',
                          'source_kind': 'not_stored', 'value_state': 'unobserved_cell', 'numeric_value': ''}
             _require(all(row[k] == v for k, v in token.items()), 'Invalid native token/state/Decimal')
