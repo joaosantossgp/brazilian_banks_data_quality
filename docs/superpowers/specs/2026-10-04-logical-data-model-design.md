@@ -1,6 +1,6 @@
 # Modelo lógico da base IF.data
 
-**Estado: proposta para revisão de João.** Entrega documental da [Issue 27](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/27), base de inspeção `2694bd9da321f0f24199d8b28544114533cd2042`. Consolida decisões existentes e propõe nomes, grão, chaves e relações para implementações futuras. Não implanta tabelas/views, altera manifests, migra contratos aceitos ou autoriza coleta. A aprovação desta especificação precede o plano de implementação; método, amostra e equivalências econômicas permanecem com João/orientador.
+**Estado: especificação aprovada por João em 2026-10-04**, em resposta à revisão do documento escrito: “Parece bom, aprovado”. Entrega documental da [Issue 27](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/27), publicada pelo [PR 28](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/28); base de inspeção `2694bd9da321f0f24199d8b28544114533cd2042`. Consolida decisões existentes e define nomes, grão, chaves e relações para implementações futuras. Não implanta tabelas/views, altera manifests, migra contratos aceitos ou autoriza coleta. O primeiro plano é a [conversão financeira 202412](../plans/2026-10-04-financial-parquet.md), na [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29); sua revisão precede o código. Método, amostra e equivalências econômicas permanecem com João/orientador.
 
 ## Objetivo e decisões preservadas
 
@@ -27,13 +27,13 @@ O modelo abaixo é **lógico**, sem correspondência automática de uma caixa a 
 | Contratos independentes sem envelope comum | Preserva cada aquisição | Cada consumidor precisa reinventar proveniência, seleção de versões e limites de joins |
 | **Núcleo comum por snapshot, com bindings específicos de fonte/regime — recomendado** | Proveniência uniforme e interfaces de consulta comuns, mantendo diferenças oficiais | Exige adapters explícitos e seleção de snapshots; harmonização continua contrato separado |
 
-O núcleo recomendado reaproveita arquivo/proveniência, validação, Parquet e consultas já existentes. Os nomes e chaves abaixo são proposta técnica; só o armazenamento do ADR e os limites preservacionais acima são decisões já aceitas.
+O núcleo aprovado reaproveita arquivo/proveniência, validação, Parquet e consultas já existentes. Os nomes e chaves abaixo compõem a especificação lógica aprovada; seu registro não afirma implementação física. O ADR 0001 e os limites preservacionais acima continuam vigentes.
 
 ## Núcleo e relações
 
 ![Modelo lógico proposto: captura e snapshot se relacionam por membro de fonte; snapshot contém ocorrências de entidade e bindings; ambos delimitam células; origens ligam células aos membros de fonte.](../../agents/assets/logical-data-model.svg)
 
-[Versão PNG](../../agents/assets/logical-data-model.png). Padrão claro de `diagram-design`, ER `doc-wide`, sete entidades e oito relações; o diagrama omite campos extensos, metadados CVM/B3 e recortes acadêmicos, definidos no texto. Fontes locais/offline podem substituir a tipografia do SVG; PNG conserva a renderização inspecionada.
+[Versão PNG](../../agents/assets/logical-data-model.png). Padrão claro de `diagram-design`, ER `doc-wide`, sete entidades e oito relações; o diagrama omite campos extensos, metadados CVM/B3 e recortes acadêmicos, definidos no texto. Fontes locais/offline podem substituir a tipografia do SVG; PNG conserva a renderização inspecionada. A inscrição “proposta” no visual registra sua preparação no PR 28; a aprovação posterior é a registrada nesta spec, sem mudança das relações.
 
 Alternativa textual: uma **captura** pode participar de vários snapshots por **membros de fonte**; cada snapshot aceito tem um ou mais membros. O snapshot delimita **ocorrências de entidade** e **bindings de variável**. Cada **célula** referencia exatamente uma ocorrência e um binding do mesmo snapshot. Uma célula tem uma ou mais **origens**, cada uma referenciando um membro de fonte daquele snapshot. Uma captura/membro/ocorrência/binding pode ter zero ou muitas utilizações, sem identidade transversal implícita.
 
@@ -124,6 +124,6 @@ Particionamento interno, compressão e nomes de views pertencem à implementaç�
 
 Revisão documental confere relações/FKs/grão, cenários, correspondência aos contratos/código, links, arquitetura, privacidade e visual SVG/PNG. Suíte de software não prova implementação do modelo e não será usada como teste espelho da spec. Estados públicos de revisão/publicação ficam na Issue 27/PR; este texto não confirma remoto por si.
 
-João deve revisar esta especificação escrita antes de tratá-la como contrato de implementação. Não é necessário decidir a amostra acadêmica para aprovar o núcleo preservacional; escolhas metodológicas e equivalências continuam pendentes. Após aprovação: planejar a conversão financeira 1005/92/202412 em Issue própria, com TDD, equivalência integral, testes de revisão/precisão/ausências/destinos e revisão independente. Adapters legados, cadastro temporal, histórico/atualização e ponte 2025 devem ter tarefas e dependências explícitas, sem implementar tudo neste primeiro lote.
+João aprovou esta especificação escrita em 2026-10-04. A aprovação do núcleo preservacional não decide a amostra acadêmica; escolhas metodológicas e equivalências continuam pendentes. Próxima entrega: [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29), com [plano de conversão financeira 1005/92/202412](../plans/2026-10-04-financial-parquet.md), TDD, equivalência integral, testes de revisão/precisão/ausências/destinos e revisão independente. O plano escrito ainda requer revisão antes da implementação. Adapters legados, cadastro temporal, histórico/atualização e ponte 2025 devem ter tarefas e dependências explícitas, sem implementar tudo neste primeiro lote.
 
-Nenhuma decisão nova foi registrada como ADR aceito. O ADR 0001 continua autoridade do armazenamento; o modelo proposto é esta spec única, ligada pela arquitetura. Decisões efetivamente aprovadas com trade-off difícil de reverter poderão receber ADR específico, sem copiar a spec nem criar um modelo concorrente.
+Nenhum ADR adicional foi criado por rotina. O ADR 0001 continua autoridade do armazenamento; o modelo lógico aprovado é esta spec única, ligada pela arquitetura. Decisões com trade-off difícil de reverter poderão receber ADR específico, sem copiar a spec nem criar um modelo concorrente.
