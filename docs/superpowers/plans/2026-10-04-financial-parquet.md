@@ -10,7 +10,7 @@
 
 **Spec:** [Modelo lógico aprovado](../specs/2026-10-04-logical-data-model-design.md), [ADR 0001](../../adr/0001-duckdb-parquet.md), [contrato financeiro](../../engineering/financial-snapshot-202412-contract-20261003.md) e [entrada admitida](../../engineering/financial-snapshot-202412-execution-20261003.md).
 
-**Tarefa:** [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29); branch `codex/financial-parquet-202412`, base documental `fe3d3223c7306a4c394a2cf156610e5ac3b84ee0`. **Estado: plano escrito para revisão de João; implementação não iniciada.** A aprovação do modelo em 2026-10-04 é anterior e distinta dessa revisão.
+**Tarefa:** [Issue 29](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/29); branch `codex/financial-parquet-202412`, base documental `fe3d3223c7306a4c394a2cf156610e5ac3b84ee0`, base de implementação `0981987f6e38bc61a960b8385ad6d01946206ccf`. **Estado: execução Native autorizada por João em 2026-10-04**, após apresentação do plano e esclarecimento do objetivo/disposição dos dados: “Entendi, pode seguir”. A aprovação do modelo é anterior e distinta da execução.
 
 ## Global Constraints
 
@@ -51,7 +51,7 @@ Views `financial_cells` e `financial_observations` preservam os campos físicos 
 
 **Interfaces:** Consumes o diretório admitido e seu hash externo. Produces `convert_financial(source: Path, destination: Path, *, source_manifest_sha256: str) -> dict`, retornando o manifest completo mais `manifest_sha256` calculado após escrita; arquivos acima sustentam Task 2.
 
-- [ ] **Step 1: Escrever testes RED em unittest com fixture sintética independente.** Fixtures geram cadastro, oito bindings e grade completa nos formatos aceitos, manifest final e hashes; não importar uma classe de testes existente como API. Fixar assertions:
+- [x] **Step 1: Escrever testes RED em unittest com fixture sintética independente.** Fixtures geram cadastro, oito bindings e grade completa nos formatos aceitos, manifest final e hashes; não importar uma classe de testes existente como API. Fixar assertions:
 
 ```python
 # test_exact_decimal_and_markers: conferir cada token e tipo fonte preservados.
@@ -66,11 +66,11 @@ with self.assertRaisesRegex(ValueError, 'duplicate'):
 ```
 
 Cobrir todos os estados/presenças, exponentes que exigem precisão >38, source_kind incoerente, hash externo errado, arquivo/hash/tamanho ausente/divergente, path fora do destino, JSON com chave duplicada, cabeçalho/seleção/contrato errados, observações diferentes da projeção stored, célula faltante/duplicada, código literal inválido e binding/pointer/unidade/janela divergentes. `test_new_destination_and_final_marker`: destino existente falha, corrida tem um único reservador, erro antes do marcador deixa snapshot não aceito, marcador pré-existente não é substituído. Mutantes semânticos recalculam hashes para provar validação além da integridade.
-- [ ] **Step 2: Rodar RED:** `.venv\Scripts\python.exe -B -m unittest discover -s tests -p test_financial_parquet.py -v`; esperar falha de import/API ausente, sem coleta.
-- [ ] **Step 3: Implementar `convert_financial(...)` no módulo decidido.** Capturar cada entrada em bytes uma vez, validar manifest/hash e exatamente os cinco nomes/headers; validar grade cadastro × bindings, projeção stored, metadados e perfil existentes. Associação cadastro/valor por código literal único; comparar atributos/pointers de células a bindings e fontes do manifest, sem reler raw. A confiança é no hash da admissão aceita, não uma segunda aquisição/conferência econômica. Duplicatas/erros devem falhar, sem fallback.
-- [ ] **Step 4: Implementar projeção/escrita dentro do mesmo módulo.** Perfilar Decimal a partir dos tokens de numeric/zero, corroborando `numeric_value`; dimensionar inteiro+escala por tupla Decimal antes de expandir exponente. Gravar Parquet com schema explícito e ZSTD; comparar linhas originais e Decimal em round-trip antes do aceite. Copiar complementos/manifest original, calcular hashes/digest e publicar o manifest por último com arquivo pendente fsync e hardlink exclusivo, como a admissão existente. Reservar destino sem `exist_ok`; não reutilizar snapshot financeiro nesta versão.
-- [ ] **Step 5: Rodar GREEN:** mesmo comando da Step 2, todos os testes desta tarefa passam. Registrar RED/GREEN e `git diff --check`; não executar corpus real ainda.
-- [ ] **Step 6: Commit:** `git add bank_quality/financial_parquet.py tests/test_financial_parquet.py`; `git commit -m "feat: convert admitted financial snapshot to exact Parquet"`.
+- [x] **Step 2: Rodar RED:** `.venv\Scripts\python.exe -B -m unittest discover -s tests -p test_financial_parquet.py -v`; esperar falha de import/API ausente, sem coleta.
+- [x] **Step 3: Implementar `convert_financial(...)` no módulo decidido.** Capturar cada entrada em bytes uma vez, validar manifest/hash e exatamente os cinco nomes/headers; validar grade cadastro × bindings, projeção stored, metadados e perfil existentes. Associação cadastro/valor por código literal único; comparar atributos/pointers de células a bindings e fontes do manifest, sem reler raw. A confiança é no hash da admissão aceita, não uma segunda aquisição/conferência econômica. Duplicatas/erros devem falhar, sem fallback.
+- [x] **Step 4: Implementar projeção/escrita dentro do mesmo módulo.** Perfilar Decimal a partir dos tokens de numeric/zero, corroborando `numeric_value`; dimensionar inteiro+escala por tupla Decimal antes de expandir exponente. Gravar Parquet com schema explícito e ZSTD; comparar linhas originais e Decimal em round-trip antes do aceite. Copiar complementos/manifest original, calcular hashes/digest e publicar o manifest por último com arquivo pendente fsync e hardlink exclusivo, como a admissão existente. Reservar destino sem `exist_ok`; não reutilizar snapshot financeiro nesta versão.
+- [x] **Step 5: Rodar GREEN:** mesmo comando da Step 2, todos os testes desta tarefa passam. Registrar RED/GREEN e `git diff --check`; não executar corpus real ainda.
+- [x] **Step 6: Commit:** `git add bank_quality/financial_parquet.py tests/test_financial_parquet.py`; `git commit -m "feat: convert admitted financial snapshot to exact Parquet"`.
 
 ### Task 2: Validar leitura, expor chaves/views e CLI
 
@@ -78,7 +78,7 @@ Cobrir todos os estados/presenças, exponentes que exigem precisão >38, source_
 
 **Interfaces:** Consumes saída de `convert_financial(...)`. Produces `validate_snapshot(destination: Path, *, manifest_sha256: str) -> dict` e `snapshot_connection(destination: Path, *, manifest_sha256: str) -> duckdb.DuckDBPyConnection`. O chamador fecha a conexão; erros de leitura/contrato não viram dados vazios. CLI exige `--source`, `--source-manifest-sha256` e `--output`; sucesso imprime JSON de contagens/hash final, erro previsto ValueError/OSError sai com código 2 e diagnóstico visível.
 
-- [ ] **Step 1: Acrescentar testes RED para leitura/chaves/CLI.** Fixar assertions:
+- [x] **Step 1: Acrescentar testes RED para leitura/chaves/CLI.** Fixar assertions:
 
 ```python
 # test_snapshot_views: hash externo separa execução de identidade econômica.
@@ -92,11 +92,11 @@ with self.assertRaises(ValueError):
 ```
 
 Verificar ligações /n e catalog_pointer únicas, códigos desconhecidos mantidos, zero/NULL distinguíveis, lucro 79718/78187 com julho–dezembro, hash final ausente/divergente, parte/complemento/cópia do manifest alterados, parte extra não declarada ignorada, schema Decimal/linha/chave/contagem/digest divergentes mesmo sob hash final recalculado. Copiar só a saída para outro diretório sem a entrada/raw: leitura segue íntegra e não depende dos paths históricos. CLI por subprocesso em outro cwd: argumentos obrigatórios/erro visível/nenhuma saída aceita em falha/sucesso com hash conferível.
-- [ ] **Step 2: Rodar RED:** `.venv\Scripts\python.exe -B -m unittest discover -s tests -p test_financial_parquet.py -v`; esperar falha das APIs/views/CLI ausentes, preservando Task 1 GREEN.
-- [ ] **Step 3: Implementar `validate_snapshot(...)`.** Exigir hash externo, contrato/seleção e inventário exatos; validar arquivos/schema, complementos, contagens, digest das 32 colunas, bindings/cadastro e equivalência Decimal antes da consulta. Corroborar os três complementos com hashes do manifest original copiado; preservar seus limites e fontes. A validação é de integridade/contrato, sem alegar autenticidade.
-- [ ] **Step 4: Implementar `snapshot_connection(...)`.** DuckDB `:memory:`, threads=1, desativar instalação/carregamento automático de extensões e limitar acesso externo aos arquivos explícitos antes de desligá-lo. Construir associação temporária cadastro→entity_locator somente após prova 1:1, criar views com parâmetros para valores/paths e nomes fixos; `read_parquet` sem glob/hive_partitioning. Não unir diretórios/revisões implicitamente. Esta API não é sandbox para SQL arbitrário com privilégios.
-- [ ] **Step 5: Implementar CLI fina**, importando a API pela raiz do projeto como `admit-financial.py`; nenhuma lógica financeira duplicada no script.
-- [ ] **Step 6: Rodar GREEN:** mesmo comando da Step 2, todos passam; `git diff --check`. Commit dos três arquivos com mensagem `feat: validate and query explicit financial Parquet snapshots`.
+- [x] **Step 2: Rodar RED:** `.venv\Scripts\python.exe -B -m unittest discover -s tests -p test_financial_parquet.py -v`; esperar falha das APIs/views/CLI ausentes, preservando Task 1 GREEN.
+- [x] **Step 3: Implementar `validate_snapshot(...)`.** Exigir hash externo, contrato/seleção e inventário exatos; validar arquivos/schema, complementos, contagens, digest das 32 colunas, bindings/cadastro e equivalência Decimal antes da consulta. Corroborar os três complementos com hashes do manifest original copiado; preservar seus limites e fontes. A validação é de integridade/contrato, sem alegar autenticidade.
+- [x] **Step 4: Implementar `snapshot_connection(...)`.** DuckDB `:memory:`, threads=1, desativar instalação/carregamento automático de extensões e limitar acesso externo aos arquivos explícitos antes de desligá-lo. Construir associação temporária cadastro→entity_locator somente após prova 1:1, criar views com parâmetros para valores/paths e nomes fixos; `read_parquet` sem glob/hive_partitioning. Não unir diretórios/revisões implicitamente. Esta API não é sandbox para SQL arbitrário com privilégios.
+- [x] **Step 5: Implementar CLI fina**, importando a API pela raiz do projeto como `admit-financial.py`; nenhuma lógica financeira duplicada no script.
+- [x] **Step 6: Rodar GREEN:** mesmo comando da Step 2, todos passam; `git diff --check`. Commit dos três arquivos com mensagem `feat: validate and query explicit financial Parquet snapshots`.
 
 ### Task 3: Provar equivalência offline e integrar a entrega
 
@@ -104,9 +104,9 @@ Verificar ligações /n e catalog_pointer únicas, códigos desconhecidos mantid
 
 **Interfaces:** Consumes as três APIs das Tasks 1–2 e CLI. Produces ledger com entrada/head/hashes/contagens/limites/comandos/saídas, revisão independente e publicação confirmadas.
 
-- [ ] **Step 1: Revisão independente do código no head exato.** Conferir Issue/allowlist/arquitetura/precisão e testes de comportamento; resolver achados antes de converter corpus aceito. Executar uma vez `.venv\Scripts\python.exe -B -m unittest discover -s tests -v`, `node tests/test-budget.cjs`, `node --test tests/test-portal-ready.cjs` e `git diff --check`; ampliar somente se houver nova mudança/falha.
-- [ ] **Step 2: Capturar hashes protegidos em preparação privada.** Inventariar arquivos da admissão financeira e replay, seus cinco corpos/manifests de aquisição referenciados, inventário/Parquet individual aceitos; registrar contagem real e hashes antes/depois. Não escrever nesses destinos. Conferir ausência dos três novos destinos, `.gitignore`, versão DuckDB e hash da entrada. Atualizar a data/destinos da Issue antes de escrever se a execução ocorrer após 2026-10-04; nunca apagar/reutilizar destino existente.
-- [ ] **Step 3: Executar conversão e replay**, uma execução por destino novo:
+- [x] **Step 1: Revisão independente do código no head exato.** Conferir Issue/allowlist/arquitetura/precisão e testes de comportamento; resolver achados antes de converter corpus aceito. Executar uma vez `.venv\Scripts\python.exe -B -m unittest discover -s tests -v`, `node tests/test-budget.cjs`, `node --test tests/test-portal-ready.cjs` e `git diff --check`; ampliar somente se houver nova mudança/falha.
+- [x] **Step 2: Capturar hashes protegidos em preparação privada.** Inventariar arquivos da admissão financeira e replay, seus cinco corpos/manifests de aquisição referenciados, inventário/Parquet individual aceitos; registrar contagem real e hashes antes/depois. Não escrever nesses destinos. Conferir ausência dos três novos destinos, `.gitignore`, versão DuckDB e hash da entrada. Atualizar a data/destinos da Issue antes de escrever se a execução ocorrer após 2026-10-04; nunca apagar/reutilizar destino existente.
+- [x] **Step 3: Executar conversão e replay**, uma execução por destino novo:
 
 ```powershell
 .venv\Scripts\python.exe -B scripts/convert-financial.py --source data/derived/financial-202412-20261003 --source-manifest-sha256 f46858edc76c2e9d1d619b40fcdfaa083792cd7664a146d5d6dcaed5ae106043 --output data/curated/financial-parquet-202412-20261004
@@ -114,14 +114,16 @@ Verificar ligações /n e catalog_pointer únicas, códigos desconhecidos mantid
 ```
 
 Esperar sucesso/JSON e manifests completos; registrar os dois hashes finais, sem embutir no próprio manifest. Comparar cinco saídas byte a byte e projeção exata; manifests podem diferir por UTC. Não ocultar divergência Parquet: se a serialização não for determinística, registrar/explicar e revisar antes do aceite.
-- [ ] **Step 4: Consultar cada snapshot via API com hash esperado**, em helper privado sob `data/runs/financial-parquet-202412-20261004/`. Conferir grade=11.376, observações=11.334, ausências=42 (30 entity_not_stored e 12 information_not_stored), cadastro=1.422, bindings=8 e tipo DECIMAL(35,22). Comparar integralmente as 32 colunas/Decimal com CSVs admitidos e provar unicidade das chaves; demonstrar lucro 79718→78187/julho–dezembro e NULL sem zero-fill. Medir bytes, tempo de conversão/consulta e ambiente, sem extrapolar capacidade para toda a história.
-- [ ] **Step 5: Registrar evidência e atualizar entradas.** Hashes protegidos iguais antes/depois; publicar só ledger sanitizado, código/testes e documentos permitidos. Guardar logs/dados privados ignorados. Marcar Tasks concluídas com evidência; registrar que engenharia não prova comparabilidade econômica, vintage conjunta, elegibilidade ou ponte 2025.
+- [x] **Step 4: Consultar cada snapshot via API com hash esperado**, em helper privado sob `data/runs/financial-parquet-202412-20261004/`. Conferir grade=11.376, observações=11.334, ausências=42 (30 entity_not_stored e 12 information_not_stored), cadastro=1.422, bindings=8 e tipo DECIMAL(35,22). Comparar integralmente as 32 colunas/Decimal com CSVs admitidos e provar unicidade das chaves; demonstrar lucro 79718→78187/julho–dezembro e NULL sem zero-fill. Medir bytes, tempo de conversão/consulta e ambiente, sem extrapolar capacidade para toda a história.
+- [x] **Step 5: Registrar evidência e atualizar entradas.** Hashes protegidos iguais antes/depois; publicar só ledger sanitizado, código/testes e documentos permitidos. Guardar logs/dados privados ignorados. Marcar Tasks concluídas com evidência; registrar que engenharia não prova comparabilidade econômica, vintage conjunta, elegibilidade ou ponte 2025.
 - [ ] **Step 6: Revisar diff/head final, publicar PR e integrar.** Revisão independente cobre inclusive ledger/documentos e inventário added/modified; exigir CI aprovada no head entregue. Integrar autonomamente no escopo aprovado, verificar CI pós-merge e sincronizar main/origin. Só então encerrar Issue 29 com status:done e links confirmados; Project /3 segue com Zec. Se a etapa documental foi integrada antes, o PR do código fecha esta mesma Issue.
+
+Resultado local: [ledger de execução](../../engineering/financial-parquet-20261004.md), equivalência integral e replay PASS, 51 protegidos intactos. Step 6 fica aberta neste registro pré-integração; o estado final de revisão/CI/merge é verificado na Issue 29 e no PR real, autoridade remota, sem reescrever este snapshot documental para presumir publicação.
 
 ## Revisão do plano e documentação técnica
 
 Auto-revisão writing-plans é inline: cobertura do recorte mapeada às Tasks 1–3; demais famílias/método/multissnapshot explicitamente adiados; interfaces/nomenclatura consistentes; cinco Review Focus ligados a testes; nenhum corpo de implementação transcrito. Conferência independente de publicação não substitui a revisão do plano por João.
 
-Recomendação de execução: **Native**, um executor para as duas tarefas do mesmo módulo e revisão independente do conjunto antes do corpus real e da integração. João ainda pode escolher Subagent-driven; a escolha deve ficar registrada antes do código.
+Execução: **Native**, um executor para as duas tarefas do mesmo módulo e revisão independente do conjunto antes do corpus real e da integração; autorização registrada em 2026-10-04 na Issue 29.
 
 Context7 consultado na preparação: `/duckdb/duckdb-web`, APIs Python/read_parquet/COPY. Referências oficiais: [Python API](https://github.com/duckdb/duckdb-web/blob/main/docs/current/clients/python/reference/index.md), [DB API](https://github.com/duckdb/duckdb-web/blob/main/docs/current/clients/python/dbapi.md), [tipos numéricos](https://duckdb.org/docs/current/sql/data_types/numeric). Conferir APIs contra DuckDB 1.5.6 instalado ao executar; documentação current não substitui testes da versão local.
