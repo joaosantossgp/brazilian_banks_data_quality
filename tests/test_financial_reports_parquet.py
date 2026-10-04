@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import runpy
 import sys
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -370,6 +371,60 @@ class FinancialReportsParquetTests(unittest.TestCase):
             manifest = module.convert_financial(self.source, self.destination, source_manifest_sha256=source_hash)
         with self.connection(manifest) as con:
             self.assertEqual(con.execute('SELECT count(*) FROM financial_cells').fetchone(), (84,))
+
+    def test_consumed_csv_images_are_released_before_projection(self):
+        # Large, valid native names make retained CSV images measurable without
+        # expanding the population or substituting the real admission validator.
+        name = 'Synthetic ' + 'x' * 65536
+        for row in self.fixture.data['cadaster']:
+            row['c2'] = name
+        self.fixture.write_sources(); self.fixture.make_profile()
+        admitted = self.fixture.admit()
+        source_body = (self.source / 'manifest.json').read_bytes()
+        source_hash = fixtures.sha(source_body)
+        consumed = sum(entry['bytes'] for entry in admitted['files']
+                       if entry['path'] in ('financial-cells.csv', 'financial-observations.csv'))
+        self.assertGreater(consumed, 1024 * 1024)
+        module = self.module()
+        validate = reader.validate_admission
+        numeric_bindings = module._numeric_bindings
+        measured = {}
+
+        def observe_validation(*args):
+            result = validate(*args)
+            measured['validated'] = result
+            measured['before'] = tracemalloc.get_traced_memory()[0]
+            return result
+
+        def observe_projection(validated):
+            retained = tracemalloc.get_traced_memory()[0]
+            self.assertLessEqual(retained, measured['before'] - consumed + 64 * 1024,
+                                 'Consumed CSV images remain live at projection entry')
+            self.assertIs(validated, measured['validated'])
+            stored = (row for row in validated['cells'] if row['presence'] == 'stored')
+            for observation, cell in zip(validated['observations'], stored):
+                self.assertIs(observation, cell)
+            return numeric_bindings(validated)
+
+        tracemalloc.start()
+        try:
+            with patch.object(reader, 'validate_admission', side_effect=observe_validation), \
+                 patch.object(module, '_numeric_bindings', side_effect=observe_projection):
+                manifest = module.convert_financial(self.source, self.destination,
+                                                    source_manifest_sha256=source_hash)
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(manifest['source_files'], admitted['files'])
+        self.assertEqual((self.destination / 'metadata/source-manifest.json').read_bytes(), source_body)
+        for companion in module.COMPANIONS:
+            self.assertEqual((self.destination / 'metadata' / companion).read_bytes(),
+                             (self.source / companion).read_bytes())
+        with self.connection(manifest) as con:
+            self.assertEqual(con.execute("SELECT raw_value FROM financial_cells WHERE ifd='11' LIMIT 1").fetchone(),
+                             (name,))
+            binding = next(b for b in manifest['numeric_bindings'] if b['column_id'] == 924)
+            self.assertEqual(con.execute('SELECT numeric_decimal FROM ' + binding['view'] +
+                                         " WHERE institution_id='111'").fetchone(), (Decimal('1234567890123.0100'),))
 
     def test_interrupted_writer_and_untrusted_paths_never_accept(self):
         self.fixture.admit()

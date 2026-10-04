@@ -164,6 +164,9 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     _closed_inventory(source, admission.INPUTS)
     bodies = _files(source, source_manifest.get('files'), admission.INPUTS)
     validated = admission.validate_admission(source_manifest, bodies)
+    # These authenticated CSV images are consumed by validation. Keep only the
+    # original companions while projecting the materialized, validated cells.
+    del bodies['financial-cells.csv'], bodies['financial-observations.csv']
     bindings = _numeric_bindings(validated)
     destination.mkdir(parents=True, exist_ok=False)
     (destination / 'parts').mkdir()
