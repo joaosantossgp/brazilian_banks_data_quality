@@ -328,6 +328,10 @@ def admit(index_path: Path, output: Path) -> dict:
     output = Path(output)
     if output.exists():
         raise FileExistsError('Financial destination already exists: ' + str(output))
+    index = _json(Path(index_path).read_bytes())
+    if isinstance(index, dict) and index.get('contract') == 'ifdata-financial-reports-sources-v1':
+        from .financial_reports import admit as admit_reports
+        return admit_reports(index_path, output)
     common, observations, cells, cadastro, variables, diagnostics, sources, provenance = _read(index_path)
     output.mkdir(parents=True, exist_ok=False)
     _csv(output / 'financial-observations.csv', observations, FIELDS)

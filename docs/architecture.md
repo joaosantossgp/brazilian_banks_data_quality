@@ -35,6 +35,10 @@ Esse gate é uma obrigação do executor/revisor/integrador e dos templates. O c
 
 ## Comportamento implementado
 
+Extensão da [Issue42](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/42): `bank_quality/financial_reports.py` admite o conjunto fechado financeiro202412/1005/[92,96,101,98]; perfil oficial `financial-reports-profile-202412.json` fixa árvores/pins/annotations; `financial_reports_parquet.py` projeta e valida grade textual e tipos próprios por binding. Testes em `tests/test_financial_reports.py` e `tests/test_financial_reports_parquet.py`; [plano](superpowers/plans/2026-10-04-financial-four-reports-202412.md) e [ledger](engineering/financial-four-reports-202412-execution-20261004.md) usam destinos documentais canônicos. APIs/CLIs existentes delegam somente por contrato exato. São módulos focados adjacentes, sem nova raiz/camada, renames/deletes ou dependência.
+
+Parquet: uma grade32VARCHAR e76parts/views numéricas, três complementos originais e manifest de admissão; `numeric_bindings` mapeia report/column/pointer/kind/path/view/tipo local. Cada tipo cabe38, mas tipo comum exigiria40: nenhum numeric_decimal global/UNION que arredonde. Grupos ficam nos metadados; grade159264/armazenadas158746/ausências518, cadastro1422/38campos,121nós. Abertura autentica/reconstrói os CSVs, usa bytes próprios e consulta em memória. Leitura incremental do CSV autenticado preserva validação e reduz cópias transitórias; gate completo medido no ledger. Não implanta catálogo histórico persistido nem harmoniza regimes. Entregas anteriores abaixo permanecem histórico de seus próprios contratos.
+
 - `bank_quality/archive.py` conserva respostas/proveniência e verifica corpos por hash.
 - `ifdata.py` e `portal.py` implementam aquisição limitada IF.data/OData e portal oficial com guardas; não são um coletor histórico geral.
 - `inventory.py` e `coverage.py` inventariam valores, estados e cobertura dos snapshots obtidos.
