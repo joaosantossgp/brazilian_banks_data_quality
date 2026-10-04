@@ -72,6 +72,15 @@ def _profile_for_selection(selection):
 
 
 def _source(role, manifest_path, context):
+    period = context['period']
+    _require(type(period) is int and period in (202312, 202412, 202503), 'Wrong source period')
+    if period == 202503:
+        selection = {'period': 202503, 'perspective': 1005, 'reports': [119, 107, 110, 118]}
+        _require(_canonical(context.get('selection')) == _canonical(selection)
+                 and context.get('contract') == 'ifdata-financial-reports-snapshot-202503-v1'
+                 and context['profile'].get('contract') == 'ifdata-financial-reports-profile-202503-v1'
+                 and _canonical(context['profile'].get('selection')) == _canonical(selection),
+                 'Wrong closed202503 source context')
     path = Path(manifest_path).resolve()
     manifest_body = path.read_bytes()
     manifest = _json(manifest_body)
@@ -109,15 +118,16 @@ def _source(role, manifest_path, context):
         _require(url.scheme == 'https' and url.netloc == 'www3.bcb.gov.br' and not url.fragment,
                  'Source is outside the official IF.data endpoint')
         if role == 'catalog':
-            _require(url.path == '/ifdata/rest/relatorios2000a2024' and not url.query, 'Wrong catalog source')
+            catalog = '/ifdata/rest/relatorios2025a2030' if period == 202503 else '/ifdata/rest/relatorios2000a2024'
+            _require(url.path == catalog and not url.query, 'Wrong catalog source')
         elif role == 'portal':
             _require(url.path == '/ifdata/index.html' and not url.query, 'Wrong archived portal source')
         else:
-            period = context['period']
             filename = {'cadaster': f'cadastro{period}_1005.json', 'dictionary': f'info{period}.json',
                         'numeric': f'dados{period}_1.json'}[role]
-            _require(url.path == '/ifdata/rest/arquivos' and parse_qsl(url.query) ==
-                     [('nomeArquivo', f'ifdata/{period}/' + filename)], 'Wrong selected source file: ' + role)
+            prefix = 'ifdata_2025_2030//202503/' if period == 202503 else f'ifdata/{period}/'
+            _require(url.path == '/ifdata/rest/arquivos' and parse_qsl(url.query, keep_blank_values=period == 202503) ==
+                     [('nomeArquivo', prefix + filename)], 'Wrong selected source file: ' + role)
     body = load_body(manifest, path.parent)
     _require(len(body) == manifest['bytes'], 'Archived source size differs from manifest')
     _require(isinstance(manifest.get('context', {}), dict), 'Invalid source context')
