@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -371,12 +372,18 @@ def _open_snapshot(destination, expected_hash):
         _require(len(content) == entries[name]['bytes'] and _sha(content) == entries[name]['sha256'],
                  'Complement differs from admitted source: ' + name)
     metadata = _metadata(source, companions)
-    con = _connection([root / 'parts'])
+    scratch = Path(__file__).resolve().parents[1] / '.scratch'
+    scratch.mkdir(exist_ok=True)
+    con = None
     try:
-        # Freeze one explicit file in memory before checking: subsequent queries
-        # never re-open a replaced file, nor select an incidental/globbed part.
-        con.execute('CREATE TABLE financial_data AS FROM read_parquet(?, hive_partitioning=false)',
-                    [str(_path(root, PART))])
+        # Decode precisely the verified bytes in an owned transient image.
+        # Neither a source-file swap during opening nor after opening changes
+        # the materialized table. Scratch stays inside this project/checkout.
+        with tempfile.TemporaryDirectory(prefix='financial-parquet-read-', dir=scratch) as directory:
+            image = Path(directory) / 'verified.parquet'
+            image.write_bytes(bodies[PART])
+            con = _connection([directory])
+            con.execute('CREATE TABLE financial_data AS FROM read_parquet(?, hive_partitioning=false)', [str(image)])
         description = con.execute('DESCRIBE financial_data').fetchall()
         _require([c[0] for c in description] == FIELDS + ['numeric_decimal']
                  and all(c[1] == 'VARCHAR' for c in description[:-1]), 'Parquet original schema mismatch')
@@ -392,7 +399,8 @@ def _open_snapshot(destination, expected_hash):
                  and manifest.get('value_state_counts') == dict(Counter(r['value_state'] for r in rows))
                  and manifest.get('limitations') == source['limitations'], 'Snapshot counts/digest/limits mismatch')
     except Exception:
-        con.close()
+        if con is not None:
+            con.close()
         raise
     return con, manifest, metadata
 

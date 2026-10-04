@@ -397,6 +397,47 @@ class FinancialParquetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_snapshot(self.target, manifest_sha256=self.rewrite_output())
 
+    def test_read_uses_verified_binary_image(self):
+        from bank_quality import financial_parquet as fp
+        result = self.convert()
+        original_files = fp._files
+        part = self.target / fp.PART
+        original = part.read_bytes()
+
+        def replace_after_hash(root, entries, names):
+            import duckdb
+            captured = original_files(root, entries, names)
+            if fp.PART in captured:
+                with duckdb.connect(':memory:') as editor:
+                    editor.execute('CREATE TABLE edited AS FROM read_parquet(?)', [str(part)])
+                    editor.execute('COPY edited TO ? (FORMAT PARQUET, COMPRESSION UNCOMPRESSED)', [str(part)])
+                self.assertNotEqual(part.read_bytes(), original)
+            return captured
+
+        import duckdb
+        real_execute = duckdb.DuckDBPyConnection.execute
+
+        class ObservedConnection:
+            def __init__(self, con):
+                self.con = con
+
+            def execute(self, sql, parameters=None):
+                if sql.startswith('CREATE TABLE financial_data'):
+                    self.assert_image(parameters[0])
+                return real_execute(self.con, sql, parameters) if parameters is not None else real_execute(self.con, sql)
+
+            def assert_image(self, path):
+                if Path(path).read_bytes() != original:
+                    raise AssertionError('DuckDB loaded a binary image different from verified bytes')
+
+            def close(self):
+                self.con.close()
+
+        real_connection = fp._connection
+        with patch.object(fp, '_files', side_effect=replace_after_hash), \
+                patch.object(fp, '_connection', side_effect=lambda dirs: ObservedConnection(real_connection(dirs))):
+            self.assertEqual(validate_snapshot(self.target, manifest_sha256=result['manifest_sha256'])['cells'], 24)
+
     def test_changed_definition_rejected(self):
         self.variables[0]['definition']['n'] = 'Altered'
         self.flush()
