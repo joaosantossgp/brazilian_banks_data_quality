@@ -78,6 +78,14 @@ class Financial202312Tests(unittest.TestCase):
                        manifest_sha256=sha(self.manifests[role].read_bytes()),
                        diagnostics=[DIAGNOSTIC], body_capture=CAPTURE)
             for role in ('dictionary', 'numeric')}
+        for role, pin in self.profile['legacy_sources'].items():
+            source = json.loads(self.manifests[role].read_bytes())
+            record = {k: source[k] for k in
+                      ('url', 'final_url', 'retrieved_at_utc', 'bytes', 'sha256', 'body_path', 'context')}
+            record.update(manifest_sha256=pin['manifest_sha256'], source_generation_state='unknown',
+                          truncation_state='undeclared_legacy', capture_diagnostics=pin['diagnostics'])
+            pin['provenance_sha256'] = sha(json.dumps(record, ensure_ascii=False, sort_keys=True,
+                                                    separators=(',', ':')).encode('utf-8'))
         self.profile_path = self.root / 'synthetic-profile.json'
         self.profile_path.write_bytes(json.dumps(self.profile).encode('utf-8'))
         self.index = self.root / 'index.json'
@@ -206,6 +214,36 @@ class Financial202312Tests(unittest.TestCase):
             fields = csv.DictReader(f).fieldnames
         self.assertEqual([f for f in fields if f.startswith('c') and f[1:].isdigit()],
                          [f'c{i}' for i in range(32)])
+
+    def test_rewritten_legacy_provenance_rejected_in_conversion_and_opening(self):
+        source, _ = self.admit()
+        original = (source / 'manifest.json').read_bytes()
+        target = self.root / 'original-parquet'
+        parquet.convert_financial(source, target, source_manifest_sha256=sha(original))
+        snapshot_body = (target / 'manifest.json').read_bytes()
+        mutations = {'url': 'https://example.com/wrong/202412', 'final_url': 'https://example.com/',
+                     'retrieved_at_utc': '2050-01-01T00:00:00Z', 'bytes': 1,
+                     'body_path': 'wrong.bin', 'source_generation_state': 'reported_text',
+                     'context': {'body_capture': CAPTURE, 'period': 202412}}
+        for role in ('dictionary', 'numeric'):
+            for field, value in mutations.items():
+                with self.subTest(role=role, field=field):
+                    manifest = json.loads(original)
+                    manifest['sources'][role][field] = value
+                    encoded = json.dumps(manifest).encode('utf-8')
+                    (source / 'manifest.json').write_bytes(encoded)
+                    with self.assertRaisesRegex(ValueError, 'legacy'):
+                        parquet.convert_financial(source, self.root / f'bad-{role}-{field}',
+                                                  source_manifest_sha256=sha(encoded))
+                    (target / 'metadata/source-manifest.json').write_bytes(encoded)
+                    snapshot = json.loads(snapshot_body)
+                    snapshot['source_manifest_sha256'] = sha(encoded)
+                    entry = next(e for e in snapshot['files'] if e['path'] == 'metadata/source-manifest.json')
+                    entry.update(bytes=len(encoded), sha256=sha(encoded))
+                    rewritten = json.dumps(snapshot).encode('utf-8')
+                    (target / 'manifest.json').write_bytes(rewritten)
+                    with self.assertRaisesRegex(ValueError, 'legacy'):
+                        parquet.validate_snapshot(target, manifest_sha256=sha(rewritten))
 
     def test_writer_preserves_empty_fields_and_csv_punctuation(self):
         row = {k: '' for k in financial.FIELDS}

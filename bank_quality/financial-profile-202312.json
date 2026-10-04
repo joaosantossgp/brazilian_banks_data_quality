@@ -1,5 +1,5 @@
 {
-  "contract": "ifdata-financial-profile-202412-v1",
+  "contract": "ifdata-financial-profile-202312-v1",
   "selection": {
     "period": 202312,
     "perspective": 1005,
@@ -444,7 +444,8 @@
       "diagnostics": [
         "Playwright stores decoded response-body bytes"
       ],
-      "body_capture": "Intercepted official response bytes before browser fulfillment"
+      "body_capture": "Intercepted official response bytes before browser fulfillment",
+      "provenance_sha256": "173b7930bf0469c5ef3991b54b495e82327b89bef1e680c634b370c7413db66a"
     },
     "numeric": {
       "body_sha256": "fb85523b59409bb6ebc8bb32bf78751a2380eea3b880873f27331398e5511eae",
@@ -452,7 +453,8 @@
       "diagnostics": [
         "Playwright stores decoded response-body bytes"
       ],
-      "body_capture": "Intercepted official response bytes before browser fulfillment"
+      "body_capture": "Intercepted official response bytes before browser fulfillment",
+      "provenance_sha256": "1b556e3bf70c6fe08fd36643c441c8fc6ae616f0ea7476193b6461dcdb8c6c55"
     }
   }
 }

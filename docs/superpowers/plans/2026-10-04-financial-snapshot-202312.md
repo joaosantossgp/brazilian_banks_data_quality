@@ -67,3 +67,7 @@ O goal segue depois destas fatias até a rota aprovada, sem declarar basehistór
 ## Ajuste técnico durante execução
 
 Binding de arrays Python em lotes: 134,000 s e131,313 s; ensaio CSV tipado0,406 s de escrita com part byte idêntico. Reavaliada a escrita com documentação oficial DuckDB via Context7, schema explícito, force_not_null textual, cast Decimal exato, parallel=false, ordem preservada e temporário próprio. Adapter3, teste de aspas/vírgulas/Unicode/multilinha/vazios precedente e149 testes PASS. Destinos adicionais privados novos -bulk/-bulk-replay autorizados na Issue antes da execução: conversões completas1,344 s/1,109 s, part e quatro complementos iguais ao baseline. Sem RSS/capacidade integral medida. Sem alterar semântica/dependências/camada; detalhes e hashes no ledger36.
+
+## Correção de revisão independente
+
+Revisão dohead48f1a7f2: P2URLs/UTC/contexto copiados podiam ser reescritos apesar de pins de fonte; P3identificador perfil202412. RED14mutantes, GREENdigest canônico da projeção completa legado (exclui só path relativo indexed_manifest), conferido na conversão/abertura semraw. Perfil202312corrigido/hashnovo, artefatos anteriores preservados comobaseline, destinos privados adicionais -final/-final-replay autorizados na Issue antes de escrita. Duas admissões/conversões/consultas reais novas, payload igual,150testesPASS11,131s e49protegidos/cincoinputs/snapshot202412reconferidos. Nova revisão exata final obrigatória antes de integrar.

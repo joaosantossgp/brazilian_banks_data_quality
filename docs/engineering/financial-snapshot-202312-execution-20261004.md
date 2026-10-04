@@ -21,7 +21,7 @@ Cinco fontes locais do contrato 34, seleção explícita `202312/1005/92`, sem H
 
 O inventário anterior de 51 hashes também incluía `financial.py` e `scripts/admit-financial.py`, códigos explicitamente autorizados para mudança nesta Issue. Seus hashes anteriores/finais ficam na evidência de implementação; os outros 49 continuam protegidos. Não afirmar que 51 ficaram imutáveis. Perfil 202412, dados/raw/derivados aceitos e conversor individual não foram alterados. Nenhuma raiz/camada, rename, delete ou dependência nova.
 
-Dois manifests legados, D/N1, não declaram truncamento: o perfil fixa os hashes exatos dos corpos **e dos manifests**, diagnóstico/contexto de captura, URLs/status/schema revistos. Proveniência mantém `undeclared_legacy` e bytes decodificados, sem inventar `truncated=false` ou alegar captura comprimida de rede. Exceção exclusivamente 202312; adulteração coerente das fontes ou da proveniência do manifest admitido falha. Unidade BRL crua continua inferida do formatter, vintage não conjunta e ausências não são zero/NI.
+Dois manifests legados, D/N1, não declaram truncamento: o perfil fixa os hashes exatos dos corpos **e dos manifests**, diagnóstico/contexto de captura, URLs/status/schema revistos. Proveniência mantém `undeclared_legacy` e bytes decodificados, sem inventar `truncated=false` ou alegar captura comprimida de rede. Exceção exclusivamente 202312. A revisão independente encontrou e reproduziu uma lacuna P2: URLs/UTC/contexto copiados podiam ser adulterados mesmo com pins intactos. Correção RED/GREEN acrescentou digest canônico fechado da projeção completa de proveniência; somente `indexed_manifest`, path relativo local variável, fica fora do digest. Conversão e abertura conferem-no sem acessar raw. Catorze mutantes de URLs/contexto/UTC/bytes/body_path/estado de geração agora falham. O identificador textual do perfil foi corrigido para 202312 (P3). Fontes/manifests originais continuam inalterados. Unidade BRL crua continua inferida do formatter, vintage não conjunta e ausências não são zero/NI.
 
 ## Medidas e ajuste técnico
 
@@ -38,26 +38,30 @@ O gargalo justificou revisar a escrita antes de escalar. Ensaio offline de carga
 
 Part e quatro complementos coincidem byte a byte com o baseline que usa a mesma admissão. Os manifests finais diferem por UTC e versão/hash do adapter; cada um exige hash externo próprio. As primeiras duas admissões têm UTC distintos: seus manifests não são prometidos idênticos. São medidas pontuais de um snapshot, sem RSS, benchmark histórico integral ou promessa de velocidade universal. Paralelismo continua opção para lotes independentes após medir capacidade por máquina; não foi necessário para resolver este gargalo.
 
+## Artefatos finais após correção de revisão
+
+O hash do perfil mudou na correção. Os destinos iniciais e `-bulk` permanecem baseline pré-revisão, sem reclassificá-los como artefatos finais do perfil novo. Duas admissões novas `-final`/`-final-replay` levaram 4,078 s/3,859 s; conversões completas 1,328 s/1,125 s; aberturas validadas 1,766 s/1,593 s. Contagens/tokens/Decimal e part/três complementos de dados permanecem idênticos ao baseline. Manifests de origem/finais conservam os hashes do perfil/código efetivamente executado e seus UTC próprios. Cada admissão contém11.189.403bytes, cada Parquet915.451bytes. Os49protegidos/cincoinputs e o snapshot202412 foram reconferidos sem mudança.
+
 ## Reprodução e consulta
 
 As APIs `admit`, `convert_financial` e `snapshot_connection` foram executadas diretamente pelo executor privado, com as mesmas entradas e guardas das CLIs finas. Comandos equivalentes abaixo; **os destinos registrados já existem**, portanto escolher destinos ausentes para novo replay. Índice e raw permanecem privados/ignorados; clonagem somente do código não contém dados aceitos.
 
 ```powershell
-.venv\Scripts\python.exe -B scripts/admit-financial.py --index .superpowers/sdd/financial-202312-implementation-20261004/source-index.json --output data/derived/financial-202312-20261004
-.venv\Scripts\python.exe -B scripts/convert-financial.py --source data/derived/financial-202312-20261004 --source-manifest-sha256 af9e42c2404a2e3799c202705fe4cde4cca5160dfab1c332db099ab4415096a0 --output data/curated/financial-parquet-202312-20261004-bulk
+.venv\Scripts\python.exe -B scripts/admit-financial.py --index .superpowers/sdd/financial-202312-implementation-20261004/source-index.json --output data/derived/financial-202312-20261004-final
+.venv\Scripts\python.exe -B scripts/convert-financial.py --source data/derived/financial-202312-20261004-final --source-manifest-sha256 be31070a1c4e2cfcc644cdae656f2bf40c538a76403c22847899c2cd1646da5c --output data/curated/financial-parquet-202312-20261004-final
 ```
 
-Manifest admitido principal: `af9e42c2404a2e3799c202705fe4cde4cca5160dfab1c332db099ab4415096a0`; replay: `b1959c91305b256786973f0d1cc63af93a93878334305156155e4dee3c2a939f`.
+Manifest admitido principal: `be31070a1c4e2cfcc644cdae656f2bf40c538a76403c22847899c2cd1646da5c`; replay: `6c108df2306525d0dfba3bc058adf2d59628fce66b24507ec5a4eac522d05c93`.
 
-Manifest final principal: `1e7839e149a971807518d9459e7354676dadf8c06b5071ddf813fe6e88f34fc9`; replay: `9d7ed027356390a715fea60d276296b7368b957b5a5a51c58f21ac1c508f267d`. Part em ambos: `f1647a2c842e549a153e3b29bdef1119d4d21f10c3546d302da962f589c4a630`. Hashes calculados externamente, sem autorreferência. Receipts dos quatro destinos Parquet e duas admissões ficam no workspace privado, sem publicar corpos ou observações.
+Manifest final principal: `bec9324c9845ffd20f9227fbeacfde0be6a97180e81d6393113de9b5369fb19f`; replay: `f9d02b8806822964a9861942fd231dfbac5662b3fa81bd8e29c68fcc93c389b6`. Part em ambos: `f1647a2c842e549a153e3b29bdef1119d4d21f10c3546d302da962f589c4a630`. Hashes calculados externamente, sem autorreferência. Receipts dos seis destinos Parquet e quatro admissões ficam no workspace privado, sem publicar corpos ou observações.
 
 ```python
 from pathlib import Path
 from bank_quality.financial_parquet import snapshot_connection
 
 with snapshot_connection(
-    Path('data/curated/financial-parquet-202312-20261004-bulk'),
-    manifest_sha256='1e7839e149a971807518d9459e7354676dadf8c06b5071ddf813fe6e88f34fc9',
+    Path('data/curated/financial-parquet-202312-20261004-final'),
+    manifest_sha256='bec9324c9845ffd20f9227fbeacfde0be6a97180e81d6393113de9b5369fb19f',
 ) as con:
     assert con.execute('SELECT count(*) FROM financial_cells').fetchone() == (11080,)
     assert con.execute('SELECT count(*) FROM financial_observations').fetchone() == (11062,)
@@ -67,6 +71,6 @@ Contrato próprio `ifdata-financial-parquet-202312-v1`, part `parts/financial-ce
 
 ## Validação e limites
 
-TDD com RED/GREEN em admissão e Parquet, mutações de legado/referência/manifest/schema, ordem canônica cadastral, precisão/ausências e CSV em lote. Suíte final local: `.venv\Scripts\python.exe -B -m unittest discover -s tests -v` → **149 testes PASS**, 9,427 s. Guardas de orçamento Node e dois testes de prontidão do portal → PASS; arquivos Node não mudaram na otimização. Revisão independente e checks remotos são registrados separadamente na Issue/PR.
+TDD com RED/GREEN em admissão e Parquet, mutações de legado/referência/manifest/schema, ordem canônica cadastral, precisão/ausências e CSV em lote. Suíte final local: `.venv\Scripts\python.exe -B -m unittest discover -s tests -v` → **150 testes PASS**, 11,131 s. Guardas de orçamento Node e dois testes de prontidão do portal → PASS; arquivos Node não mudaram na otimização. Revisão independente e checks remotos são registrados separadamente na Issue/PR.
 
 Esta entrega prova integridade técnica, reprodução e consulta de **Resumo com oito variáveis em 202312**. A frente financeira aprovada exige Resumo, Ativo, Passivo e DRE oficiais, todas as variáveis disponíveis e contratos próprios, nas referências disponíveis do alvo trimestral 2010–2026; continua pendente. Prudencial/individual complementares, contrato 2025, comparabilidade, cadastro temporal, vínculos CVM/B3, elegibilidade/indicadores acadêmicos e apresentação histórica têm recortes próprios. A [pesquisa normativa paralela 37](financial-2025-normative-bridge-20261004.md) esclarece a ausência de correspondência direta AA–H/estágios e registra lacunas de versão/dicionário; não harmoniza dados nem conclui a Issue 16. Project /3 com Zec.

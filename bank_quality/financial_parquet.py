@@ -114,7 +114,9 @@ def _common(manifest):
                  and record.get('truncation_state') == 'undeclared_legacy'
                  and record.get('capture_diagnostics') == pin['diagnostics']
                  and isinstance(record.get('context'), dict)
-                 and record['context'].get('body_capture') == pin['body_capture'],
+                 and record['context'].get('body_capture') == pin['body_capture']
+                 and _sha(_dump({k: v for k, v in record.items() if k != 'indexed_manifest'}).encode('utf-8'))
+                 == pin.get('provenance_sha256'),
                  'Invalid admitted legacy qualification: ' + role)
     _require(isinstance(manifest.get('limitations'), list) and all(type(v) is str for v in manifest['limitations']),
              'Invalid source limitations')
