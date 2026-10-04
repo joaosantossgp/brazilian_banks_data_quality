@@ -1,8 +1,12 @@
 """Offline exact per-binding projection tests; no inherited reader test suite."""
 from decimal import Decimal
+from contextlib import redirect_stdout
 import importlib
+import io
 import json
 from pathlib import Path
+import runpy
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +43,125 @@ class FinancialReportsParquetTests(unittest.TestCase):
 
     def connection(self, manifest):
         return self.module().snapshot_connection(self.destination, manifest_sha256=manifest['manifest_sha256'])
+
+    def test_public_conversion_validation_and_connection_dispatch(self):
+        from bank_quality import financial_parquet
+        self.fixture.admit()
+        result = financial_parquet.convert_financial(self.source, self.destination,
+            source_manifest_sha256=fixtures.sha((self.source / 'manifest.json').read_bytes()))
+        self.assertEqual(result['contract'], self.module().CONTRACT)
+        self.assertEqual(result['decimal_type'], 'per_binding')
+        self.assertEqual(financial_parquet.validate_snapshot(self.destination,
+            manifest_sha256=result['manifest_sha256']), result)
+        with financial_parquet.snapshot_connection(self.destination, manifest_sha256=result['manifest_sha256']) as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM financial_cells').fetchone(), (84,))
+            self.assertEqual(con.execute('SELECT count(*) FROM financial_bindings').fetchone(), (24,))
+            self.assertNotIn('numeric_decimal', [r[0] for r in con.execute('DESCRIBE financial_cells').fetchall()])
+            binding = next(b for b in result['numeric_bindings'] if b['column_id'] == 924)
+            self.assertEqual(con.execute('SELECT numeric_decimal FROM ' + binding['view'] +
+                " WHERE institution_id='111'").fetchone(), (Decimal('1234567890123.0100'),))
+
+    def test_public_validation_and_connection_accept_the_new_snapshot(self):
+        from bank_quality import financial_parquet
+        result = self.convert()
+        for public in (financial_parquet.validate_snapshot, financial_parquet.snapshot_connection):
+            with self.subTest(api=public.__name__):
+                opened = public(self.destination, manifest_sha256=result['manifest_sha256'])
+                if public is financial_parquet.validate_snapshot:
+                    self.assertEqual(opened, result)
+                else:
+                    with opened as con:
+                        self.assertEqual(con.execute('SELECT count(*) FROM financial_cells').fetchone(), (84,))
+
+    def test_existing_conversion_cli_dispatches_new_admission(self):
+        self.fixture.admit()
+        path = fixtures.ROOT / 'scripts/convert-financial.py'
+        arguments = ['--source', str(self.source), '--output', str(self.destination),
+                     '--source-manifest-sha256', fixtures.sha((self.source / 'manifest.json').read_bytes())]
+        stdout = io.StringIO()
+        with patch.object(sys, 'argv', [str(path), *arguments]), patch.object(sys, 'path', list(sys.path)), redirect_stdout(stdout):
+            runpy.run_path(str(path), run_name='__main__')
+        self.assertEqual(json.loads(stdout.getvalue())['contract'], self.module().CONTRACT)
+
+    def test_existing_clis_admit_and_convert_without_profile_arguments(self):
+        outputs = []
+        commands = [('admit-financial.py', ['--index', str(self.fixture.index), '--output', str(self.source)]),
+                    ('convert-financial.py', ['--source', str(self.source), '--output', str(self.destination)])]
+        for script, arguments in commands:
+            if script == 'convert-financial.py':
+                arguments += ['--source-manifest-sha256', fixtures.sha((self.source / 'manifest.json').read_bytes())]
+            path = fixtures.ROOT / 'scripts' / script
+            stdout = io.StringIO()
+            with patch.object(sys, 'argv', [str(path), *arguments]), patch.object(sys, 'path', list(sys.path)), redirect_stdout(stdout):
+                runpy.run_path(str(path), run_name='__main__')
+            outputs.append(json.loads(stdout.getvalue()))
+        self.assertEqual(outputs[0]['contract'], reader.CONTRACT)
+        self.assertEqual(outputs[1]['contract'], self.module().CONTRACT)
+        self.assertEqual(outputs[1]['decimal_type'], 'per_binding')
+        self.assertTrue((self.destination / 'manifest.json').exists())
+
+    def test_public_routes_authenticate_before_dispatch_and_reject_copied_contracts(self):
+        from bank_quality import financial_parquet
+        result = self.convert()
+        calls = [(financial_parquet.convert_financial, self.source, self.root / 'bad-hash',
+                  'source_manifest_sha256', 'Source manifest hash mismatch'),
+                 (financial_parquet.validate_snapshot, self.destination, None,
+                  'manifest_sha256', 'Snapshot manifest hash mismatch'),
+                 (financial_parquet.snapshot_connection, self.destination, None,
+                  'manifest_sha256', 'Snapshot manifest hash mismatch')]
+        for public, path, destination, parameter, message in calls:
+            with self.subTest(api=public.__name__), patch.object(self.module(), public.__name__, side_effect=AssertionError('Dispatched before authentication')):
+                args = (path,) if destination is None else (path, destination)
+                with self.assertRaisesRegex(ValueError, message): public(*args, **{parameter: '0' * 64})
+        for path, parameter, public, destination in [
+                (self.source, 'source_manifest_sha256', financial_parquet.convert_financial, self.root / 'bad-source'),
+                (self.destination, 'manifest_sha256', financial_parquet.validate_snapshot, None),
+                (self.destination, 'manifest_sha256', financial_parquet.snapshot_connection, None)]:
+            manifest_path = path / 'manifest.json'
+            original = manifest_path.read_bytes()
+            for mutation in [[], {**json.loads(original), 'contract': 'ifdata-financial-reports-2025-v1'},
+                             {**json.loads(original), 'selection': {'period': 202412, 'perspective': 1005, 'report': 92}}]:
+                with self.subTest(api=public.__name__, mutation=mutation):
+                    body = json.dumps(mutation).encode()
+                    manifest_path.write_bytes(body)
+                    args = (path,) if destination is None else (path, destination)
+                    with self.assertRaises(ValueError): public(*args, **{parameter: fixtures.sha(body)})
+                    if destination is not None: self.assertFalse(destination.exists())
+            manifest_path.write_bytes(original)
+
+    def test_public_routes_alternate_legacy_and_reports_without_scope_contamination(self):
+        from bank_quality import financial, financial_parquet
+        from tests.test_financial import FinancialTests
+        from tests.test_financial_202312 import Financial202312Tests
+        legacy24, legacy23 = FinancialTests(), Financial202312Tests()
+        for fixture in (legacy24, legacy23):
+            fixture.setUp()
+            self.addCleanup(fixture.doCleanups)
+        globals_before = (financial.CONTRACT, financial.FIELDS[:], financial.PROFILE_PATH,
+                          financial.PROFILE_202312_PATH, financial_parquet.CONTRACT, financial_parquet.FIELDS[:])
+        with patch.object(financial, 'PROFILE_PATH', legacy24.profile_path):
+            for position, fixture in enumerate((legacy23, self.fixture, legacy24, self.fixture, legacy23)):
+                with self.subTest(position=position):
+                    source = fixture.root / ('alternating-source-' + str(position))
+                    destination = fixture.root / ('alternating-parquet-' + str(position))
+                    admitted = financial.admit(fixture.index, source)
+                    result = financial_parquet.convert_financial(source, destination,
+                        source_manifest_sha256=fixtures.sha((source / 'manifest.json').read_bytes()))
+                    self.assertEqual(result['selection'], admitted['selection'])
+                    self.assertEqual(financial_parquet.validate_snapshot(destination,
+                        manifest_sha256=result['manifest_sha256']), result)
+                    with financial_parquet.snapshot_connection(destination, manifest_sha256=result['manifest_sha256']) as con:
+                        columns = [r[0] for r in con.execute('DESCRIBE financial_cells').fetchall()]
+                        self.assertEqual('numeric_decimal' in columns, fixture is not self.fixture)
+                        self.assertEqual(con.execute('SELECT count(*) FROM financial_cells').fetchone(), (admitted['cells'],))
+                        self.assertEqual(con.execute('SELECT DISTINCT contract FROM financial_cells').fetchall(), [(admitted['contract'],)])
+                    with (source / 'financial-cadastro.csv').open() as stream:
+                        import csv
+                        fields = next(csv.reader(stream))
+                    self.assertEqual(sum(f.startswith('c') and f[1:].isdigit() for f in fields), 32 if fixture is legacy23 else 38)
+        # The 202312 fixture owns its temporary PROFILE_202312_PATH patch until cleanup.
+        self.assertEqual((financial.CONTRACT, financial.FIELDS[:], financial.PROFILE_PATH,
+                          financial.PROFILE_202312_PATH, financial_parquet.CONTRACT, financial_parquet.FIELDS[:]), globals_before)
 
     def test_global_precision_40_local_types_exact_and_no_global_numeric(self):
         manifest = self.convert()

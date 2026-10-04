@@ -139,6 +139,30 @@ class FinancialReportsTests(unittest.TestCase):
         with (self.output / name).open(encoding='utf-8', newline='') as source:
             return list(csv.DictReader(source))
 
+    def test_public_admission_dispatches_only_the_closed_index(self):
+        from bank_quality import financial
+        with patch.object(self.module(), 'PROFILE_PATH', self.profile_path):
+            result = financial.admit(self.index, self.output)
+        self.assertEqual(result['contract'], self.module().CONTRACT)
+        self.assertEqual(result['selection'], SELECTION)
+        self.assertEqual(result['cells'], 84)
+        self.assertEqual(result['files'], self.admit(self.root / 'direct')['files'])
+
+    def test_public_admission_rejects_unknown_malformed_and_wrong_selection(self):
+        from bank_quality import financial
+        original = json.loads(self.index.read_bytes())
+        cases = [[], {**original, 'contract': 'ifdata-financial-reports-sources-2025-v1'},
+                 {**original, 'selection': {**SELECTION, 'period': 202503}},
+                 {**original, 'selection': {**SELECTION, 'reports': [92]}}]
+        with patch.object(self.module(), 'PROFILE_PATH', self.profile_path):
+            for position, value in enumerate(cases):
+                with self.subTest(value=value):
+                    self.index.write_text(json.dumps(value), encoding='utf-8')
+                    destination = self.root / ('rejected-' + str(position))
+                    with self.assertRaises(ValueError):
+                        financial.admit(self.index, destination)
+                    self.assertFalse(destination.exists())
+
     def test_complete_grade_bindings_groups_precision_attributes_and_windows(self):
         manifest = self.admit()
         cells = self.rows('financial-cells.csv')
