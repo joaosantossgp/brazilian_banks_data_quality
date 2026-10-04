@@ -1,4 +1,4 @@
-"""Admit the closed 202412 financial snapshot from existing local archives."""
+"""Admit a closed 202312 or202412 financial snapshot from existing local archives."""
 import argparse
 import json
 import sys

@@ -1,4 +1,4 @@
-"""Convert the admitted financial 202412 snapshot offline to a new Parquet directory."""
+"""Convert an admitted financial202312 or202412 snapshot offline to new Parquet."""
 import argparse
 import json
 from pathlib import Path
