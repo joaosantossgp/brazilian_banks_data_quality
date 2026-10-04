@@ -1,4 +1,4 @@
-"""Exact offline Parquet projection of the closed financial 202412 admission."""
+"""Exact offline Parquet projection of closed financial202312/202412 admissions."""
 from collections import Counter
 import csv
 from datetime import datetime, timezone
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import duckdb
 
-from .financial import CONTRACT as SOURCE_CONTRACT, FIELDS, PROFILE_PATH, ROLES, SELECTION
+from .financial import CONTRACT as SOURCE_CONTRACT, FIELDS, PROFILE_PATH, ROLES, SELECTION, _profile_for_selection
 from .inventory import classify
 
 CONTRACT = 'ifdata-financial-parquet-202412-v1'
@@ -93,15 +93,14 @@ def _files(root, entries, names):
 
 
 def _common(manifest):
-    _require(isinstance(manifest, dict) and manifest.get('contract') == SOURCE_CONTRACT
-             and manifest.get('accepted') is True and _dump(manifest.get('selection')) == _dump(SELECTION),
-             'Unknown source contract or selection')
-    expected = dict(contract=SOURCE_CONTRACT, period=202412, perspective='financial', perspective_id=1005, report_id=92)
+    _require(isinstance(manifest, dict) and manifest.get('accepted') is True, 'Unknown source contract or selection')
+    context = _profile_for_selection(manifest.get('selection'))
+    expected = dict(contract=context['contract'], period=context['period'], perspective='financial', perspective_id=1005, report_id=92)
     _require(all(_dump(manifest.get(k)) == _dump(v) for k, v in expected.items()), 'Invalid source scope')
     for key in ('report_generation', 'report_version'):
         _require(type(manifest.get(key)) is str and manifest.get(key + '_state') ==
                  ('reported_text' if manifest[key] else 'unknown'), 'Invalid generation/version state')
-    _require(manifest.get('profile_sha256') == _sha(PROFILE_PATH.read_bytes().replace(b'\r\n', b'\n')),
+    _require(manifest.get('profile_sha256') == _sha(context['profile_body'].replace(b'\r\n', b'\n')),
              'Unknown admitted profile')
     sources = manifest.get('sources')
     _require(isinstance(sources, dict) and set(sources) == ROLES, 'Invalid source membership')
@@ -109,6 +108,16 @@ def _common(manifest):
         _require(isinstance(record, dict) and isinstance(record.get('body_path'), str) and record['body_path']
                  and all(isinstance(record.get(k), str) and HASH.fullmatch(record[k])
                          for k in ('sha256', 'manifest_sha256')), 'Invalid source provenance')
+    for role, pin in context['profile'].get('legacy_sources', {}).items():
+        record = sources[role]
+        _require(record['sha256'] == pin['body_sha256'] and record['manifest_sha256'] == pin['manifest_sha256']
+                 and record.get('truncation_state') == 'undeclared_legacy'
+                 and record.get('capture_diagnostics') == pin['diagnostics']
+                 and isinstance(record.get('context'), dict)
+                 and record['context'].get('body_capture') == pin['body_capture']
+                 and _sha(_dump({k: v for k, v in record.items() if k != 'indexed_manifest'}).encode('utf-8'))
+                 == pin.get('provenance_sha256'),
+                 'Invalid admitted legacy qualification: ' + role)
     _require(isinstance(manifest.get('limitations'), list) and all(type(v) is str for v in manifest['limitations']),
              'Invalid source limitations')
     return {k: str(manifest[k]) for k in COMMON}
@@ -116,12 +125,16 @@ def _common(manifest):
 
 def _metadata(manifest, bodies):
     common = _common(manifest)
-    cadastro = _csv(bodies['financial-cadastro.csv'], CAD_FIELDS)
+    context = _profile_for_selection(manifest['selection'])
+    period = context['period']
+    cad_fields = [*COMMON, *(f'c{i}' for i in range(context['cadaster_fields'])),
+                  'source_body', 'source_sha256', 'source_pointer']
+    cadastro = _csv(bodies['financial-cadastro.csv'], cad_fields)
     _require(cadastro, 'Empty financial cadaster')
     sources = manifest['sources']
     seen = set()
     for index, row in enumerate(cadastro):
-        _require(all(row[k] == v for k, v in common.items()) and row['c1'] == '202412', 'Wrong cadaster scope')
+        _require(all(row[k] == v for k, v in common.items()) and row['c1'] == str(period), 'Wrong cadaster scope')
         _require(re.fullmatch(r'0|[1-9][0-9]*', row['c0']) and row['c0'] not in seen,
                  'Invalid or duplicate literal cadaster key')
         seen.add(row['c0'])
@@ -131,7 +144,7 @@ def _metadata(manifest, bodies):
     _require(isinstance(document, dict) and all(str(document.get(k)) == v for k, v in common.items()),
              'Wrong variable scope')
     variables = document.get('variables')
-    metrics = _json(PROFILE_PATH.read_bytes())['metrics']
+    metrics = context['profile']['metrics']
     _require(isinstance(variables, list) and len(variables) == len(metrics), 'Incomplete variable bindings')
     prefixes, pointers = set(), set()
     for variable, metric in zip(variables, metrics):
@@ -143,7 +156,7 @@ def _metadata(manifest, bodies):
         expected.update(fid=metric['fid'], name=info['n'], definition=info,
                         unit='BRL_raw_inferred' if money else 'count',
                         unit_basis='archived_formatter_divides_by_1000' if money else 'cadaster_definition',
-                        window_start='2024-07-01' if info['id'] == 79718 else '', window_end='2024-12-31',
+                        window_start=f'{period // 100}-07-01' if info['id'] == 79718 else '', window_end=f'{period // 100}-12-31',
                         window_basis='report_rp_result_window' if info['id'] == 79718 else
                         'stock_at_reference_inferred' if money else 'cadaster_reference')
         _require(all(_dump(variable[k]) == _dump(v) for k, v in expected.items()), 'Binding differs from admitted profile')
@@ -157,8 +170,8 @@ def _metadata(manifest, bodies):
         pointers.add(definition)
     _require(len(prefixes) == 1, 'Bindings reference different reports')
     diagnostics = _json(bodies['financial-diagnostics.json'])
-    _require(isinstance(diagnostics, dict) and diagnostics.get('contract') == SOURCE_CONTRACT
-             and _dump(diagnostics.get('selection')) == _dump(SELECTION)
+    _require(isinstance(diagnostics, dict) and diagnostics.get('contract') == context['contract']
+             and _dump(diagnostics.get('selection')) == _dump(context['selection'])
              and diagnostics.get('limitations') == manifest['limitations'], 'Invalid diagnostic scope/limits')
     return common, cadastro, variables, diagnostics
 
@@ -286,17 +299,25 @@ def _entry(root, name):
 
 
 def _write_part(rows, numbers, decimal_type, path):
-    with _connection([path.parent]) as con:
-        fields = ', '.join(f'"{k}" VARCHAR' for k in FIELDS)
-        con.execute(f'CREATE TABLE cells ({fields}, numeric_decimal {decimal_type})')
-        for start in range(0, len(rows), 4096):
-            batch = rows[start:start + 4096]
-            arrays = [[r[k] for r in batch] for k in FIELDS]
-            arrays.append([format(n, 'f') if n is not None else None for n in numbers[start:start + 4096]])
-            columns = ','.join(['unnest(?)'] * len(FIELDS) + [f'CAST(unnest(?) AS {decimal_type})'])
-            con.execute('INSERT INTO cells SELECT ' + columns, arrays)
-        con.execute('COPY cells TO ? (FORMAT PARQUET, COMPRESSION ZSTD)', [str(path)])
-        actual = con.execute('FROM read_parquet(?, hive_partitioning=false)', [str(path)]).fetchall()
+    # Owned transient CSV avoids binding hundreds of thousands of Python objects.
+    # Original text columns never match the NULL marker; only numeric_decimal may
+    # be NULL. Closed schema and serial reading preserve exact row/column order.
+    with tempfile.TemporaryDirectory(prefix='financial-write-', dir=path.parent) as directory:
+        image = Path(directory) / 'cells.csv'
+        with image.open('x', encoding='utf-8', newline='') as output:
+            writer = csv.writer(output, lineterminator='\n')
+            writer.writerow(FIELDS + ['numeric_decimal'])
+            for row, number in zip(rows, numbers):
+                writer.writerow([row[k] for k in FIELDS] + [format(number, 'f') if number is not None else ''])
+        with _connection([directory, path.parent]) as con:
+            con.execute('SET preserve_insertion_order = true')
+            fields = ', '.join(f'"{k}"' for k in FIELDS)
+            con.execute('CREATE TABLE cells AS SELECT ' + fields + f', CAST(numeric_decimal AS {decimal_type}) AS numeric_decimal '
+                        'FROM read_csv(?, header=true, auto_detect=false, columns=?, delim=\',\', quote=\'"\', escape=\'"\', '
+                        'force_not_null=?, nullstr=\'\', parallel=false, strict_mode=true)',
+                        [str(image), {k: 'VARCHAR' for k in FIELDS + ['numeric_decimal']}, FIELDS])
+            con.execute('COPY cells TO ? (FORMAT PARQUET, COMPRESSION ZSTD)', [str(path)])
+            actual = con.execute('FROM read_parquet(?, hive_partitioning=false)', [str(path)]).fetchall()
     _require(len(actual) == len(rows) and all(tuple(r[k] for k in FIELDS) + (n,) == record
              for r, n, record in zip(rows, numbers, actual)), 'Parquet round-trip differs from original')
 
@@ -308,6 +329,10 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
              and _sha(body) == source_manifest_sha256, 'Source manifest hash mismatch')
     manifest = _json(body)
     _common(manifest)
+    context = _profile_for_selection(manifest['selection'])
+    period = context['period']
+    part = f'parts/financial-cells-{period}.parquet'
+    outputs = (part, 'metadata/source-manifest.json', *(f'metadata/{n}' for n in COMPANIONS))
     bodies = _files(source, manifest.get('files'), INPUTS)
     metadata = _metadata(manifest, bodies)
     rows = _csv(bodies['financial-cells.csv'], FIELDS)
@@ -318,16 +343,16 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     destination.mkdir(parents=True, exist_ok=False)
     (destination / 'parts').mkdir()
     (destination / 'metadata').mkdir()
-    _write_part(rows, numbers, decimal_type, destination / PART)
+    _write_part(rows, numbers, decimal_type, destination / part)
     (destination / 'metadata/source-manifest.json').write_bytes(body)
     for name in COMPANIONS:
         (destination / 'metadata' / name).write_bytes(bodies[name])
     import duckdb
-    result = dict(contract=CONTRACT, accepted=True, selection=dict(SELECTION),
-                  created_utc=datetime.now(timezone.utc).isoformat(), adapter_version='1',
+    result = dict(contract=f'ifdata-financial-parquet-{period}-v1', accepted=True, selection=dict(context['selection']),
+                  created_utc=datetime.now(timezone.utc).isoformat(), adapter_version='3',
                   adapter_sha256=_sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
                   duckdb_version=duckdb.__version__, source_manifest_sha256=source_manifest_sha256,
-                  source_files=manifest['files'], files=[_entry(destination, n) for n in OUTPUTS],
+                  source_files=manifest['files'], files=[_entry(destination, n) for n in outputs],
                   original_fields=list(FIELDS), decimal_type=decimal_type, row_digest=_digest(rows),
                   presence_counts=dict(Counter(r['presence'] for r in rows)),
                   value_state_counts=dict(Counter(r['value_state'] for r in rows)),
@@ -349,14 +374,20 @@ def _open_snapshot(destination, expected_hash):
     _require(isinstance(expected_hash, str) and HASH.fullmatch(expected_hash) and _sha(body) == expected_hash,
              'Snapshot manifest hash mismatch')
     manifest = _json(body)
-    _require(isinstance(manifest, dict) and manifest.get('contract') == CONTRACT and manifest.get('accepted') is True
-             and _dump(manifest.get('selection')) == _dump(SELECTION) and manifest.get('original_fields') == FIELDS,
+    _require(isinstance(manifest, dict), 'Unknown snapshot contract/schema/selection')
+    context = _profile_for_selection(manifest.get('selection'))
+    period = context['period']
+    part = f'parts/financial-cells-{period}.parquet'
+    outputs = (part, 'metadata/source-manifest.json', *(f'metadata/{n}' for n in COMPANIONS))
+    _require(manifest.get('contract') == f'ifdata-financial-parquet-{period}-v1' and manifest.get('accepted') is True
+             and manifest.get('original_fields') == FIELDS,
              'Unknown snapshot contract/schema/selection')
-    bodies = _files(root, manifest.get('files'), OUTPUTS)
+    bodies = _files(root, manifest.get('files'), outputs)
     source_body = bodies['metadata/source-manifest.json']
     _require(_sha(source_body) == manifest.get('source_manifest_sha256'), 'Original manifest hash mismatch')
     source = _json(source_body)
     _common(source)
+    _require(_dump(source['selection']) == _dump(context['selection']), 'Source/snapshot selection mismatch')
     source_files = source.get('files')
     _require(isinstance(source_files, list) and len(source_files) == len(INPUTS)
              and _dump(source_files) == _dump(manifest.get('source_files')), 'Original file inventory mismatch')
@@ -381,7 +412,7 @@ def _open_snapshot(destination, expected_hash):
         # the materialized table. Scratch stays inside this project/checkout.
         with tempfile.TemporaryDirectory(prefix='financial-parquet-read-', dir=scratch) as directory:
             image = Path(directory) / 'verified.parquet'
-            image.write_bytes(bodies[PART])
+            image.write_bytes(bodies[part])
             con = _connection([directory])
             con.execute('CREATE TABLE financial_data AS FROM read_parquet(?, hive_partitioning=false)', [str(image)])
         description = con.execute('DESCRIBE financial_data').fetchall()
