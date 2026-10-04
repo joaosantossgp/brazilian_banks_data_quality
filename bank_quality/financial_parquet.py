@@ -9,6 +9,10 @@ import json
 import os
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import duckdb
 
 from .financial import CONTRACT as SOURCE_CONTRACT, FIELDS, PROFILE_PATH, ROLES, SELECTION
 from .inventory import classify
@@ -259,6 +263,22 @@ def _digest(rows):
     return _sha(body)
 
 
+def _check_original_csv(rows, source):
+    # This closed admission writes UTF-8 CSV, minimal quoting, LF, and FIELDS order.
+    # Reconstruct its exact bytes to validate a standalone Parquet against the
+    # accepted source hashes, even if an output digest was coherently rewritten.
+    entries = {entry['path']: entry for entry in source['files']}
+    for name, selected in (('financial-cells.csv', rows),
+                           ('financial-observations.csv', [r for r in rows if r['presence'] == 'stored'])):
+        output = io.StringIO(newline='')
+        writer = csv.DictWriter(output, fieldnames=FIELDS, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(selected)
+        body = output.getvalue().encode('utf-8')
+        _require(len(body) == entries[name]['bytes'] and _sha(body) == entries[name]['sha256'],
+                 'Rows differ from original admitted CSV: ' + name)
+
+
 def _entry(root, name):
     body = _path(root, name).read_bytes()
     return dict(path=name, bytes=len(body), sha256=_sha(body))
@@ -293,6 +313,7 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     numbers, decimal_type, counts = _rows(manifest, rows, metadata)
     observed = _csv(bodies['financial-observations.csv'], FIELDS)
     _require(observed == [r for r in rows if r['presence'] == 'stored'], 'Observation projection differs from stored cells')
+    _check_original_csv(rows, manifest)
     destination.mkdir(parents=True, exist_ok=False)
     (destination / 'parts').mkdir()
     (destination / 'metadata').mkdir()
@@ -319,3 +340,85 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     os.link(pending, destination / 'manifest.json')
     pending.unlink()
     return {**result, 'manifest_sha256': _sha(output)}
+
+
+def _open_snapshot(destination, expected_hash):
+    root = Path(destination).resolve()
+    body = (root / 'manifest.json').read_bytes()
+    _require(isinstance(expected_hash, str) and HASH.fullmatch(expected_hash) and _sha(body) == expected_hash,
+             'Snapshot manifest hash mismatch')
+    manifest = _json(body)
+    _require(isinstance(manifest, dict) and manifest.get('contract') == CONTRACT and manifest.get('accepted') is True
+             and _dump(manifest.get('selection')) == _dump(SELECTION) and manifest.get('original_fields') == FIELDS,
+             'Unknown snapshot contract/schema/selection')
+    bodies = _files(root, manifest.get('files'), OUTPUTS)
+    source_body = bodies['metadata/source-manifest.json']
+    _require(_sha(source_body) == manifest.get('source_manifest_sha256'), 'Original manifest hash mismatch')
+    source = _json(source_body)
+    _common(source)
+    source_files = source.get('files')
+    _require(isinstance(source_files, list) and len(source_files) == len(INPUTS)
+             and _dump(source_files) == _dump(manifest.get('source_files')), 'Original file inventory mismatch')
+    entries = {}
+    for entry in source_files:
+        _require(isinstance(entry, dict) and set(entry) == {'path', 'bytes', 'sha256'}
+                 and isinstance(entry['path'], str) and entry['path'] in INPUTS and entry['path'] not in entries
+                 and type(entry['bytes']) is int and entry['bytes'] >= 0
+                 and isinstance(entry['sha256'], str) and HASH.fullmatch(entry['sha256']), 'Invalid original file entry')
+        entries[entry['path']] = entry
+    companions = {name: bodies[f'metadata/{name}'] for name in COMPANIONS}
+    for name, content in companions.items():
+        _require(len(content) == entries[name]['bytes'] and _sha(content) == entries[name]['sha256'],
+                 'Complement differs from admitted source: ' + name)
+    metadata = _metadata(source, companions)
+    con = _connection([root / 'parts'])
+    try:
+        # Freeze one explicit file in memory before checking: subsequent queries
+        # never re-open a replaced file, nor select an incidental/globbed part.
+        con.execute('CREATE TABLE financial_data AS FROM read_parquet(?, hive_partitioning=false)',
+                    [str(_path(root, PART))])
+        description = con.execute('DESCRIBE financial_data').fetchall()
+        _require([c[0] for c in description] == FIELDS + ['numeric_decimal']
+                 and all(c[1] == 'VARCHAR' for c in description[:-1]), 'Parquet original schema mismatch')
+        records = con.execute('FROM financial_data').fetchall()
+        rows = [dict(zip(FIELDS, record[:len(FIELDS)])) for record in records]
+        numbers, decimal_type, counts = _rows(source, rows, metadata)
+        _check_original_csv(rows, source)
+        _require(description[-1][1] == decimal_type == manifest.get('decimal_type'), 'Parquet Decimal schema mismatch')
+        _require(all(number == record[-1] for number, record in zip(numbers, records)), 'Parquet Decimal values mismatch')
+        _require(all(type(manifest.get(k)) is int and manifest[k] == v for k, v in counts.items())
+                 and manifest.get('row_digest') == _digest(rows)
+                 and manifest.get('presence_counts') == dict(Counter(r['presence'] for r in rows))
+                 and manifest.get('value_state_counts') == dict(Counter(r['value_state'] for r in rows))
+                 and manifest.get('limitations') == source['limitations'], 'Snapshot counts/digest/limits mismatch')
+    except Exception:
+        con.close()
+        raise
+    return con, manifest, metadata
+
+
+def validate_snapshot(destination: Path, *, manifest_sha256: str) -> dict:
+    con, manifest, _ = _open_snapshot(destination, manifest_sha256)
+    con.close()
+    return {**manifest, 'manifest_sha256': manifest_sha256}
+
+
+def snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.DuckDBPyConnection':
+    """Open a validated, in-memory financial snapshot. Caller closes the connection."""
+    con, manifest, metadata = _open_snapshot(destination, manifest_sha256)
+    try:
+        cadastro = metadata[1]
+        con.execute('CREATE TABLE occurrences (institution_id VARCHAR, entity_locator VARCHAR)')
+        con.execute('INSERT INTO occurrences SELECT unnest(?), unnest(?)',
+                    [[r['c0'] for r in cadastro], [r['source_pointer'] for r in cadastro]])
+        con.execute('CREATE TABLE snapshot_identity (snapshot_id VARCHAR, source_snapshot_id VARCHAR)')
+        con.execute('INSERT INTO snapshot_identity VALUES (?, ?)',
+                    [manifest_sha256, manifest['source_manifest_sha256']])
+        con.execute("CREATE VIEW financial_cells AS SELECT d.*, i.snapshot_id, i.source_snapshot_id, "
+                    "o.entity_locator, d.catalog_pointer AS binding_locator, 'single' AS cell_locator "
+                    'FROM financial_data d JOIN occurrences o USING (institution_id) CROSS JOIN snapshot_identity i')
+        con.execute("CREATE VIEW financial_observations AS SELECT * FROM financial_cells WHERE presence='stored'")
+    except Exception:
+        con.close()
+        raise
+    return con

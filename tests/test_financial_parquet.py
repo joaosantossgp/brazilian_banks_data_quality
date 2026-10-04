@@ -7,6 +7,9 @@ from decimal import Decimal
 import hashlib
 import io
 import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,7 +17,7 @@ from unittest.mock import patch
 
 from bank_quality.financial import CONTRACT as SOURCE_CONTRACT, FIELDS, PROFILE_PATH, SELECTION
 from bank_quality.inventory import classify
-from bank_quality.financial_parquet import convert_financial
+from bank_quality.financial_parquet import convert_financial, snapshot_connection, validate_snapshot
 
 
 def sha(body):
@@ -254,6 +257,147 @@ class FinancialParquetTests(unittest.TestCase):
         self.rehash_manifest()
         with self.assertRaises(ValueError):
             self.convert()
+
+    def rewrite_output(self):
+        path = self.target / 'manifest.json'
+        manifest = json.loads(path.read_bytes())
+        for entry in manifest['files']:
+            body = (self.target / entry['path']).read_bytes()
+            entry.update(bytes=len(body), sha256=sha(body))
+        path.write_bytes(json_bytes(manifest))
+        return sha(path.read_bytes())
+
+    def test_snapshot_views(self):
+        result = self.convert()
+        expected_hash = result['manifest_sha256']
+        validated = validate_snapshot(self.target, manifest_sha256=expected_hash)
+        self.assertEqual(validated['cells'], 24)
+        with snapshot_connection(self.target, manifest_sha256=expected_hash) as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM financial_cells').fetchone()[0], 24)
+            self.assertEqual(con.execute('SELECT count(*) FROM financial_observations').fetchone()[0], 17)
+            self.assertEqual(con.execute('SELECT count(DISTINCT (snapshot_id,entity_locator,binding_locator,cell_locator)) FROM financial_cells').fetchone()[0], 24)
+            self.assertEqual(con.execute('SELECT DISTINCT snapshot_id FROM financial_cells').fetchall(), [(expected_hash,)])
+            self.assertEqual(con.execute("SELECT DISTINCT entity_locator FROM financial_cells WHERE institution_id='11111'").fetchall(), [('/0',)])
+            self.assertEqual(con.execute("SELECT DISTINCT lid,window_start,window_end FROM financial_cells WHERE ifd='79718'").fetchall(), [('78187', '2024-07-01', '2024-12-31')])
+            self.assertEqual(con.execute("SELECT count(*) FROM financial_cells WHERE institution_id='33333'").fetchone()[0], 8)
+            self.assertEqual(con.execute("SELECT numeric_decimal FROM financial_cells WHERE raw_value='-0.00'").fetchone()[0], Decimal(0))
+            self.assertIsNone(con.execute("SELECT numeric_decimal FROM financial_cells WHERE value_state='NA_percent'").fetchone()[0])
+
+    def test_explicit_snapshot_and_tampering(self):
+        result = self.convert()
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256='0' * 64)
+        (self.target / 'parts/incidental.parquet').write_bytes(b'not a parquet file')
+        self.assertEqual(validate_snapshot(self.target, manifest_sha256=result['manifest_sha256'])['cells'], 24)
+        path = self.target / 'metadata/financial-cadastro.csv'
+        original = path.read_bytes()
+        path.write_bytes(original.replace(b'11111', b'99999'))
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256=result['manifest_sha256'])
+        changed_hash = self.rewrite_output()
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256=changed_hash)
+
+    def test_self_contained_and_stable_connection(self):
+        result = self.convert()
+        moved = self.root / 'moved'
+        shutil.copytree(self.target, moved)
+        shutil.rmtree(self.source)
+        with snapshot_connection(moved, manifest_sha256=result['manifest_sha256']) as con:
+            (moved / 'parts/financial-cells-202412.parquet').write_bytes(b'replaced after validation')
+            self.assertEqual(con.execute('SELECT count(*) FROM financial_observations').fetchone()[0], 17)
+
+    def test_snapshot_manifest_semantic_guards(self):
+        self.convert()
+        path = self.target / 'manifest.json'
+        original = path.read_bytes()
+        for key, value in [('decimal_type', 'DECIMAL(18,3)'), ('cells', 1), ('row_digest', '0'*64),
+                           ('selection', {'period': 202503, 'perspective': 1005, 'report': 92}),
+                           ('original_fields', FIELDS[:-1])]:
+            with self.subTest(key=key):
+                doc = json.loads(original)
+                doc[key] = value
+                body = json_bytes(doc)
+                path.write_bytes(body)
+                with self.assertRaises(ValueError):
+                    validate_snapshot(self.target, manifest_sha256=sha(body))
+
+    def test_parquet_schema_and_decimal_tampering(self):
+        import duckdb
+        self.convert()
+        part = self.target / 'parts/financial-cells-202412.parquet'
+        with duckdb.connect(':memory:') as con:
+            con.execute('CREATE TABLE edited AS FROM read_parquet(?)', [str(part)])
+            con.execute('UPDATE edited SET numeric_decimal=1 WHERE raw_value=?', ['9007199254740993.0100'])
+            con.execute('COPY edited TO ? (FORMAT PARQUET)', [str(part)])
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256=self.rewrite_output())
+
+    def test_cli(self):
+        script = Path(__file__).resolve().parents[1] / 'scripts/convert-financial.py'
+        cmd = [sys.executable, '-B', str(script), '--source', str(self.source),
+               '--source-manifest-sha256', self.expected_hash, '--output', str(self.target)]
+        result = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value['observations'], 17)
+        self.assertEqual(value['manifest_sha256'], sha((self.target / 'manifest.json').read_bytes()))
+        again = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(again.returncode, 2)
+        self.assertIn('failed', again.stderr)
+
+    def test_changed_tokens_cannot_claim_original_csv(self):
+        import duckdb
+        self.convert()
+        part = self.target / 'parts/financial-cells-202412.parquet'
+        with duckdb.connect(':memory:') as con:
+            con.execute('CREATE TABLE edited AS FROM read_parquet(?)', [str(part)])
+            con.execute("UPDATE edited SET raw_value='9007199254740994.0100', numeric_value='9007199254740994.0100', "
+                        "numeric_decimal=CAST('9007199254740994.0100' AS DECIMAL(35,19)) WHERE raw_value='9007199254740993.0100'")
+            records = con.execute('FROM edited').fetchall()
+            con.execute('COPY edited TO ? (FORMAT PARQUET)', [str(part)])
+        manifest_path = self.target / 'manifest.json'
+        doc = json.loads(manifest_path.read_bytes())
+        doc['row_digest'] = sha(json.dumps([list(r[:len(FIELDS)]) for r in records], ensure_ascii=False,
+                                          separators=(',', ':')).encode())
+        manifest_path.write_bytes(json_bytes(doc))
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256=self.rewrite_output())
+
+    def test_missing_input_and_wrong_header(self):
+        path = self.source / 'financial-cells.csv'
+        body = path.read_bytes().replace(b'contract,', b'wrong,', 1)
+        path.write_bytes(body)
+        entry = next(f for f in self.manifest['files'] if f['path'] == path.name)
+        entry.update(bytes=len(body), sha256=sha(body))
+        self.rehash_manifest()
+        with self.assertRaises(ValueError):
+            self.convert()
+        self.flush()
+        path.unlink()
+        with self.assertRaises(OSError):
+            self.convert()
+        self.assertFalse(self.target.exists())
+
+    def test_partial_snapshot_is_not_accepted(self):
+        with patch('bank_quality.financial_parquet.os.link', side_effect=OSError('interrupted')):
+            with self.assertRaises(OSError):
+                self.convert()
+        with self.assertRaises(OSError):
+            validate_snapshot(self.target, manifest_sha256='0' * 64)
+
+    def test_schema_never_promotes_to_float(self):
+        import duckdb
+        self.convert()
+        part = self.target / 'parts/financial-cells-202412.parquet'
+        with duckdb.connect(':memory:') as con:
+            con.execute('CREATE TABLE edited AS SELECT * EXCLUDE(numeric_decimal), '
+                        'CAST(numeric_decimal AS DOUBLE) AS numeric_decimal FROM read_parquet(?)', [str(part)])
+            con.execute('COPY edited TO ? (FORMAT PARQUET)', [str(part)])
+        with self.assertRaises(ValueError):
+            validate_snapshot(self.target, manifest_sha256=self.rewrite_output())
+
+    def test_changed_definition_rejected(self):
         self.variables[0]['definition']['n'] = 'Altered'
         self.flush()
         with self.assertRaises(ValueError):
