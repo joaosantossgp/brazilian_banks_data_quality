@@ -9,6 +9,7 @@ Checkout no computador autorizado, na raiz deste repositório. A fundação e o 
 ## Entradas e contrato único
 
 - [Arquitetura atual, alvo e contratos](docs/architecture.md)
+- [Modelo lógico proposto da base IF.data](docs/superpowers/specs/2026-10-04-logical-data-model-design.md), com ER SVG/PNG; aguarda revisão de João antes de implementação.
 - [Glossário de domínio](GLOSSARY.md) e [entrada operacional dos agentes](AGENTS.md)
 - [Spec aprovada da fundação](docs/superpowers/specs/2026-10-02-governance-research-design.md) e [plano autorizado](docs/superpowers/plans/2026-10-02-governance-foundation-plan.md)
 - [Tracker: tarefa, aceite e estado de publicação](docs/agents/issue-tracker.md)
