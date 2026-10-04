@@ -35,7 +35,7 @@ Conferidos261arquivos protegidos distintos, incluindo fontes/corpos e entregas a
 
 ## Capacidade, interrupção e repetição
 
-Primeira admissão real passou. Conversão inicial interrompida pela guarda em3,734s: orçamento805306368bytes (768MiB), agregadoWS807301120/commit799186944. Pasta original `data/curated/financial-four-reports-202503-20261004/` foi preservada vazia/semmanifest deaceite; não houve Parquet aceito nesse run. Recibos e diagnóstico permanecem privados.
+Primeira admissão real passou. Conversão inicial interrompida pela guarda em3,734s: orçamento805306368bytes (768MiB), agregadoWS807301120/commit799186944. Na conferência física final, o destino original `data/curated/financial-four-reports-202503-20261004/` e seu manifest estão ausentes; não houve Parquet aceito nesse run. Os recibos da interrupção foram preservados. A primeira anotação privada inferiu incorretamente pasta vazia de uma listagem sem resultados; o erratum registra essa correção. O código reserva o destino após a validação, mas os recibos não observam o instante preciso da interrupção ou existência anterior da pasta. Recibos e diagnóstico permanecem privados.
 
 O baseline integral202412 já alcançava commit798703616 sob esse teto; os dois CSVs cresceram157421180→199976844bytes (+27%) e a grade159264→203775 (+28%). Root escolheu medir sob teto máximo já previsto1,25GiB, limitado ao livre atual−256MiB; floor768MiB para conversão/abertura, floor512MiB e teto768MiB para admissão. Revisão independente do ajuste PASS antes do run2. Nenhuma mudança de código ou novo teste artificial de configuração; monitor tinha3checks de limite/memória/sucesso PASS.
 
