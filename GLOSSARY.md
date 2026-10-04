@@ -36,3 +36,13 @@ The shared language for the IF.data pilot and the capital aberto thesis.
 **Financial conglomerate**: The IF.data financial consolidation perspective, whose perimeter is defined by the BCB for each reference date. It differs from the prudential perspective and does not establish identity with a listed issuer or holding.
 
 **Prudential conglomerate**: The IF.data consolidation perspective with a prudential perimeter that can include entities outside the financial conglomerate. Its scope and historical availability must be assessed by reference date; it is not interchangeable with an individual institution or financial conglomerate.
+
+**Reporting occurrence**: The representation of a reporting unit in a particular source perspective and reference, with its observed identifier and attributes. It does not establish identity with another period, perspective or listed issuer.
+
+**Report variable binding**: The association between a position in an observed report and its source definition, identifiers, unit and reporting window. Equal labels or identifiers in different structures do not establish conceptual equivalence.
+
+**Recovered publication set**: The source recoveries used together to interpret a specified reference, perspective and report. Their retrieval times may differ and do not establish a joint source vintage.
+
+**Source revision**: A newly recovered version of previously published source material, retained alongside the earlier version. A difference in source bytes alone does not establish an economic change.
+
+**Analytical cut**: A documented selection of references, reporting units, perspectives and source versions for a particular analytical purpose. Its eligibility and comparability rules are separate from the official observations.

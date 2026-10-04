@@ -50,6 +50,8 @@ Corpos/manifests e índices locais → verificação de integridade → inventá
 
 ## Base alvo, ainda não implementada
 
+O [modelo lógico proposto](superpowers/specs/2026-10-04-logical-data-model-design.md), preparado na [Issue 27](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/27), consolida grão, chaves, fontes/revisões, ocorrências/bindings/células, metadados temporais e recortes. É uma **especificação para revisão de João**, com [ER em SVG](agents/assets/logical-data-model.svg) e [PNG](agents/assets/logical-data-model.png); não é schema implantado nem aprovação de novos joins, coleta, migração ou método. Implementações futuras devem aguardar aprovação da spec e plano próprio. O ADR 0001 continua a decisão de armazenamento vigente.
+
 A camada de análise local foi decidida e implementada inicialmente sobre o piloto existente: [DuckDB + Parquet](adr/0001-duckdb-parquet.md), com [contrato offline](superpowers/specs/2026-10-03-offline-parquet-design.md) e [medidas/limites](engineering/offline-parquet-20261003.md). `parquet.py` captura os sete arquivos do inventário, preserva as colunas originais e os complementos, acrescenta DECIMAL após perfil e grava Parquet comprimido por referência. Um coordenador reserva o destino; manifesto escrito por último aceita o conjunto. Falha mantém arquivos para diagnóstico sem aceite; reuso verifica conteúdo e hashes. Consultas abrem a lista explícita do snapshot em DuckDB em memória. Essa implementação não estende a aquisição histórica nem define o modelo econômico final.
 
 Aquisição IF.data → bruto imutável/versionado → inventários por referência/perspectiva/relatório → metadados temporais CVM/B3 e vínculos comprovados → recortes documentados para monografia e outros projetos.

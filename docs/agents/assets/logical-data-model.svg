@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="logical-model-title logical-model-desc" id="logical-data-model-root">
+<title id="logical-model-title">Modelo lógico proposto da base IF.data</title>
+<desc id="logical-model-desc">Sete entidades lógicas: captura, membro de fonte, snapshot, ocorrência de entidade, binding de variável, célula e origem. O snapshot delimita o conjunto recuperado; células pertencem a uma ocorrência e binding compatíveis; origens referenciam membros de fonte. Este é desenho para revisão, sem tabelas implantadas ou identidade econômica universal.</desc>
+<defs>
+      <style>#logical-data-model-root { color: #2d3142; font-family: 'Geist','Segoe UI',Arial,sans-serif; }
+      #logical-data-model-root .diagram-container { width:100%; overflow-x:auto; }
+      #logical-data-model-root .diagram-container { overflow-x:visible; }
+      #logical-data-model-root text { fill:#2d3142; font-family:'Geist','Segoe UI',Arial,sans-serif; }
+      #logical-data-model-root .title { font-family:'Instrument Serif',Georgia,serif; font-size:28px; }
+      #logical-data-model-root .name { font-size:14px; font-weight:600; }
+      #logical-data-model-root .mono { font-family:'Geist Mono',Consolas,monospace; font-size:9px; }
+      #logical-data-model-root .tag { font-family:'Geist Mono',Consolas,monospace; font-size:8px; fill:#4f5d75; }
+      #logical-data-model-root .note { font-size:11px; fill:#4f5d75; }
+      #logical-data-model-root .cardinality { font-family:'Geist Mono',Consolas,monospace; font-size:8px; fill:#4f5d75; }
+      #logical-data-model-root .edge { fill:none; stroke:#4f5d75; stroke-width:1.3; }</style>
+<marker id="logical-data-model-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+<marker id="logical-data-model-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+<marker id="logical-data-model-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker>
+</defs>
+<rect width="1280" height="720" fill="#f5f5f5"/>
+<text class="tag" x="80" y="48">PROPOSTA · ISSUE 27 · 04 OUT 2026</text>
+<text class="title" x="80" y="88">Modelo lógico da base IF.data</text>
+<text class="note" x="80" y="116">Versões e fontes explícitas; identidade entre períodos e perspectivas depende de evidência.</text>
+
+<path class="edge" data-edge="capture-member" data-from="capture" data-to="membership" d="M320 230 H440"/>
+<path class="edge" data-edge="snapshot-member" data-from="snapshot" data-to="membership" d="M800 230 H680"/>
+<path class="edge" data-edge="snapshot-entity" data-from="snapshot" data-to="entity" d="M880 300 V336 Q880 344 872 344 H208 Q200 344 200 352 V376"/>
+<path class="edge" data-edge="snapshot-binding" data-from="snapshot" data-to="binding" d="M960 300 V376"/>
+<path class="edge" data-edge="entity-cell" data-from="entity" data-to="cell" d="M320 446 H440"/>
+<path class="edge" data-edge="binding-cell" data-from="binding" data-to="cell" d="M800 446 H680"/>
+<path class="edge" data-edge="cell-origin" data-from="cell" data-to="origin" d="M560 516 V576"/>
+<path class="edge" data-edge="member-origin" data-from="membership" data-to="origin" d="M632 300 V320 Q632 328 640 328 H728 Q736 328 736 336 Q744 344 736 352 V438 Q744 446 736 454 V616 Q736 624 728 624 H680"/>
+<g data-label="cardinality"><rect x="330" y="207" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="332" y="216">1</text></g>
+<g data-label="cardinality"><rect x="406" y="207" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="408" y="216">0..N</text></g>
+<g data-label="cardinality"><rect x="690" y="207" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="692" y="216">1..N</text></g>
+<g data-label="cardinality"><rect x="754" y="207" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="756" y="216">1</text></g>
+<g data-label="cardinality"><rect x="890" y="307" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="892" y="316">1</text></g>
+<g data-label="cardinality"><rect x="210" y="355" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="212" y="364">0..N</text></g>
+<g data-label="cardinality"><rect x="970" y="307" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="972" y="316">1</text></g>
+<g data-label="cardinality"><rect x="970" y="355" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="972" y="364">0..N</text></g>
+<g data-label="cardinality"><rect x="330" y="423" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="332" y="432">1</text></g>
+<g data-label="cardinality"><rect x="406" y="423" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="408" y="432">0..N</text></g>
+<g data-label="cardinality"><rect x="690" y="423" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="692" y="432">0..N</text></g>
+<g data-label="cardinality"><rect x="754" y="423" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="756" y="432">1</text></g>
+<g data-label="cardinality"><rect x="570" y="527" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="572" y="536">1</text></g>
+<g data-label="cardinality"><rect x="570" y="555" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="572" y="564">1..N</text></g>
+<g data-label="cardinality"><rect x="642" y="303" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="644" y="312">1</text></g>
+<g data-label="cardinality"><rect x="690" y="601" width="28" height="12" fill="#f5f5f5"/><text class="cardinality" x="692" y="610">0..N</text></g>
+<g data-node="capture" data-box="80 160 240 140">
+<rect x="80" y="160" width="240" height="140" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="96" y="186">Captura arquivada</text>
+<text class="tag" x="96" y="203">source_capture</text>
+<line x1="80" y1="212" x2="320" y2="212" stroke="#bfc0c0"/>
+<text class="mono" x="96" y="230"># capture_id</text>
+<text class="mono" x="96" y="246">body_sha256 / URL / UTC</text>
+<text class="mono" x="96" y="262">status e contexto original</text>
+</g>
+<g data-node="membership" data-box="440 160 240 140">
+<rect x="440" y="160" width="240" height="140" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="456" y="186">Membro de fonte</text>
+<text class="tag" x="456" y="203">source_membership</text>
+<line x1="440" y1="212" x2="680" y2="212" stroke="#bfc0c0"/>
+<text class="mono" x="456" y="230"># snapshot_id + role + ordinal</text>
+<text class="mono" x="456" y="246">→ capture_id</text>
+<text class="mono" x="456" y="262">papel no conjunto recuperado</text>
+</g>
+<g data-node="snapshot" data-box="800 160 240 140">
+<rect x="800" y="160" width="240" height="140" rx="6" fill="#f4eee9" stroke="#eb6c36"/>
+<text class="name" x="816" y="186">Snapshot aceito</text>
+<text class="tag" x="816" y="203">snapshot</text>
+<line x1="800" y1="212" x2="1040" y2="212" stroke="#bfc0c0"/>
+<text class="mono" x="816" y="230"># snapshot_id</text>
+<text class="mono" x="816" y="246">seleção / contrato / perfil</text>
+<text class="mono" x="816" y="262">arquivos e versões explícitos</text>
+</g>
+<g data-node="entity" data-box="80 376 240 140">
+<rect x="80" y="376" width="240" height="140" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="96" y="402">Ocorrência de entidade</text>
+<text class="tag" x="96" y="419">entity_occurrence</text>
+<line x1="80" y1="428" x2="320" y2="428" stroke="#bfc0c0"/>
+<text class="mono" x="96" y="446"># snapshot_id + entity_locator</text>
+<text class="mono" x="96" y="462">código e namespace observados</text>
+<text class="mono" x="96" y="478">referência / perspectiva</text>
+</g>
+<g data-node="cell" data-box="440 376 240 140">
+<rect x="440" y="376" width="240" height="140" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="456" y="402">Célula</text>
+<text class="tag" x="456" y="419">cell</text>
+<line x1="440" y1="428" x2="680" y2="428" stroke="#bfc0c0"/>
+<text class="mono" x="456" y="446"># snapshot + ocorrência + binding</text>
+<text class="mono" x="456" y="462">+ cell_locator definido pelo perfil</text>
+<text class="mono" x="456" y="478">presença / estado / token / Decimal</text>
+</g>
+<g data-node="binding" data-box="800 376 240 140">
+<rect x="800" y="376" width="240" height="140" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="816" y="402">Binding de variável</text>
+<text class="tag" x="816" y="419">variable_binding</text>
+<line x1="800" y1="428" x2="1040" y2="428" stroke="#bfc0c0"/>
+<text class="mono" x="816" y="446"># snapshot_id + binding_locator</text>
+<text class="mono" x="816" y="462">definição e IDs oficiais</text>
+<text class="mono" x="816" y="478">unidade / janela / perímetro</text>
+</g>
+<g data-node="origin" data-box="440 576 240 96">
+<rect x="440" y="576" width="240" height="96" rx="6" fill="#f5f5f5" stroke="#bfc0c0"/>
+<text class="name" x="456" y="602">Origem da célula</text>
+<text class="tag" x="456" y="619">cell_origin</text>
+<line x1="440" y1="628" x2="680" y2="628" stroke="#bfc0c0"/>
+<text class="mono" x="456" y="646">→ chave da célula / membro</text>
+<text class="mono" x="456" y="662"># evidence_kind + locator</text>
+</g>
+<text class="note" x="80" y="584">Observações: células armazenadas.</text>
+<text class="note" x="80" y="604">Cobertura: grade definida pelo perfil.</text>
+<text class="note" x="800" y="584">CVM/B3 e recortes analíticos:</text>
+<text class="note" x="800" y="604">camada temporal descrita na spec.</text>
+<text class="tag" x="80" y="704">1 / N = CARDINALIDADE · CAIXAS LÓGICAS, NÃO TABELAS IMPLANTADAS · PADRÃO CLARO</text>
+</svg>
