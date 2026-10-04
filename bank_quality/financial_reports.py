@@ -1,4 +1,4 @@
-"""Closed offline admission of the four native financial reports in 202412.
+"""Closed offline admission of the four native financial reports in202412/202503.
 
 The installed profile is trusted metadata. An index selects only local archived
 manifests; it cannot select a profile, period, perspective or report subset.
@@ -23,6 +23,7 @@ INDEX_CONTRACT = 'ifdata-financial-reports-sources-v1'
 PROFILE_CONTRACT = 'ifdata-financial-reports-profile-202412-v1'
 SELECTION = {'period': 202412, 'perspective': 1005, 'reports': [92, 96, 101, 98]}
 PROFILE_PATH = Path(__file__).with_name('financial-reports-profile-202412.json')
+PROFILE_202503_PATH = Path(__file__).with_name('financial-reports-profile-202503.json')
 FIELDS = legacy.FIELDS
 ROLES = legacy.ROLES
 INPUTS = ('financial-observations.csv', 'financial-cells.csv', 'financial-cadastro.csv',
@@ -77,17 +78,39 @@ def _walk(columns, base, parent=None):
         yield from _walk(column['sc'], pointer + '/sc', pointer)
 
 
-def _context():
+def _annotations(kind, flow):
+    """Closed202503 interpretation; native definitions/formulas remain opaque."""
+    return {'unit': '' if kind == 'group' else 'BRL_raw_inferred' if kind == 'money' else 'count' if kind == 'quantity' else 'text',
+            'unit_basis': '' if kind == 'group' else 'archived_formatter_divides_by_1000' if kind == 'money' else 'cadaster_definition',
+            'window_start': '2025-01-01' if flow else '',
+            'window_end': '' if kind == 'group' else '2025-03-31',
+            'window_basis': '' if kind == 'group' else 'report_rp_result_window' if flow else 'stock_at_reference_inferred' if kind == 'money' else 'cadaster_reference'}
+
+
+def _context(selection=None):
     """Load the installed closed profile without mutable legacy globals."""
-    body = PROFILE_PATH.read_bytes()
+    selection = copy.deepcopy(SELECTION if selection is None else selection)
+    _require(isinstance(selection, dict) and type(selection.get('period')) is int
+             and selection['period'] in (202412, 202503), 'Wrong closed financial selection')
+    period = selection['period']
+    expected = {'period': period, 'perspective': 1005,
+                'reports': [92, 96, 101, 98] if period == 202412 else [119, 107, 110, 118]}
+    _same(selection, expected, 'Wrong closed financial selection')
+    contract = f'ifdata-financial-reports-snapshot-{period}-v1'
+    envelope = {'contract': contract, 'period': period, 'perspective': 'financial', 'perspective_id': 1005}
+    limitations = list(LIMITATIONS)
+    if period == 202503:
+        limitations[1] = 'Raw BRL unit and stock window are inferred; income is January-March, not annual.'
+        limitations[-1] = 'No historical, prudential, individual or cross-regime 2024/2025 equivalence is certified.'
+    body = (PROFILE_PATH if period == 202412 else PROFILE_202503_PATH).read_bytes()
     profile = _json(body)
-    _require(isinstance(profile, dict) and profile.get('contract') == PROFILE_CONTRACT,
+    _require(isinstance(profile, dict) and profile.get('contract') == f'ifdata-financial-reports-profile-{period}-v1',
              'Invalid installed four-report profile')
-    _same(profile.get('selection'), SELECTION, 'Invalid installed profile selection')
+    _same(profile.get('selection'), expected, 'Invalid installed profile selection')
     _require(profile.get('cadaster_fields') == 38 and set(profile.get('source_pins', {})) == ROLES,
              'Incomplete installed profile')
     reports = profile.get('reports')
-    _require(isinstance(reports, list) and [r['report']['id'] for r in reports] == SELECTION['reports'],
+    _require(isinstance(reports, list) and _canonical([r['report']['id'] for r in reports]) == _canonical(expected['reports']),
              'Invalid installed report membership')
     for item in reports:
         report, nodes, pointer = item['report'], item['nodes'], item['catalog_pointer']
@@ -99,10 +122,10 @@ def _context():
         for (column, ptr, parent), node in zip(columns, nodes):
             _require(column['id'] not in ids, 'Duplicate report column identifier')
             ids.add(column['id'])
-            expected = {'report_id': report['id'], 'column_id': column['id'], 'ifd': column['ifd'],
+            binding_expected = {'report_id': report['id'], 'column_id': column['id'], 'ifd': column['ifd'],
                         'fid': column['fid'], 'catalog_pointer': ptr, 'parent_pointer': parent,
                         'children_pointers': [ptr + '/sc/' + str(n) for n in range(len(column['sc']))]}
-            _require(all(_canonical(node.get(k)) == _canonical(v) for k, v in expected.items()),
+            _require(all(_canonical(node.get(k)) == _canonical(v) for k, v in binding_expected.items()),
                      'Installed binding differs from report tree')
             definition = node['definition']
             for key, source in (('ifd', 'id'), ('td', 'td'), ('area', 'a'), ('lid', 'lid')):
@@ -115,7 +138,17 @@ def _context():
                          and 0 <= node['lid'] < 38)
                      or (not group and node['kind'] == 'money' and node['td'] == 3 and node['lid'] >= 0),
                      'Unsupported installed binding origin')
-    return {'period': 202412, 'profile': profile, 'profile_body': body,
+            if period == 202503:
+                kind = 'group' if group else 'money' if node['td'] == 3 else 'quantity' if column['fid'] == 2 else 'attribute'
+                _require(node['kind'] == kind, 'Invalid installed kind annotation')
+                flow = kind == 'money' and (report['id'] == 118 or report['id'] == 119 and node['ifd'] == 79859)
+                annotations = _annotations(kind, flow)
+                _same({k: node.get(k) for k in annotations}, annotations, 'Invalid installed unit/window annotations')
+    return {'period': period, 'selection': expected, 'contract': contract, 'envelope': envelope,
+            'part': f'parts/financial-cells-{period}.parquet',
+            'parquet_contract': f'ifdata-financial-reports-parquet-{period}-v1',
+            'catalog_prefix': f'ifdata/{period}/' if period == 202412 else 'ifdata_2025_2030//202503/',
+            'limitations': limitations, 'profile': profile, 'profile_body': body,
             'profile_sha256': _sha(body.replace(b'\r\n', b'\n'))}
 
 
@@ -138,18 +171,18 @@ def _check_sources(sources, context):
 def _variables(context):
     reports = context['profile']['reports']
     nodes = [node for item in reports for node in item['nodes']]
-    return {**ENVELOPE, 'selection': copy.deepcopy(SELECTION), 'reports': [
+    return {**context['envelope'], 'selection': copy.deepcopy(context['selection']), 'reports': [
         {'report': item['report'], 'catalog_pointer': item['catalog_pointer']} for item in reports],
         'nodes': nodes, 'variables': [node for node in nodes if node['kind'] != 'group']}
 
 
-def _cadaster(cadastro):
+def _cadaster(cadastro, context):
     _require(isinstance(cadastro, list) and cadastro, 'Empty or missing financial cadaster')
     seen = set()
     for row in cadastro:
         _require(isinstance(row, dict) and set(row) == {f'c{i}' for i in range(38)}
                  and all(type(v) is str for v in row.values()), 'Unexpected native38 cadaster schema')
-        _require(row['c1'] == '202412' and row['c0'] and row['c0'] not in seen,
+        _require(row['c1'] == str(context['period']) and row['c0'] and row['c0'] not in seen,
                  'Wrong reference, empty or duplicate opaque cadaster identifier')
         seen.add(row['c0'])
 
@@ -172,9 +205,9 @@ def _value(value, kind):
     return raw, source_kind, state, number
 
 
-def _base(node, report, code, sources):
+def _base(node, report, code, sources, context):
     role = 'numeric' if node['kind'] == 'money' else 'cadaster'
-    return {**ENVELOPE, 'report_id': report['id'], 'institution_id': code,
+    return {**context['envelope'], 'report_id': report['id'], 'institution_id': code,
             **{k: node[k] for k in BIND_FIELDS}, 'variable': node['name'],
             'source_role': role, 'source_body': sources[role]['body_path'],
             'source_sha256': sources[role]['sha256'], 'report_generation': report.get('ge', ''),
@@ -183,7 +216,7 @@ def _base(node, report, code, sources):
             'report_version_state': 'reported_text' if report.get('v') else 'unknown'}
 
 
-def _diagnostics(cadastro, variables, cells):
+def _diagnostics(cadastro, variables, cells, context):
     coverage = []
     offset = 0
     for node in variables:
@@ -196,8 +229,8 @@ def _diagnostics(cadastro, variables, cells):
         coverage.append({'report_id': node['report_id'], 'catalog_pointer': node['catalog_pointer'],
                          'ifd': node['ifd'], 'lid': node['lid'], 'td': node['td'],
                          'denominator_cadaster_records': len(cadastro), 'states': dict(states)})
-    return {**ENVELOPE, 'selection': copy.deepcopy(SELECTION), 'cadaster_records': len(cadastro),
-            'coverage': coverage, 'limitations': list(LIMITATIONS)}
+    return {**context['envelope'], 'selection': copy.deepcopy(context['selection']), 'cadaster_records': len(cadastro),
+            'coverage': coverage, 'limitations': list(context['limitations'])}
 
 
 def _read(index_path):
@@ -206,8 +239,8 @@ def _read(index_path):
     index = _json(index_body)
     _require(isinstance(index, dict) and set(index) <= {'contract', 'selection', 'sources', 'code_revision'}
              and index.get('contract') == INDEX_CONTRACT, 'Wrong four-report source index')
-    _same(index.get('selection'), SELECTION, 'Wrong closed financial selection')
-    context = _context()
+    _require('selection' in index, 'Wrong closed financial selection')
+    context = _context(index['selection'])
     _require(isinstance(index.get('sources'), dict) and set(index['sources']) == ROLES,
              'Explicit index of all five sources required')
     bodies, sources, paths = {}, {}, set()
@@ -227,13 +260,14 @@ def _read(index_path):
     catalog = _json(bodies.pop('catalog'))
     _require(isinstance(catalog, list), 'Catalog is not an array')
     references = [(p, item) for p, item in enumerate(catalog)
-                  if isinstance(item, dict) and type(item.get('dt')) is int and item['dt'] == 202412]
+                  if isinstance(item, dict) and type(item.get('dt')) is int and item['dt'] == context['period']]
     _require(len(references) == 1, 'Missing or duplicate selected catalog reference')
     position, entry = references[0]
     files = entry.get('files')
     _require(isinstance(files, list) and all(isinstance(f, dict) for f in files), 'Invalid catalog files')
-    for name in ('cadastro202412_1005.json', 'info202412.json', 'dados202412_1.json'):
-        _require(sum(f.get('f') == 'ifdata/202412/' + name for f in files) == 1, 'Missing or duplicate input announcement')
+    period = context['period']
+    for name in (f'cadastro{period}_1005.json', f'info{period}.json', f'dados{period}_1.json'):
+        _require(sum(f.get('f') == context['catalog_prefix'] + name for f in files) == 1, 'Missing or duplicate input announcement')
     selectors = []
     for item in files:
         selectors_in_file = item.get('sel', [])
@@ -266,7 +300,7 @@ def _read(index_path):
         _require(node['definition_pointer'] == '/' + str(p), 'Wrong definition source pointer')
     del dictionary, infos
     cadastro = _json(bodies.pop('cadaster'))
-    _cadaster(cadastro)
+    _cadaster(cadastro, context)
     numeric = _json(bodies.pop('numeric'), numeric=True)
     _require(isinstance(numeric, dict) and set(numeric) == {'id', 'values'}
              and legacy._number_id(numeric['id']) == '1' and isinstance(numeric['values'], list), 'Invalid numeric area schema')
@@ -290,7 +324,7 @@ def _read(index_path):
     reports = {item['report']['id']: item['report'] for item in context['profile']['reports']}
     for node in document['variables']:
         for p, cad in enumerate(cadastro):
-            row = _base(node, reports[node['report_id']], cad['c0'], sources)
+            row = _base(node, reports[node['report_id']], cad['c0'], sources, context)
             presence, pointer, value = 'stored', f'/{p}/c{node["lid"]}', None
             if node['kind'] != 'money':
                 value = cad[f'c{node["lid"]}']
@@ -309,12 +343,12 @@ def _read(index_path):
             cells.append(row)
             if presence == 'stored':
                 observations.append(row)
-    diagnostics = _diagnostics(cadastro, document['variables'], cells)
+    diagnostics = _diagnostics(cadastro, document['variables'], cells, context)
     diagnostics['nodes'] = len(document['nodes'])
     provenance = {'input_index_sha256': _sha(index_body), 'profile_sha256': context['profile_sha256'],
                   'reader_version': '1', 'reader_source_sha256': _sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
                   'code_revision': index.get('code_revision', 'unknown')}
-    return dict(ENVELOPE), observations, cells, cadastro, document, diagnostics, sources, provenance
+    return dict(context['envelope']), observations, cells, cadastro, document, diagnostics, sources, provenance
 
 
 def admit(index_path: Path, output: Path) -> dict:
@@ -336,10 +370,10 @@ def admit(index_path: Path, output: Path) -> dict:
     for name in INPUTS:
         body = (output / name).read_bytes()
         files.append({'path': name, 'bytes': len(body), 'sha256': _sha(body)})
-    manifest = {**envelope, 'selection': copy.deepcopy(SELECTION), 'accepted': True,
+    manifest = {**envelope, 'selection': copy.deepcopy(document['selection']), 'accepted': True,
                 'created_utc': datetime.now(timezone.utc).isoformat(), **provenance, 'sources': sources,
                 'observations': len(observations), 'cells': len(cells), 'cadaster_records': len(cadastro),
-                'files': files, 'limitations': list(LIMITATIONS)}
+                'files': files, 'limitations': list(diagnostics['limitations'])}
     pending = output / '.manifest.pending'
     legacy._write_json(pending, manifest)
     os.link(pending, output / 'manifest.json')
@@ -367,13 +401,13 @@ def validate_admission(manifest, bodies):
     helper verifies payload hashes, metadata, ordered grade, shared native keys,
     states, lexemes, Decimal and observation/coverage reconstruction, offline.
     """
-    context = _context()
     _require(isinstance(manifest, dict) and manifest.get('accepted') is True, 'Unaccepted financial admission')
-    _same({k: manifest.get(k) for k in ENVELOPE}, ENVELOPE, 'Wrong admission scope')
-    _same(manifest.get('selection'), SELECTION, 'Wrong admission selection')
+    _require('selection' in manifest, 'Wrong admission selection')
+    context = _context(manifest['selection'])
+    _same({k: manifest.get(k) for k in ENVELOPE}, context['envelope'], 'Wrong admission scope')
     _require(manifest.get('profile_sha256') == context['profile_sha256'], 'Unknown admitted profile')
     _check_sources(manifest.get('sources'), context)
-    _same(manifest.get('limitations'), LIMITATIONS, 'Changed admission qualifications')
+    _same(manifest.get('limitations'), context['limitations'], 'Changed admission qualifications')
     _require(isinstance(bodies, dict) and set(bodies) == set(INPUTS), 'Invalid explicit payload membership')
     files = manifest.get('files')
     _require(isinstance(files, list) and len(files) == len(INPUTS), 'Invalid payload inventory')
@@ -389,9 +423,9 @@ def validate_admission(manifest, bodies):
     _same(document, _variables(context), 'Variable metadata differs from installed profile')
     cad_rows = _csv_bytes(bodies['financial-cadastro.csv'], CAD_FIELDS)
     cadastro = [{f'c{i}': row[f'c{i}'] for i in range(38)} for row in cad_rows]
-    _cadaster(cadastro)
+    _cadaster(cadastro, context)
     for p, row in enumerate(cad_rows):
-        expected = {**{k: str(v) for k, v in ENVELOPE.items()}, **cadastro[p],
+        expected = {**{k: str(v) for k, v in context['envelope'].items()}, **cadastro[p],
                     'source_body': manifest['sources']['cadaster']['body_path'],
                     'source_sha256': manifest['sources']['cadaster']['sha256'], 'source_pointer': '/' + str(p)}
         _same(row, expected, 'Wrong admitted cadaster provenance/scope')
@@ -404,7 +438,7 @@ def validate_admission(manifest, bodies):
         for p, cad in enumerate(cadastro):
             row = cells[offset]
             offset += 1
-            expected = {k: str(v) for k, v in _base(node, reports[node['report_id']], cad['c0'], manifest['sources']).items()}
+            expected = {k: str(v) for k, v in _base(node, reports[node['report_id']], cad['c0'], manifest['sources'], context).items()}
             _require(all(row[k] == v for k, v in expected.items()), 'Admitted grade binding/scope/provenance mismatch')
             if node['kind'] != 'money':
                 raw, kind, state, number = _value(cad[f'c{node["lid"]}'], node['kind'])
@@ -461,9 +495,9 @@ def validate_admission(manifest, bodies):
     for key, count in (('cells', len(cells)), ('observations', len(observations)), ('cadaster_records', len(cadastro))):
         _require(type(manifest.get(key)) is int and manifest[key] == count, 'Invalid admitted count: ' + key)
     diagnostics = _json(bodies['financial-diagnostics.json'])
-    expected_diagnostics = _diagnostics(cadastro, document['variables'], cells)
+    expected_diagnostics = _diagnostics(cadastro, document['variables'], cells, context)
     expected_diagnostics['nodes'] = len(document['nodes'])
     _same(diagnostics, expected_diagnostics, 'Coverage/diagnostic reconstruction differs')
-    return {'envelope': dict(ENVELOPE), 'cadastro': cad_rows, 'cells': cells, 'observations': observations,
+    return {'envelope': dict(context['envelope']), 'context': context, 'cadastro': cad_rows, 'cells': cells, 'observations': observations,
             'variables': document, 'diagnostics': diagnostics, 'sources': manifest['sources'],
             'profile': context['profile']}

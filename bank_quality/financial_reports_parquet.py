@@ -56,9 +56,9 @@ def _closed_inventory(root, names):
     _require(actual == expected, 'Incomplete snapshot inventory')
 
 
-def _binding_identity(node):
+def _binding_identity(node, context):
     report, column = node['report_id'], node['column_id']
-    _require(type(report) is int and report in admission.SELECTION['reports'] and type(column) is int
+    _require(type(report) is int and report in context['selection']['reports'] and type(column) is int
              and column >= 0, 'Invalid trusted numeric binding identity')
     return f'financial_numeric_r{report}_c{column}'
 
@@ -83,7 +83,7 @@ def _numeric_bindings(validated):
     for position, node in enumerate(validated['variables']['variables']):
         if node['kind'] not in ('money', 'quantity'):
             continue
-        name = _binding_identity(node)
+        name = _binding_identity(node, validated['context'])
         decimal_type = _decimal_type(islice(cells, position * count, (position + 1) * count))
         result.append({'report_id': node['report_id'], 'column_id': node['column_id'],
                        'catalog_pointer': node['catalog_pointer'], 'kind': node['kind'],
@@ -92,8 +92,8 @@ def _numeric_bindings(validated):
     return result
 
 
-def _outputs(bindings):
-    return (PART, *(b['path'] for b in bindings), 'metadata/source-manifest.json',
+def _outputs(bindings, context):
+    return (context['part'], *(b['path'] for b in bindings), 'metadata/source-manifest.json',
             *(f'metadata/{name}' for name in COMPANIONS))
 
 
@@ -164,6 +164,7 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     _closed_inventory(source, admission.INPUTS)
     bodies = _files(source, source_manifest.get('files'), admission.INPUTS)
     validated = admission.validate_admission(source_manifest, bodies)
+    context = validated['context']
     # These authenticated CSV images are consumed by validation. Keep only the
     # original companions while projecting the materialized, validated cells.
     del bodies['financial-cells.csv'], bodies['financial-observations.csv']
@@ -172,7 +173,7 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     (destination / 'parts').mkdir()
     (destination / 'metadata').mkdir()
     cells = validated['cells']
-    _write_part(destination / PART, FIELDS, lambda: (tuple(row[k] for k in FIELDS) for row in cells))
+    _write_part(destination / context['part'], FIELDS, lambda: (tuple(row[k] for k in FIELDS) for row in cells))
     count = len(validated['cadastro'])
     mapping = {b['catalog_pointer']: b for b in bindings}
     for position, node in enumerate(validated['variables']['variables']):
@@ -185,13 +186,13 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     (destination / 'metadata/source-manifest.json').write_bytes(source_body)
     for name in COMPANIONS:
         (destination / 'metadata' / name).write_bytes(bodies[name])
-    result = {'contract': CONTRACT, 'accepted': True, 'selection': copy.deepcopy(admission.SELECTION),
+    result = {'contract': context['parquet_contract'], 'accepted': True, 'selection': copy.deepcopy(context['selection']),
               'created_utc': datetime.now(timezone.utc).isoformat(),
               'profile_sha256': source_manifest['profile_sha256'], 'source_manifest_sha256': source_manifest_sha256,
-              'source_files': source_manifest['files'], 'original_fields': list(FIELDS), 'cells_part': PART,
+              'source_files': source_manifest['files'], 'original_fields': list(FIELDS), 'cells_part': context['part'],
               'decimal_type': 'per_binding', 'numeric_bindings': bindings,
               **_counts(validated), 'limitations': list(source_manifest['limitations']),
-              'files': [_entry(destination, name) for name in _outputs(bindings)]}
+              'files': [_entry(destination, name) for name in _outputs(bindings, context)]}
     output = (_dump(result) + '\n').encode('utf-8')
     pending = destination / '.manifest.pending'
     pending.write_bytes(output)
@@ -234,11 +235,12 @@ def _original_csv_images(con, directory, source):
     return {name: (directory / name).read_bytes() for name in names}
 
 
-def _validate_source(manifest, body, companions):
+def _validate_source(manifest, body, companions, context):
     _authenticate(body, manifest['source_manifest_sha256'], 'Original manifest hash mismatch')
     source = _json(body)
-    _require(isinstance(source, dict) and source.get('contract') == admission.CONTRACT
+    _require(isinstance(source, dict) and source.get('contract') == context['contract']
              and source.get('accepted') is True, 'Unknown original source contract')
+    _require(_dump(source.get('selection')) == _dump(context['selection']), 'Original source selection mismatch')
     _require(_dump(source.get('files')) == _dump(manifest['source_files']), 'Original file inventory mismatch')
     entries = source.get('files')
     _require(isinstance(entries, list) and len(entries) == len(admission.INPUTS), 'Invalid original file inventory')
@@ -260,22 +262,22 @@ def _open_snapshot(destination, expected_hash):
     body = _path(root, 'manifest.json').read_bytes()
     _authenticate(body, expected_hash, 'Snapshot manifest hash mismatch')
     manifest = _json(body)
-    context = admission._context()
+    _require(isinstance(manifest, dict) and 'selection' in manifest, 'Unknown snapshot selection')
+    context = admission._context(manifest['selection'])
     _require(isinstance(manifest, dict) and set(manifest) == MANIFEST_FIELDS
-             and manifest['contract'] == CONTRACT and manifest['accepted'] is True
-             and _dump(manifest['selection']) == _dump(admission.SELECTION)
-             and manifest['original_fields'] == FIELDS and manifest['cells_part'] == PART
+             and manifest['contract'] == context['parquet_contract'] and manifest['accepted'] is True
+             and manifest['original_fields'] == FIELDS and manifest['cells_part'] == context['part']
              and manifest['decimal_type'] == 'per_binding'
              and manifest['profile_sha256'] == context['profile_sha256'], 'Unknown snapshot contract/schema/profile')
     # Paths and SQL identifiers come only from the installed trusted profile.
     nodes = [node for item in context['profile']['reports'] for node in item['nodes'] if node['kind'] != 'group']
-    trusted = [{'view': _binding_identity(node), 'path': f'parts/{_binding_identity(node)}.parquet'}
+    trusted = [{'view': _binding_identity(node, context), 'path': f'parts/{_binding_identity(node, context)}.parquet'}
                for node in nodes if node['kind'] in ('money', 'quantity')]
-    outputs = _outputs(trusted)
+    outputs = _outputs(trusted, context)
     _closed_inventory(root, outputs)
     bodies = _files(root, manifest['files'], outputs)
     companions = {name: bodies[f'metadata/{name}'] for name in COMPANIONS}
-    source = _validate_source(manifest, bodies['metadata/source-manifest.json'], companions)
+    source = _validate_source(manifest, bodies['metadata/source-manifest.json'], companions, context)
     scratch = Path(__file__).resolve().parents[1] / '.scratch'
     scratch.mkdir(exist_ok=True)
     con = None
@@ -284,7 +286,7 @@ def _open_snapshot(destination, expected_hash):
             directory = Path(directory_name)
             # Every SQL read uses an owned byte image; mutable external paths are
             # neither followed during validation nor referenced by returned views.
-            for number, name in enumerate((PART, *(b['path'] for b in trusted))):
+            for number, name in enumerate((context['part'], *(b['path'] for b in trusted))):
                 (directory / f'{number}.parquet').write_bytes(bodies.pop(name))
             con = _connection([directory])
             con.execute('SET preserve_insertion_order = true')
