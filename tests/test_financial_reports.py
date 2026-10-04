@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -392,6 +393,46 @@ class FinancialReportsTests(unittest.TestCase):
                         entry.update(bytes=len(changed[entry['path']]), sha256=sha(changed[entry['path']]))
                     with self.assertRaisesRegex(ValueError, 'source pointer'):
                         self.module().validate_admission(candidate, changed)
+
+
+class FinancialReportsCSVTests(unittest.TestCase):
+    def test_csv_iteration_preserves_tokens_with_bounded_extra_memory(self):
+        from bank_quality.financial_reports import _iter_csv_bytes
+        fields = ('código', 'name', 'value')
+        line = '001,"João\r\n雪, ""literal""",-0.00\r\n'.encode('utf-8')
+        body = b'\xef\xbb\xbf' + 'código,name,value\r\n'.encode('utf-8') + line * 32768
+        expected = {'código': '001', 'name': 'João\r\n雪, "literal"', 'value': '-0.00'}
+        iterator = _iter_csv_bytes(body, fields)
+        # The verified body already exists; measure only additional consumption
+        # memory. Whole-body decoding or retaining all rows violates this bound.
+        tracemalloc.start()
+        try:
+            first = next(iterator)
+            count = 1
+            for last in iterator:
+                count += 1
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            iterator.close()
+            tracemalloc.stop()
+        self.assertEqual(first, expected)
+        self.assertEqual(last, expected)
+        self.assertEqual(count, 32768)
+        self.assertLess(peak, 512 * 1024, f'CSV consumption allocated {peak} bytes')
+
+    def test_csv_iteration_rejects_invalid_headers_and_row_widths(self):
+        from bank_quality.financial_reports import _iter_csv_bytes
+        cases = ((b'', 'headers'),
+                 (b'value,code\r\n1,001\r\n', 'headers'),
+                 (b'code,code\r\n001,1\r\n', 'headers'),
+                 (b'code,value\r\n001,1,extra\r\n', 'row'),
+                 (b'code,value\r\n001\r\n', 'row'))
+        for body, message in cases:
+            with self.subTest(body=body):
+                with self.assertRaisesRegex(ValueError, message):
+                    list(_iter_csv_bytes(body, ('code', 'value')))
+        with self.assertRaises(UnicodeDecodeError):
+            list(_iter_csv_bytes(b'code,value\r\n001,\xff\r\n', ('code', 'value')))
 
 
 if __name__ == '__main__':

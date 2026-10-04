@@ -348,11 +348,12 @@ def admit(index_path: Path, output: Path) -> dict:
 
 
 def _iter_csv_bytes(body, fields):
-    reader = csv.DictReader(io.StringIO(body.decode('utf-8-sig'), newline=''))
-    _require(reader.fieldnames == list(fields), 'Invalid admitted CSV headers')
-    for row in reader:
-        _require(set(row) == set(fields) and all(type(v) is str for v in row.values()), 'Malformed admitted CSV row')
-        yield row
+    with io.TextIOWrapper(io.BytesIO(body), encoding='utf-8-sig', newline='') as stream:
+        reader = csv.DictReader(stream)
+        _require(reader.fieldnames == list(fields), 'Invalid admitted CSV headers')
+        for row in reader:
+            _require(set(row) == set(fields) and all(type(v) is str for v in row.values()), 'Malformed admitted CSV row')
+            yield row
 
 
 def _csv_bytes(body, fields):
