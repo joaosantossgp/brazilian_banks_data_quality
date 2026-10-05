@@ -549,6 +549,69 @@ def freeze_profile(candidate_path: Path, final_handoff_path: Path, *, candidate_
     return compiled
 
 
+def compose_acquisition_handoffs(source_entry_path: Path, *, source_entry_sha256: str) -> dict:
+    """Return a private, pinned bridge for the single trusted acquisition202403.
+
+    Input is exactly {contract: ifdata-financial-acquisition-bridge-input-v1,
+    entry: installed reuse entry202403}. No writes, recovery or installation.
+    Projected handoff bytes are _canonical(value).encode('utf-8'), no newline.
+    The envelope must be materialized and externally pinned separately; compile
+    and freeze neither retain nor validate this acquisition evidence.
+    """
+    from . import financial_acquisition_batch as batch
+
+    name = Path(source_entry_path).absolute().relative_to(CHECKOUT_ROOT.absolute()).as_posix()
+    _, value = _read_hashed(_contained(CHECKOUT_ROOT, name), source_entry_sha256)
+    _require(isinstance(value, dict) and set(value) == {'contract', 'entry'}
+             and value['contract'] == 'ifdata-financial-acquisition-bridge-input-v1',
+             'Invalid acquisition bridge input contract/shape')
+    entry = value['entry']
+    _same(entry, batch._TRUSTED_REUSE[202403]['entry'], 'Acquisition bridge differs from trusted202403 entry')
+    # This helper proves physical originalB -> originalA, receipt prefixes and
+    # CURRENT journal/counters. The trusted anchor must precede that proof.
+    verified = batch._sources403(entry)
+    evidence = entry['evidence']
+    originals = {}
+    for phase, key in (('metadata', 'checkpoint_a'), ('complete', 'checkpoint_b')):
+        pin = evidence[key]
+        _, original = _read_hashed(_contained(CHECKOUT_ROOT, pin['path'], source=True), pin['sha256'])
+        _require(original.get('contract') == SOURCES_CONTRACT and original.get('phase') == phase,
+                 'Original acquisition handoff contract/phase differs')
+        originals[phase] = original
+    descriptor = descriptor_for_selection(originals['metadata']['selection'])
+    _same(descriptor['selection'], {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]},
+          'Acquisition bridge is restricted to native202403')
+    for original in originals.values():
+        _same(original.get('selection'), descriptor['selection'], 'Original acquisition selection differs')
+        _require(original.get('descriptor_sha256') == descriptor['descriptor_sha256'],
+                 'Original acquisition descriptor differs from installed offer')
+        _same(original.get('catalog'), descriptor['catalog'], 'Original acquisition catalog differs')
+    catalog = {key: descriptor['catalog'][key] for key in
+               ('manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')}
+    catalog.update(source_id='catalog', role='catalog', area=None, native_file=None, catalog_pointer=None)
+    portal = _registry().get('legacy_202312_sources', {}).get('portal')
+    _require(isinstance(portal, dict) and set(portal) == set(catalog)
+             and portal.get('source_id') == portal.get('role') == 'portal'
+             and all(portal.get(key) is None for key in ('area', 'native_file', 'catalog_pointer')),
+             'Exact installed portal source reference is required')
+    for source in (catalog, portal):
+        _authenticate_source(source, descriptor)
+    projected = {}
+    for phase, original in originals.items():
+        handoff = copy.deepcopy(original)
+        handoff['sources'] = sorted(handoff['sources'] + [copy.deepcopy(catalog), copy.deepcopy(portal)],
+                                    key=lambda source: source['source_id'])
+        projected[phase] = handoff
+    metadata_hash = _digest(projected['metadata'])
+    projected['complete']['checkpoint_a_sha256'] = metadata_hash
+    return {'contract': 'ifdata-financial-acquisition-bridge-envelope-v1',
+            'selection': copy.deepcopy(descriptor['selection']), 'descriptor_sha256': descriptor['descriptor_sha256'],
+            'source_entry': {'path': name, 'sha256': source_entry_sha256}, 'trusted_entry': copy.deepcopy(entry),
+            'authority': copy.deepcopy(verified['authority']),
+            'metadata_handoff': projected['metadata'], 'metadata_handoff_sha256': metadata_hash,
+            'final_handoff': projected['complete'], 'final_handoff_sha256': _digest(projected['complete'])}
+
+
 def wrap_legacy_202312_index(index_path: Path, *, index_sha256: str) -> dict:
     body, index = _read_hashed(index_path, index_sha256)
     _same(index.get('selection'), {'period': 202312, 'perspective': 1005, 'report': 92}, 'Wrong legacy Summary selection')
