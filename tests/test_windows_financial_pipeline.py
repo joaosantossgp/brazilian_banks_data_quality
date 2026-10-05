@@ -21,13 +21,14 @@ class WindowsPipelineTests(unittest.TestCase):
     def test_pipeline_launcher_keeps_acquisition_worker_and_120s_contract(self):
         api = self.api()
         from bank_quality import windows_acquisition as old
-        with self.assertRaises(ValueError):
+        # Input validation is platform-independent; native containment is tested below.
+        with patch.object(old, 'require_supported'), self.assertRaises(ValueError):
             old.run_contained_attempt(Path('missing'), '0' * 64, deadline_seconds=121,
                                        before_resume=lambda value: self.fail('Unexpected launch'))
         with tempfile.TemporaryDirectory() as temp:
             spec = Path(temp) / 'spec.json'
             spec.write_text(json.dumps({'contract': 'financial-acquisition-worker-v1'}))
-            with self.assertRaises(ValueError):
+            with patch.object(old, 'require_supported'), self.assertRaises(ValueError):
                 api.run_contained_stage(spec, hashlib.sha256(spec.read_bytes()).hexdigest(),
                                          resources=RESOURCES, before_resume=lambda value: self.fail('Unexpected launch'))
 
