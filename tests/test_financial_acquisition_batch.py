@@ -1167,7 +1167,13 @@ class BatchSchedulerTests(unittest.TestCase):
             self.acquisition._worker_main(path, pin)
             return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
                     'exit_code': 0, 'elapsed_seconds': 1.0}
-        with patch.object(self.acquisition, 'run_contained_attempt', side_effect=launch), \
+        # This protocol roundtrip is synthetic on every host; native containment
+        # is exercised separately by the Windows integration tests.
+        with patch.object(self.acquisition, 'require_supported'), \
+                patch.object(self.acquisition, '_current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch('bank_quality.windows_acquisition._kernel',
+                      side_effect=AssertionError('Synthetic transport must not access native Win32')), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=launch), \
                 patch.object(self.acquisition, 'verify_worker_ancestry'), \
                 patch('bank_quality.archive.fetch_bounded', side_effect=fetch):
             result = self.batch._run_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
