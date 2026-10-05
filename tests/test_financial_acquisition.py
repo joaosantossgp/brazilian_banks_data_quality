@@ -990,6 +990,137 @@ class AuthorityTests(unittest.TestCase):
             self.assertEqual(len(list(session.glob('attempt-*/worker-receipt.json'))), 2)
             self.assertLess(authority.records[-3]['reserved_bytes'], 5 * 1024 * 1024)
 
+    def test_failed_attempt_invalid_evidence_keeps_reservation_pending(self):
+        self.fake_status = 503
+        for position, mutation in enumerate(('missing_sidecar', 'corrupt_sidecar', 'sidecar_escape',
+                                            'body_escape', 'contradictory_headers', 'forged_counter',
+                                            'status_projection', 'final_url_projection', 'false_eof', 'removed_framing')):
+            if position:
+                self.doCleanups()
+                self.setUp()
+            pin = self.initialize()
+            job_path = self.root / 'data/runs/job.json'
+            job_path.write_bytes(canonical(self.job))
+            with self.subTest(mutation=mutation):
+                session = self.root / ('data/runs/' + mutation)
+                session.mkdir()
+                def invalid_evidence(spec_path, digest, **kwargs):
+                    result = self.fake_attempt(spec_path, digest, **kwargs)
+                    spec = json.loads(spec_path.read_bytes())
+                    output = self.root / spec['output_path']
+                    receipt_path = output / 'worker-receipt.json'
+                    receipt = json.loads(receipt_path.read_bytes())
+                    path = self.root / receipt['manifest_path']
+                    manifest = json.loads(path.read_bytes())
+                    sidecar = output / manifest['response_metadata_path']
+                    if mutation == 'missing_sidecar':
+                        sidecar.unlink()
+                    elif mutation == 'corrupt_sidecar':
+                        sidecar.write_bytes(b'corrupt')
+                    elif mutation == 'sidecar_escape':
+                        manifest['response_metadata_path'] = '../' + sidecar.name
+                    elif mutation == 'body_escape':
+                        manifest['body_path'] = '../../../raw/fixture/' + manifest['body_path']
+                    elif mutation == 'contradictory_headers':
+                        metadata = json.loads(sidecar.read_bytes())
+                        metadata['response_headers_raw'] = [['Content-Length', '999']]
+                        manifest['response_headers_raw'] = metadata['response_headers_raw']
+                        sidecar.write_bytes(canonical(metadata))
+                        manifest['response_metadata_sha256'] = sha(sidecar.read_bytes())
+                    elif mutation == 'forged_counter':
+                        manifest['content_length'] = manifest['bytes'] + 1
+                    elif mutation == 'false_eof':
+                        manifest.update(completion_basis='eof', eof_observed=False)
+                    elif mutation == 'removed_framing':
+                        manifest['completion_basis'] = None
+                    else:
+                        metadata = json.loads(sidecar.read_bytes())
+                        metadata['http_status' if mutation == 'status_projection' else 'final_url'] = (
+                            429 if mutation == 'status_projection' else 'https://invalid.example/fixture')
+                        sidecar.write_bytes(canonical(metadata))
+                        manifest['response_metadata_sha256'] = sha(sidecar.read_bytes())
+                    path.write_bytes(canonical(manifest))
+                    receipt['manifest_sha256'] = sha(path.read_bytes())
+                    receipt_path.write_bytes(canonical(receipt))
+                    return result
+                with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                        patch.object(self.api, 'run_contained_attempt', side_effect=invalid_evidence):
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        self.api._attempt(authority, job_path, session, self.job['targets'][0])
+                    self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+                    self.assertEqual(authority.state['attempt_seconds'], 120)
+                    self.assertEqual(len(authority.state['pending']), 1)
+                    self.assertEqual(authority.records[-1]['kind'], 'identity')
+                    with patch.object(self.api, 'identity_extinct', return_value=True):
+                        self.api._recover_pending(authority)
+                    self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+                    self.assertEqual(authority.state['attempt_seconds'], 120)
+                    self.assertFalse(authority.state['pending'])
+
+    def test_failed_partial_response_can_be_authenticated_without_eof(self):
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/partial-response'
+        session.mkdir()
+        self.fake_status = 503
+        def partial_response(spec_path, digest, **kwargs):
+            result = self.fake_attempt(spec_path, digest, **kwargs)
+            output = self.root / json.loads(spec_path.read_bytes())['output_path']
+            receipt_path = output / 'worker-receipt.json'
+            receipt = json.loads(receipt_path.read_bytes())
+            path = self.root / receipt['manifest_path']
+            manifest = json.loads(path.read_bytes())
+            manifest.update(completion_basis=None, eof_observed=False, content_length=manifest['bytes'] + 5)
+            manifest['diagnostics'].append({'code': 'content_length_mismatch', 'detail': 'offline partial response'})
+            manifest['response_headers_raw'] = [['Content-Length', str(manifest['content_length'])]]
+            sidecar = output / manifest['response_metadata_path']
+            metadata = json.loads(sidecar.read_bytes())
+            metadata['response_headers_raw'] = manifest['response_headers_raw']
+            sidecar.write_bytes(canonical(metadata))
+            manifest['response_metadata_sha256'] = sha(sidecar.read_bytes())
+            path.write_bytes(canonical(manifest))
+            receipt['manifest_sha256'] = sha(path.read_bytes())
+            receipt_path.write_bytes(canonical(receipt))
+            return result
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, 'run_contained_attempt', side_effect=partial_response):
+            self.assertFalse(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
+            self.assertEqual(authority.state['body_bytes'], len(canonical({'fixture': 'entity body'})))
+            self.assertEqual(authority.records[-1]['status'], 'http_error')
+            self.assertFalse(authority.state['pending'])
+            self.assertFalse(authority.state['sources'])
+
+    def test_no_response_connection_failure_authenticates_empty_body(self):
+        from bank_quality.archive import fetch_bounded
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/no-response'
+        session.mkdir()
+        target = self.job['targets'][0]
+        def connection_failure(spec_path, digest, **kwargs):
+            spec = json.loads(spec_path.read_bytes())
+            kwargs['before_resume']({'pid': 7, 'creation_time': 9, 'contained': True})
+            output = self.root / spec['output_path']
+            with patch('bank_quality.archive.build_opener') as opener:
+                opener.return_value.open.side_effect = ConnectionRefusedError('offline fixture')
+                manifest = fetch_bounded(target['url'], output, spec['attempt_id'],
+                    {'period': target['period'], 'perspective': 1005, 'role': target['role']},
+                    body_budget_bytes=spec['body_budget_bytes'])
+            path = output / manifest['manifest_path']
+            (output / 'worker-receipt.json').write_bytes(canonical({
+                'attempt_id': spec['attempt_id'], 'spec_sha256': digest,
+                'manifest_path': path.relative_to(self.root).as_posix(), 'manifest_sha256': sha(path.read_bytes())}))
+            return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
+                    'exit_code': 0, 'elapsed_seconds': 1.25}
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, 'run_contained_attempt', side_effect=connection_failure):
+            self.assertTrue(self.api._attempt(authority, job_path, session, target))
+            self.assertEqual(authority.state['body_bytes'], 0)
+            self.assertEqual(authority.records[-1]['status'], 'network_error')
+            self.assertFalse(authority.state['pending'])
+
     def test_deadline_without_receipt_never_refunds_body_and_records_actual_overshoot(self):
         pin = self.initialize()
         path = self.root / 'data/runs/job.json'

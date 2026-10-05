@@ -124,6 +124,97 @@ def _local(name):
     return current
 
 
+def _saved_body(manifest, path, pin):
+    _require(manifest.get('sha256') == _digest(pin), 'Source body pin mismatch')
+    name = manifest.get('body_path')
+    _require(type(name) is str and name and '\\' not in name and ':' not in name
+             and all(p not in ('', '.', '..') for p in name.split('/')), 'Body path escape')
+    body_path = _local((path.parent.relative_to(_ROOT) / PurePosixPath(name)).as_posix())
+    body = load_body(manifest, path.parent)
+    _require(_sha(body) == pin and type(manifest.get('bytes')) is int
+             and len(body) == manifest['bytes'], 'Source body size/hash mismatch')
+    _require(body_path.is_file(), 'Source body missing')
+    return body
+
+
+def _response_evidence(manifest, path):
+    sidecar_name = manifest.get('response_metadata_path')
+    _require(type(sidecar_name) is str and sidecar_name and '\\' not in sidecar_name and ':' not in sidecar_name
+             and all(p not in ('', '.', '..') for p in sidecar_name.split('/')), 'Response metadata path escape')
+    sidecar_path = _local((path.parent.relative_to(_ROOT) / PurePosixPath(sidecar_name)).as_posix())
+    sidecar_body = sidecar_path.read_bytes()
+    _require(_sha(sidecar_body) == _digest(manifest.get('response_metadata_sha256')), 'Response metadata hash mismatch')
+    sidecar = _json(sidecar_body)
+    _require(isinstance(sidecar, dict) and all(sidecar.get(key) == manifest.get(key)
+             for key in ('http_status', 'final_url', 'response_headers_raw')), 'Response metadata projection mismatch')
+    _require(all(sidecar[key] == manifest.get(key) for key in
+             ('url', 'method', 'context', 'started_at_utc') if key in sidecar), 'Response metadata context mismatch')
+    raw_headers = manifest.get('response_headers_raw')
+    _require(isinstance(raw_headers, list) and all(isinstance(pair, list) and len(pair) == 2
+             and all(type(value) is str for value in pair) for pair in raw_headers), 'Invalid raw response headers')
+    headers = {}
+    for name, value in raw_headers:
+        headers.setdefault(name.lower(), []).append(value.strip())
+    return headers
+
+
+def _failed_attempt_evidence(manifest, path):
+    """Authenticate a failed outcome without claiming successful source framing."""
+    diagnostics = manifest.get('diagnostics')
+    _require(isinstance(diagnostics, list) and all(isinstance(item, dict)
+             and type(item.get('code')) is str and type(item.get('detail')) is str for item in diagnostics),
+             'Invalid attempt diagnostics')
+    codes = {item['code'] for item in diagnostics}
+    _require(manifest.get('source_complete') is False and diagnostics
+             and type(manifest.get('truncated')) is bool and type(manifest.get('eof_observed')) is bool,
+             'Inconsistent failed attempt outcome')
+    status = manifest.get('http_status')
+    outcome = manifest.get('outcome')
+    if status is None:
+        _require(outcome in {'network_error', 'transport_error'}
+                 and codes <= {'transport_exception', 'response_headers_error'}
+                 and manifest.get('response_metadata_path') is None and manifest.get('response_metadata_sha256') is None
+                 and manifest.get('final_url') is None and manifest.get('response_headers_raw') == []
+                 and manifest.get('content_length') is None and manifest.get('bytes_observed') == 0
+                 and manifest.get('completion_basis') is None and manifest['eof_observed'] is False
+                 and manifest['truncated'] is False, 'Inconsistent no-response attempt evidence')
+        return
+    _require(type(status) is int and 100 <= status <= 599
+             and outcome in {'http_error', 'transport_error', 'storage_error'}, 'Invalid failed response status/outcome')
+    _require(outcome != 'http_error' or (status != 200 and 'http_status' in codes), 'HTTP error status evidence mismatch')
+    headers = _response_evidence(manifest, path)
+    lengths, transfers, encodings = (headers.get(key, []) for key in
+                                    ('content-length', 'transfer-encoding', 'content-encoding'))
+    length = manifest.get('content_length')
+    valid_length = len(lengths) == 1 and re.fullmatch('[0-9]+', lengths[0])
+    _require(length is None or (type(length) is int and length >= 0), 'Invalid attempt Content-Length counter')
+    _require((valid_length and length == int(lengths[0]))
+             or (not lengths and length is None)
+             or (lengths and not valid_length and length is None and 'invalid_content_length' in codes),
+             'Invalid Content-Length header evidence')
+    _require(not transfers or (not lengths and transfers == ['chunked']) or 'ambiguous_framing' in codes,
+             'Ambiguous framing headers without diagnostic')
+    _require(not encodings or encodings == ['identity'] or 'unexpected_content_encoding' in codes,
+             'Unexpected Content-Encoding headers without diagnostic')
+    _require(type(manifest.get('final_url')) is str
+             and (manifest['final_url'] == manifest['url'] or 'final_url_mismatch' in codes), 'Attempt final URL mismatch')
+    basis = manifest.get('completion_basis')
+    _require(basis in {None, 'eof', 'chunked_eof', 'content_length'}, 'Invalid attempt completion basis')
+    _require(basis is not None or bool(codes & {'incomplete_read', 'read_exceeded_budget', 'body_budget_exhausted',
+             'content_length_mismatch', 'transport_exception', 'framing_error', 'storage_error'}),
+             'Attempt missing framing without failure diagnostic')
+    _require(basis is None or (not manifest['truncated'] and
+             ((basis == 'content_length' and not transfers and length == manifest['bytes_observed'])
+              or (basis in {'eof', 'chunked_eof'} and manifest['eof_observed'] is True
+                  and (basis == 'chunked_eof') == (transfers == ['chunked'])))), 'Attempt framing counters mismatch')
+    _require(not manifest['eof_observed'] or basis in {'eof', 'chunked_eof'}, 'Attempt EOF counter mismatch')
+    _require(not manifest['truncated'] or (basis is None and manifest['bytes_observed'] == manifest['body_budget_bytes']
+             and 'body_budget_exhausted' in codes), 'Attempt truncation counter mismatch')
+    _require(length is None or length == manifest['bytes_observed'] or bool(codes &
+             {'content_length_mismatch', 'transport_exception', 'framing_error', 'storage_error'}),
+             'Attempt Content-Length mismatch without diagnostic')
+
+
 def _authenticated(ref, *, expected=None, frozen=None):
     _require(isinstance(ref, dict), 'Source reference must be an object')
     required = {'source_id', 'role', 'manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256'}
@@ -158,21 +249,7 @@ def _authenticated(ref, *, expected=None, frozen=None):
         _require(length is None or (type(length) is int and length >= 0 and length == manifest['bytes_observed']),
                  'Bounded source Content-Length mismatch')
         _require(manifest['completion_basis'] != 'content_length' or length is not None, 'Missing completion framing')
-        sidecar_name = manifest.get('response_metadata_path')
-        _require(type(sidecar_name) is str and sidecar_name and '\\' not in sidecar_name and ':' not in sidecar_name
-                 and all(p not in ('', '.', '..') for p in sidecar_name.split('/')), 'Response metadata path escape')
-        sidecar_path = _local((path.parent.relative_to(_ROOT) / PurePosixPath(sidecar_name)).as_posix())
-        sidecar_body = sidecar_path.read_bytes()
-        _require(_sha(sidecar_body) == _digest(manifest.get('response_metadata_sha256')), 'Response metadata hash mismatch')
-        sidecar = _json(sidecar_body)
-        _require(isinstance(sidecar, dict) and all(sidecar.get(key) == manifest.get(key)
-                 for key in ('http_status', 'final_url', 'response_headers_raw')), 'Response metadata projection mismatch')
-        raw_headers = manifest.get('response_headers_raw')
-        _require(isinstance(raw_headers, list) and all(isinstance(pair, list) and len(pair) == 2
-                 and all(type(value) is str for value in pair) for pair in raw_headers), 'Invalid raw response headers')
-        headers = {}
-        for name, value in raw_headers:
-            headers.setdefault(name.lower(), []).append(value.strip())
+        headers = _response_evidence(manifest, path)
         lengths = headers.get('content-length', [])
         transfers = headers.get('transfer-encoding', [])
         encodings = headers.get('content-encoding', [])
@@ -182,15 +259,7 @@ def _authenticated(ref, *, expected=None, frozen=None):
         _require(not transfers or (not lengths and transfers == ['chunked']), 'Ambiguous framing headers')
         _require(not encodings or encodings == ['identity'], 'Unexpected Content-Encoding headers')
         _require((manifest['completion_basis'] == 'chunked_eof') == bool(transfers), 'Completion basis/header mismatch')
-    _require(manifest.get('sha256') == ref['body_sha256'], 'Source body pin mismatch')
-    name = manifest.get('body_path')
-    _require(type(name) is str and name and '\\' not in name and ':' not in name
-             and all(p not in ('', '.', '..') for p in name.split('/')), 'Body path escape')
-    body_path = _local((path.parent.relative_to(_ROOT) / PurePosixPath(name)).as_posix())
-    body = load_body(manifest, path.parent)
-    _require(_sha(body) == ref['body_sha256'] and type(manifest.get('bytes')) is int
-             and len(body) == manifest['bytes'], 'Source body size/hash mismatch')
-    _require(body_path.is_file(), 'Source body missing')
+    body = _saved_body(manifest, path, ref['body_sha256'])
     url = _FROZEN[frozen][2] if frozen else expected['url']
     _require(manifest.get('url') == url and manifest.get('final_url') == url
              and manifest.get('method') == 'GET', 'Source URL/method mismatch')
@@ -957,13 +1026,15 @@ def _attempt(authority, job_path, session, target):
                     'worker_receipt_sha256': _sha(receipt_path.read_bytes()), 'manifest_path': receipt['manifest_path'],
                     'manifest_sha256': receipt['manifest_sha256']}
         _require(manifest.get('contract') == 'bounded-http-archive-v1' and manifest.get('url') == target['url']
+                 and manifest.get('method') == 'GET'
+                 and manifest.get('context') == {'period': target['period'], 'perspective': 1005, 'role': target['role']}
                  and manifest.get('body_budget_bytes') == reservation['reserved_bytes'], 'Attempt manifest context mismatch')
         bytes_seen = manifest.get('bytes_observed')
         _require(type(bytes_seen) is int and 0 <= bytes_seen <= reservation['reserved_bytes'], 'Attempt observed body counter invalid')
         # Validate saved body and sidecar even for a failed request before refund.
         _require(manifest.get('body_available') is True and manifest.get('bytes') == bytes_seen,
                  'Inconclusive stored byte count')
-        body = load_body(manifest, manifest_path.parent)
+        body = _saved_body(manifest, manifest_path, manifest.get('sha256'))
         _require(len(body) == bytes_seen, 'Attempt body byte count mismatch')
         observed = bytes_seen
         source = {**target, 'manifest_path': receipt['manifest_path'], 'manifest_sha256': receipt['manifest_sha256'],
@@ -972,6 +1043,7 @@ def _attempt(authority, job_path, session, target):
             _authenticated(source, expected=target)
             status, guard = 'source_complete', ''
         else:
+            _failed_attempt_evidence(manifest, manifest_path)
             source = None
             status, retryable = manifest.get('outcome', 'transport_error'), _retryable(manifest)
             guard = '' if retryable else 'transport'
