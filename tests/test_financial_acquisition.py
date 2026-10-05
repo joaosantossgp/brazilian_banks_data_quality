@@ -596,6 +596,25 @@ class AcquisitionTests(unittest.TestCase):
             self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
 
 
+    def test_new_batch_scope_prepare_is_exact_singleton_without_execution_permission(self):
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        job = self.prepare((202406,))
+        self.assertFalse(job['executable'])
+        with self.assertRaisesRegex(ValueError, 'singleton'):
+            self.prepare((202406, 202409))
+        with self.assertRaisesRegex(ValueError, 'singleton'):
+            self.prepare((202409,))
+
+    def test_unknown_batch_scope_is_not_a_candidate(self):
+        for scope in ('financial-recent-202312-202606-v1/202403',
+                      'financial-recent-202312-202606-v1/202609',
+                      'financial-recent-202312-202606-v1/202406/nonce'):
+            with self.subTest(scope=scope):
+                self.document['acquisition_scope'] = scope
+                with self.assertRaises(ValueError):
+                    self.prepare((202406,))
+
+
 class AcquisitionCliTests(unittest.TestCase):
     """Actual CLI/package flow; only trust anchors/root and OS claim are fixtures."""
     catalog_source = AcquisitionTests.catalog_source

@@ -1,4 +1,4 @@
-"""Pure offline composition of one finite native window, never a GET authority.
+"""Finite native-window draft, offline authority initialization and phase ledger.
 
 The private draft is a candidate. Task2 must authenticate it again before any
 explicit initialization. Accepted Parquet and accepted acquisition sources keep
@@ -335,3 +335,537 @@ def _verify_draft(draft: dict) -> dict:
     expected = _compile(draft['catalogs'], entries)
     _same(draft, expected, 'Draft differs from reconstructed trusted identity')
     return expected
+
+# The batch is a phase ledger, never a second attempt/budget authority.
+from contextlib import contextmanager
+import os
+import re
+import sys
+import uuid
+
+_CODE_FILES = ('bank_quality/financial_acquisition.py', 'bank_quality/archive.py',
+               'bank_quality/windows_acquisition.py', 'scripts/acquire-financial.py',
+               'bank_quality/financial_acquisition_batch.py')
+_COUNTERS = ('attempts', 'body_bytes', 'attempt_seconds', 'backoff_seconds', 'backoffs', 'failures')
+
+
+def _current_code_identity():
+    import subprocess
+    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=_ROOT, text=True).strip()
+    return {'reviewed_commit': head, 'files': {name: _sha(_path(name).read_bytes()) for name in _CODE_FILES},
+            'runtime': {'path': str(Path(sys.executable).resolve()), 'sha256': _sha(Path(sys.executable).read_bytes())}}
+
+
+def _code_identity(pins, *, current_head=False):
+    _require(type(pins) is dict and set(pins) == {'contract', 'reviewed_commit', 'files', 'runtime', 'policy_sha256'}
+             and pins['contract'] == 'financial-acquisition-code-pins-v1', 'Invalid closed code pins')
+    _require(type(pins['reviewed_commit']) is str and re.fullmatch('[0-9a-f]{40}', pins['reviewed_commit']),
+             'Full reviewed commit identity required')
+    _require(type(pins['files']) is dict and set(pins['files']) == set(_CODE_FILES), 'Closed reviewed code inventory required')
+    for pin in pins['files'].values():
+        acquisition._digest(pin)
+    _require(type(pins['runtime']) is dict and set(pins['runtime']) == {'path', 'sha256'}
+             and type(pins['runtime']['path']) is str and pins['runtime']['path'], 'Invalid pinned runtime')
+    acquisition._digest(pins['runtime']['sha256'])
+    _require(acquisition._digest(pins['policy_sha256']) == _sha(_canonical(_POLICIES)), 'Policy identity mismatch')
+    identity = _current_code_identity()
+    _same({'files': pins['files'], 'runtime': pins['runtime']},
+          {key: identity[key] for key in ('files', 'runtime')}, 'Current code/runtime differs from reviewed pins')
+    if current_head:
+        _require(pins['reviewed_commit'] == identity['reviewed_commit'], 'Current HEAD differs from reviewed full commit')
+
+
+def _batch_paths():
+    base = acquisition._safe_destination(_ROOT / 'data/runs/financial-acquisition-authority')
+    stem = 'batch-scope-' + _sha(_SCOPE.encode())
+    return base / (stem + '.binding.json'), base / (stem + '.lock')
+
+
+def _member_bootstrap(job):
+    return {'contract': 'financial-acquisition-authority-v1', 'acquisition_scope': job['acquisition_scope'],
+            'job_sha256': job['job_sha256'], 'policies': acquisition._limits(job),
+            'targets': acquisition._execution_job(job)}
+
+
+def _build_bundle(draft, destination, pins):
+    members = []
+    for member in draft['members']:
+        job = member['job']
+        folder, _, _ = acquisition._authority_paths(job)
+        name = destination + '/members/' + str(member['period']) + '/job.json'
+        members.append({**copy.deepcopy(member), 'job_path': name,
+                        'job_file_sha256': _sha(_canonical(job)),
+                        'authority_path': folder.relative_to(_ROOT).as_posix(),
+                        'bootstrap_sha256': _sha(_canonical(_member_bootstrap(job)))})
+    return {**copy.deepcopy(draft), 'contract': 'financial-acquisition-batch-v1', 'members': members,
+            'destination': destination, 'code_pins': copy.deepcopy(pins), 'executable': True}
+
+
+def _batch_bootstrap(bundle, pin):
+    return {'contract': 'financial-acquisition-batch-bootstrap-v1', 'scope': _SCOPE,
+            'bundle_sha256': pin, 'destination': bundle['destination'],
+            'members': [{key: m[key] for key in ('period', 'job_sha256', 'job_file_sha256',
+                                                 'job_path', 'authority_path', 'bootstrap_sha256')} for m in bundle['members']],
+            'policies': bundle['policies'], 'caps': bundle['caps'], 'code_pins': bundle['code_pins']}
+
+
+def _binding(bundle, pin, bootstrap_pin):
+    return {'contract': 'financial-acquisition-batch-binding-v1', 'scope': _SCOPE,
+            'bundle_path': bundle['destination'] + '/bundle.json', 'bundle_sha256': pin,
+            'bootstrap_sha256': bootstrap_pin}
+
+
+def _immutable_batch(bundle_path, bundle_pin, bootstrap_pin, *, require_binding=True):
+    path = _path(Path(bundle_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    _file(path, bundle_pin)
+    bundle = _json(path.read_bytes())
+    fields = {'contract', 'scope', 'selection', 'acquire_periods', 'reuse_periods', 'catalogs', 'members',
+              'reuse', 'policies', 'caps', 'executable', 'destination', 'code_pins'}
+    _require(type(bundle) is dict and set(bundle) == fields and type(bundle['members']) is list, 'Invalid bundle schema')
+    member_fields = {'period', 'job', 'job_sha256', 'session_root', 'job_path', 'job_file_sha256', 'authority_path', 'bootstrap_sha256'}
+    _require(all(type(m) is dict and set(m) == member_fields for m in bundle['members']), 'Invalid bundle member schema')
+    _code_identity(bundle['code_pins'])
+    draft = {key: copy.deepcopy(bundle[key]) for key in fields - {'destination', 'code_pins'}}
+    draft.update(contract='financial-acquisition-batch-draft-v1', executable=False,
+                 members=[{key: m[key] for key in ('period', 'job', 'job_sha256', 'session_root')} for m in bundle['members']])
+    draft = _verify_draft(draft)
+    destination = acquisition._safe_destination(_ROOT / bundle['destination'])
+    _require(destination.relative_to(_ROOT).as_posix() == bundle['destination']
+             and path == destination / 'bundle.json', 'Bundle destination/path differs')
+    _same(bundle, _build_bundle(draft, bundle['destination'], bundle['code_pins']), 'Bundle differs from closed draft/bindings')
+    bootstrap = _batch_bootstrap(bundle, bundle_pin)
+    _file(destination / 'bootstrap.json', bootstrap_pin)
+    _same(_json((destination / 'bootstrap.json').read_bytes()), bootstrap, 'Batch bootstrap identity mismatch')
+    binding, _ = _batch_paths()
+    if require_binding:
+        _same(_json(_path(binding.relative_to(_ROOT).as_posix()).read_bytes()), _binding(bundle, bundle_pin, bootstrap_pin),
+              'Immutable batch scope binding mismatch')
+    for member in bundle['members']:
+        _file(_path(member['job_path']), member['job_file_sha256'])
+        _same(_json(_path(member['job_path']).read_bytes()), member['job'], 'Member physical/canonical job mismatch')
+    return bundle
+
+
+class _MemberContext:
+    def __init__(self, batch, member):
+        self.batch, self.member = batch, member
+
+
+def _authorize_member(job, context):
+    _require(type(context) is _MemberContext and context.batch.active, 'Authenticated active coordinator member context required')
+    batch = context.batch
+    _require(context.member in batch.bundle['members'] and _canonical(job) == _canonical(context.member['job']),
+             'Coordinator member identity mismatch')
+    # Validate immutable bytes again at the supported singleton boundary. No global
+    # mutable head is passed to workers; the member journal remains authoritative.
+    _bound_bytes(batch)
+    member_path = _path(context.member['job_path'])
+    _file(member_path, context.member['job_file_sha256'])
+    _same(_json(member_path.read_bytes()), context.member['job'], 'Active physical member job differs from embedded identity')
+
+
+def _bound_bytes(batch):
+    """Small immutable recheck inside one authenticated active batch claim."""
+    _code_identity(batch.bundle['code_pins'])
+    path = _path(batch.binding['bundle_path'])
+    _file(path, batch.pin)
+    _same(_json(path.read_bytes()), batch.bundle, 'Active bundle bytes changed')
+    bootstrap_path = _path(batch.bundle['destination'] + '/bootstrap.json')
+    _file(bootstrap_path, batch.bootstrap_pin)
+    _same(_json(bootstrap_path.read_bytes()), _batch_bootstrap(batch.bundle, batch.pin), 'Active bootstrap changed')
+    binding, _ = _batch_paths()
+    _same(_json(_path(binding.relative_to(_ROOT).as_posix()).read_bytes()), batch.binding, 'Immutable batch scope binding mismatch')
+
+
+def _initialize_batch(draft_path: Path, draft_sha256: str, destination: Path, *, code_pins: dict) -> dict:
+    path = _path(Path(draft_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    _file(path, draft_sha256)
+    draft = _verify_draft(_json(path.read_bytes()))
+    _code_identity(code_pins, current_head=True)
+    destination = acquisition._safe_destination(destination)
+    _require(not destination.exists(), 'Batch destination must be new')
+    name = destination.relative_to(_ROOT).as_posix()
+    bundle = _build_bundle(draft, name, code_pins)
+    pin = _sha(_canonical(bundle))
+    bootstrap = _batch_bootstrap(bundle, pin)
+    bootstrap_pin = _sha(_canonical(bootstrap))
+    binding_path, lock = _batch_paths()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with acquisition._claim(lock):
+        _require(not binding_path.exists(), 'Batch scope binding already exists; no reset/rebinding')
+        # Reserve the scope before any member bootstrap. Even interrupted/partial
+        # initialization cannot renew it with different paths, code or policies.
+        binding = _binding(bundle, pin, bootstrap_pin)
+        acquisition._write_exclusive(binding_path, binding)
+        destination.mkdir(parents=True, exist_ok=False)
+        acquisition._write_exclusive(destination / 'bundle.json', bundle)
+        acquisition._write_exclusive(destination / 'bootstrap.json', bootstrap)
+        for member in bundle['members']:
+            member_path = _ROOT / member['job_path']
+            member_path.parent.mkdir(parents=True, exist_ok=False)
+            acquisition._write_exclusive(member_path, member['job'])
+        with (destination / 'journal.jsonl').open('xb') as output:
+            output.flush()
+            os.fsync(output.fileno())
+        batch = _Batch(bundle, pin, bootstrap_pin, [], _ledger_state())
+        try:
+            acquisition._replace_head(destination, batch.head())
+            for member in bundle['members']:
+                actual = acquisition._initialize_authority(member['job'], coordinator=_MemberContext(batch, member))
+                _require(actual == member['bootstrap_sha256'], 'Actual member bootstrap differs from predicted immutable bytes')
+        finally:
+            batch.active = False
+    return {**binding, 'contract': 'financial-acquisition-batch-initialization-v1', 'status': 'initialized'}
+
+
+def _ledger_state():
+    return {'pending': {}, 'finished': {}, 'guard': '', 'guard_streak': 0, 'halt': ''}
+
+
+def _apply_phase(state, record, bundle):
+    base = {'contract', 'sequence', 'previous_record_sha256', 'bundle_sha256', 'bootstrap_sha256', 'kind'}
+    kind = record.get('kind')
+    fields = ({'phase_id', 'period', 'phase', 'session', 'job_sha256', 'member_bootstrap_sha256', 'member_sequence', 'member_record_sha256'}
+              if kind == 'phase_start' else {'phase_id', 'result', 'recovered'} if kind == 'phase_finish' else {'reason'})
+    _require(type(record) is dict and set(record) == base | fields and record['contract'] == 'financial-acquisition-batch-ledger-v1'
+             and type(record['sequence']) is int and record['sequence'] > 0 and kind in ('phase_start', 'phase_finish', 'halt'),
+             'Invalid closed phase record')
+    if kind == 'phase_start':
+        _require(not state['halt'] and type(record['period']) is int and record['period'] in _ACQUIRE
+                 and record['phase'] in ('metadata', 'values'), 'Phase outside fixed window/phase')
+        member = next(m for m in bundle['members'] if m['period'] == record['period'])
+        _require(record['job_sha256'] == member['job_sha256'] and record['member_bootstrap_sha256'] == member['bootstrap_sha256']
+                 and type(record['phase_id']) is str and re.fullmatch('[0-9a-f]{32}', record['phase_id'])
+                 and type(record['member_sequence']) is int and record['member_sequence'] >= 0, 'Phase member/start identity differs')
+        acquisition._digest(record['member_record_sha256'])
+        session = member['session_root'] + '/' + record['phase'] + '-' + record['phase_id']
+        _require(record['session'] == session and record['phase_id'] not in state['pending']
+                 and record['phase_id'] not in state['finished'], 'Phase session/id differs')
+        previous = list(state['pending'].values()) + list(state['finished'].values())
+        _require(not any(p['period'] == record['period'] and p['phase'] == record['phase'] for p in previous), 'Duplicate member phase')
+        if record['phase'] == 'values':
+            _require({p['period'] for p in state['finished'].values() if p['phase'] == 'metadata'} == set(_ACQUIRE),
+                     'Values require terminal metadata barrier for seven members')
+            _require(any(p['period'] == record['period'] and p['phase'] == 'metadata' and p['result']['status'] == 'complete'
+                         for p in state['finished'].values()) and not state['pending'], 'Values require completed metadata and serial values')
+        else:
+            _require(not any(p['phase'] == 'values' for p in state['pending'].values()) and len(state['pending']) < 2,
+                     'Metadata concurrency exceeds approved two slots')
+        state['pending'][record['phase_id']] = copy.deepcopy(record)
+    elif kind == 'phase_finish':
+        _require(record['phase_id'] in state['pending'] and type(record['recovered']) is bool, 'Unknown phase conclusion')
+        result = record['result']
+        _result_schema(result)
+        start = state['pending'].pop(record['phase_id'])
+        state['finished'][record['phase_id']] = {**start, 'result': copy.deepcopy(result)}
+        guard = result['guard'] if result['guard'] in ('integrity', 'schema', 'deadline') else ''
+        state['guard_streak'] = (state['guard_streak'] + 1 if guard == state['guard'] else 1) if guard else 0
+        state['guard'] = guard
+        if state['guard_streak'] >= bundle['policies']['max_guard_streak']:
+            state['halt'] = 'consecutive_guard'
+        failed = {p['period'] for p in state['finished'].values() if p['result']['status'] == 'failed'}
+        if len(failed) >= 3:
+            state['halt'] = state['halt'] or 'three_failed_members'
+        if result['guard'] in ('persistence', 'containment'):
+            state['halt'] = state['halt'] or 'critical_' + result['guard']
+    else:
+        _require(type(record['reason']) is str and record['reason'], 'Halt reason required')
+        state['halt'] = state['halt'] or record['reason']
+
+
+class _Batch:
+    def __init__(self, bundle, pin, bootstrap_pin, records, state):
+        self.bundle, self.pin, self.bootstrap_pin = bundle, pin, bootstrap_pin
+        self.records, self.state, self.active = records, state, True
+        self.inflight = set()
+        self.halt_reason = ''
+        self.binding = _binding(bundle, pin, bootstrap_pin)
+        self.folder = _ROOT / bundle['destination']
+
+    @property
+    def halted(self):
+        return self.halt_reason or self.state['halt']
+
+    def head(self):
+        return {'sequence': len(self.records), 'record_sha256': self.records[-1]['record_sha256'] if self.records else acquisition._EMPTY_HASH,
+                'state_sha256': _sha(_canonical(self.state))}
+
+    def append(self, kind, **details):
+        _require(self.active, 'Batch claim closed')
+        record = {'contract': 'financial-acquisition-batch-ledger-v1', 'sequence': len(self.records) + 1,
+                  'previous_record_sha256': self.head()['record_sha256'], 'bundle_sha256': self.pin,
+                  'bootstrap_sha256': self.bootstrap_pin, 'kind': kind, **details}
+        state = copy.deepcopy(self.state)
+        _apply_phase(state, record, self.bundle)
+        record['record_sha256'] = _sha(_canonical(record))
+        with acquisition._safe_destination(self.folder / 'journal.jsonl').open('ab') as output:
+            output.write(_canonical(record) + b'\n')
+            output.flush()
+            os.fsync(output.fileno())
+        self.records.append(record)
+        self.state = state
+        acquisition._replace_head(self.folder, self.head())
+        _require((self.folder / 'journal.jsonl').read_bytes().endswith(_canonical(record) + b'\n')
+                 and _json((self.folder / 'head.json').read_bytes()) == self.head(), 'Durable phase append/head mismatch')
+        return record
+
+    def halt(self, reason):
+        marker = self.folder / 'halt.json'
+        expected = {'contract': 'financial-acquisition-batch-halt-v1', 'bundle_sha256': self.pin,
+                    'bootstrap_sha256': self.bootstrap_pin, 'reason': reason}
+        if marker.exists():
+            previous = _json(_path(marker.relative_to(_ROOT).as_posix()).read_bytes())
+            _require(set(previous) == set(expected) and previous['contract'] == expected['contract']
+                     and previous['bundle_sha256'] == self.pin and previous['bootstrap_sha256'] == self.bootstrap_pin
+                     and type(previous['reason']) is str and previous['reason'], 'Invalid persisted batch halt')
+            reason = previous['reason']
+        else:
+            acquisition._write_exclusive(marker, expected)
+        self.halt_reason = reason
+        return reason
+
+
+@contextmanager
+def _open_batch(bundle_path, bundle_sha256, bootstrap_sha256, *, recover=False):
+    bundle = _immutable_batch(bundle_path, bundle_sha256, bootstrap_sha256)
+    binding, lock = _batch_paths()
+    _require(lock.is_file(), 'Existing batch claim file required')
+    with acquisition._claim(lock):
+        # Repeat after claim acquisition to close the supported writer boundary.
+        checked = _Batch(bundle, bundle_sha256, bootstrap_sha256, [], _ledger_state())
+        _bound_bytes(checked)
+        checked.active = False
+        folder = _ROOT / bundle['destination']
+        raw = _path((folder / 'journal.jsonl').relative_to(_ROOT).as_posix()).read_bytes()
+        _require(not raw or raw.endswith(b'\n'), 'Partial batch journal tail; never truncate')
+        records, state, heads = [], _ledger_state(), []
+        initial = {'sequence': 0, 'record_sha256': acquisition._EMPTY_HASH, 'state_sha256': _sha(_canonical(state))}
+        heads.append(initial)
+        for line in raw.splitlines():
+            record = _json(line)
+            _require(type(record) is dict and 'record_sha256' in record, 'Invalid phase journal record')
+            pin = record.pop('record_sha256')
+            _require(pin == _sha(_canonical(record)) and type(record.get('sequence')) is int and record['sequence'] == len(records) + 1
+                     and record['previous_record_sha256'] == heads[-1]['record_sha256']
+                     and record['bundle_sha256'] == bundle_sha256 and record['bootstrap_sha256'] == bootstrap_sha256,
+                     'Batch journal chain/pins mismatch')
+            _apply_phase(state, record, bundle)
+            record['record_sha256'] = pin
+            records.append(record)
+            heads.append({'sequence': len(records), 'record_sha256': pin, 'state_sha256': _sha(_canonical(state))})
+        head = _json(_path((folder / 'head.json').relative_to(_ROOT).as_posix()).read_bytes())
+        seq = head.get('sequence')
+        _require(type(seq) is int and 0 <= seq < len(heads) and head == heads[seq], 'Batch head missing/invalid')
+        _require(recover or seq == len(records), 'Batch head lags journal; recover offline')
+        if recover and seq != len(records):
+            acquisition._replace_head(folder, heads[-1])
+        batch = _Batch(bundle, bundle_sha256, bootstrap_sha256, records, state)
+        try:
+            if (folder / 'halt.json').exists():
+                batch.halt('previous_halt')
+            yield batch
+        finally:
+            batch.active = False
+
+
+def _result_schema(result):
+    _require(type(result) is dict and set(result) == {'contract', 'status', 'guard', 'receipt', 'checkpoint', 'error'}
+             and result['contract'] == 'financial-acquisition-phase-result-v1'
+             and result['status'] in ('complete', 'failed') and type(result['guard']) is str
+             and type(result['error']) is str, 'Invalid terminal phase result')
+    for ref in (result['receipt'], result['checkpoint']):
+        _require(ref is None or type(ref) is dict and set(ref) == {'path', 'sha256'}, 'Invalid terminal proof ref')
+        if ref is not None:
+            _path(ref['path'])
+            acquisition._digest(ref['sha256'])
+    _require(result['receipt'] is not None and ((result['status'] == 'complete' and result['checkpoint'] is not None
+             and not result['guard'] and not result['error']) or (result['status'] == 'failed' and result['checkpoint'] is None
+             and result['error'])), 'Terminal phase status/proofs inconsistent')
+
+
+def _proof(batch, start, result, *, current=True):
+    _result_schema(result)
+    member = next(m for m in batch.bundle['members'] if m['period'] == start['period'])
+    context = _MemberContext(batch, member)
+    with acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context) as authority:
+        receipt = _read(result['receipt'])
+        acquisition._verify_receipt(receipt, authority)
+        _require((not current or receipt['sequence'] == len(authority.records) and not authority.state['pending'])
+                 and receipt['session_id'] == Path(start['session']).name and not receipt['state']['pending']
+                 and receipt['sequence'] > start['member_sequence'],
+                 'Phase receipt is stale, pending, or lacks terminal progress')
+        _require(result['receipt']['path'] == start['session'] + '/receipt.json', 'Receipt outside exact phase session')
+        _require(start['member_sequence'] <= len(authority.records) and start['member_record_sha256'] ==
+                 (authority.records[start['member_sequence'] - 1]['record_sha256'] if start['member_sequence'] else acquisition._EMPTY_HASH),
+                 'Phase start member head differs from journal prefix')
+        proof_state = receipt['state']
+        if result['status'] == 'failed':
+            prior = acquisition._initial_state()
+            for record in authority.records[:start['member_sequence']]:
+                acquisition._apply_record(prior, record, authority.targets, authority.policies)
+            _require(proof_state['failures'] > prior['failures'] and result['guard'] == proof_state['guard'],
+                     'Failed phase lacks current member failure/guard evidence')
+            return
+        refs = {t['target_key']: proof_state['sources'][t['target_key']] for t in member['job']['targets']
+                if t['target_key'] in proof_state['sources']}
+        _require(len(refs) == 2, 'Metadata source proof incomplete')
+        cadaster = next(t for t in member['job']['targets'] if t['role'] == 'cadaster')
+        body, _ = acquisition._authenticated(refs[cadaster['target_key']], expected=cadaster)
+        acquisition._cadaster(body, member['period'])
+        resolved = acquisition.resolve_sources(member['job'], refs)
+        checkpoint = _read(result['checkpoint'])
+        if start['phase'] == 'metadata':
+            _require(result['checkpoint']['path'] == start['session'] + '/checkpoint-a.json', 'Checkpoint A outside phase session')
+            _same(checkpoint, resolved['checkpoints'][0], 'Checkpoint A differs from current native sources')
+        else:
+            metadata = next(p for p in batch.state['finished'].values() if p['period'] == member['period'] and p['phase'] == 'metadata')
+            a = metadata['result']['checkpoint']
+            _same(_read(a), resolved['checkpoints'][0], 'Metadata checkpoint changed before values')
+            for target in resolved['numeric_targets']:
+                _require(target['target_key'] in proof_state['sources'], 'Numeric source proof incomplete')
+                body, _ = acquisition._authenticated(proof_state['sources'][target['target_key']], expected=target)
+                origins = [n['origin'] for r in resolved['resolutions'] for n in r['nodes']
+                           if n['kind'] == 'numeric' and n['origin']['area'] == target['area']]
+                acquisition.validate_numeric_source(body, area=target['area'], required_origins=origins)
+            projection = ('source_id', 'role', 'area', 'native_file', 'catalog_pointer', 'manifest_path',
+                          'manifest_sha256', 'body_sha256', 'provenance_sha256')
+            expected = {**resolved['checkpoints'][0], 'phase': 'complete', 'checkpoint_a_sha256': a['sha256'],
+                        'sources': sorted(resolved['checkpoints'][0]['sources'] +
+                          [{key: proof_state['sources'][t['target_key']][key] for key in projection}
+                           for t in resolved['numeric_targets']], key=lambda ref: ref['source_id'])}
+            _require(result['checkpoint']['path'] == start['session'] + '/checkpoint-b.json', 'Checkpoint B outside phase session')
+            _same(checkpoint, expected, 'Checkpoint B differs from native accepted sources')
+
+
+def _totals(batch):
+    members = []
+    for member in batch.bundle['members']:
+        with acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=_MemberContext(batch, member)) as authority:
+            members.append({'period': member['period'], 'sequence': len(authority.records),
+                            'pending_attempts': len(authority.state['pending']), **{key: authority.state[key] for key in _COUNTERS}})
+    return {'contract': 'financial-acquisition-batch-state-v1', 'status': 'halted' if batch.halted else
+            'pending' if batch.state['pending'] else 'verified', 'halt': batch.halted,
+            'bundle_sha256': batch.pin, 'bootstrap_sha256': batch.bootstrap_pin, 'sequence': len(batch.records),
+            'members': members, 'totals': {key: sum(m[key] for m in members) for key in _COUNTERS},
+            'pending_phases': list(batch.state['pending']), 'finished_phases': list(batch.state['finished'])}
+
+
+def _finished_proofs(batch):
+    for start in batch.state['finished'].values():
+        _proof(batch, start, start['result'], current=False)
+
+
+def _verify_batch(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str) -> dict:
+    with _open_batch(bundle_path, bundle_sha256, bootstrap_sha256) as batch:
+        _finished_proofs(batch)
+        return _totals(batch)
+
+
+def _reconcile(batch):
+    try:
+        _finished_proofs(batch)
+    except (ValueError, OSError, KeyError) as error:
+        batch.halt('finished_phase_unproven: ' + str(error))
+        return
+    unfinished = list(batch.state['pending'].values())
+    if not unfinished or batch.halted:
+        return
+    results = []
+    for start in unfinished:
+        member = next(m for m in batch.bundle['members'] if m['period'] == start['period'])
+        context = _MemberContext(batch, member)
+        try:
+            with acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context, recover=True) as authority:
+                if authority.state['pending']:
+                    acquisition._recover_pending(authority)  # retained orphan reservations; no refund
+                    raise ValueError('Unfinished member attempt; terminal phase outcome unproven')
+            terminal = _ROOT / start['session'] / 'terminal.json'
+            if terminal.exists():
+                result = _json(_path(terminal.relative_to(_ROOT).as_posix()).read_bytes())
+            else:
+                receipt = _ROOT / start['session'] / 'receipt.json'
+                checkpoint = _ROOT / start['session'] / ('checkpoint-a.json' if start['phase'] == 'metadata' else 'checkpoint-b.json')
+                result = {'contract': 'financial-acquisition-phase-result-v1', 'status': 'complete', 'guard': '', 'error': '',
+                          'receipt': _reference(receipt.relative_to(_ROOT).as_posix(), _sha(_path(receipt.relative_to(_ROOT).as_posix()).read_bytes())),
+                          'checkpoint': _reference(checkpoint.relative_to(_ROOT).as_posix(), _sha(_path(checkpoint.relative_to(_ROOT).as_posix()).read_bytes()))}
+            _proof(batch, start, result)
+            results.append((start, result))
+        except (ValueError, OSError, KeyError) as error:
+            batch.halt('recovery_unproven: ' + str(error))
+            return
+    if len(unfinished) > 1 and any(result['status'] != 'complete' for _, result in results):
+        batch.halt('recovered_phase_order_unprovable')
+        return
+    for start, result in results:
+        terminal = _ROOT / start['session'] / 'terminal.json'
+        if not terminal.exists():
+            acquisition._write_exclusive(terminal, result)
+        batch.append('phase_finish', phase_id=start['phase_id'], result=result, recovered=True)
+
+
+def _recover_batch(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str, output: Path) -> dict:
+    destination = acquisition._safe_destination(output)
+    _require(not destination.exists(), 'Recovery output must be new')
+    # Immutable authentication happens before any recovery write. If valid immutable
+    # binding exists but mutable evidence is damaged, persist a separate halt marker.
+    bundle = _immutable_batch(bundle_path, bundle_sha256, bootstrap_sha256, require_binding=False)
+    try:
+        with _open_batch(bundle_path, bundle_sha256, bootstrap_sha256, recover=True) as batch:
+            _reconcile(batch)
+            result = _totals(batch)
+    except (ValueError, OSError, KeyError) as error:
+        _, lock = _batch_paths()
+        with acquisition._claim(lock):
+            _immutable_batch(bundle_path, bundle_sha256, bootstrap_sha256, require_binding=False)
+            batch = _Batch(bundle, bundle_sha256, bootstrap_sha256, [], _ledger_state())
+            try:
+                reason = batch.halt('mutable_evidence_unproven: ' + str(error))
+                result = {'contract': 'financial-acquisition-batch-recovery-v1', 'status': 'halted', 'halt': reason,
+                          'bundle_sha256': bundle_sha256, 'bootstrap_sha256': bootstrap_sha256}
+            finally:
+                batch.active = False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    acquisition._write_exclusive(destination, result)
+    return result
+
+
+def _start_phase(batch, member, phase):
+    _require(not batch.halted and set(batch.state['pending']) <= batch.inflight,
+             'Reconcile all unfinished starts before dispatch')
+    with acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=_MemberContext(batch, member)) as authority:
+        _require(not authority.state['pending'], 'Member pending reservations block phase dispatch')
+        identity = uuid.uuid4().hex
+        start = batch.append('phase_start', phase_id=identity, period=member['period'], phase=phase,
+                            session=member['session_root'] + '/' + phase + '-' + identity,
+                            job_sha256=member['job_sha256'], member_bootstrap_sha256=member['bootstrap_sha256'],
+                            member_sequence=len(authority.records), member_record_sha256=authority.records[-1]['record_sha256']
+                            if authority.records else acquisition._EMPTY_HASH)
+        batch.inflight.add(identity)
+        return start
+
+
+def _run_serial(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str, phase_callable) -> dict:
+    """Offline test seam; Task3 supplies a contained terminal phase executor."""
+    _require(callable(phase_callable), 'Terminal phase callable required')
+    with _open_batch(bundle_path, bundle_sha256, bootstrap_sha256, recover=True) as batch:
+        _reconcile(batch)
+        if batch.halted:
+            return _totals(batch)
+        for phase in ('metadata', 'values'):
+            for member in batch.bundle['members']:
+                if any(p['period'] == member['period'] and p['phase'] == phase for p in batch.state['finished'].values()):
+                    continue
+                if phase == 'values' and not any(p['period'] == member['period'] and p['phase'] == 'metadata'
+                         and p['result']['status'] == 'complete' for p in batch.state['finished'].values()):
+                    continue
+                start = _start_phase(batch, member, phase)
+                try:
+                    result = phase_callable(copy.deepcopy(member), copy.deepcopy(start), _MemberContext(batch, member))
+                    _proof(batch, start, result)
+                    acquisition._write_exclusive(_ROOT / start['session'] / 'terminal.json', result)
+                    batch.append('phase_finish', phase_id=start['phase_id'], result=result, recovered=False)
+                except (ValueError, OSError, KeyError) as error:
+                    batch.halt('phase_outcome_unproven: ' + str(error))
+                if batch.halted:
+                    return _totals(batch)
+        return _totals(batch)

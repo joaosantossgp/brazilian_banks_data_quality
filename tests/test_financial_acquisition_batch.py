@@ -158,7 +158,7 @@ class BatchCompositionTests(unittest.TestCase):
     def bounded_source(self, target, payload):
         body = canonical(payload)
         stem = target['source_id'].replace(':', '-')
-        prefix = 'data/raw/source403/' + stem
+        prefix = ('data/raw/source403/' if target['period'] == 202403 else 'data/raw/source' + str(target['period']) + '/') + stem
         self.write(prefix + '.bin', body)
         headers = [['Content-Length', str(len(body))]]
         metadata = {'http_status': 200, 'final_url': target['url'], 'response_headers_raw': headers}
@@ -171,7 +171,7 @@ class BatchCompositionTests(unittest.TestCase):
                     'content_length': len(body), 'bytes_observed': len(body), 'body_budget_bytes': len(body),
                     'response_metadata_path': stem + '.response.json', 'response_metadata_sha256': sidecar['sha256'],
                     'response_headers_raw': headers,
-                    'context': {'period': 202403, 'perspective': 1005, 'role': target['role']}}
+                    'context': {'period': target['period'], 'perspective': 1005, 'role': target['role']}}
         pin = self.write(prefix + '.json', manifest)
         return {**target, 'manifest_path': pin['path'], 'manifest_sha256': pin['sha256'],
                 'body_sha256': sha(body), 'provenance_sha256': sha(canonical(manifest)), 'context': manifest['context']}
@@ -418,6 +418,548 @@ class BatchCompositionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare()
 
+
+class BatchAuthorityTests(unittest.TestCase):
+    setUpClass = BatchCompositionTests.__dict__['setUpClass']
+    inject = BatchCompositionTests.inject
+    write = BatchCompositionTests.write
+    parquet_fixture = BatchCompositionTests.parquet_fixture
+    bounded_source = BatchCompositionTests.bounded_source
+    source_fixture = BatchCompositionTests.source_fixture
+    prepare = BatchCompositionTests.prepare
+    def setUp(self):
+        initialize = self.acquisition.initialize_authority
+        run = self.acquisition.run_acquisition
+        BatchCompositionTests.setUp(self)
+        self.inject(self.acquisition, 'initialize_authority', initialize)
+        self.inject(self.acquisition, 'run_acquisition', run)
+        archive = importlib.import_module('bank_quality.archive')
+        self.inject(archive, 'fetch_bounded', lambda *args, **kwargs: self.fail('Unexpected HTTP'))
+        self.identity = {'reviewed_commit': 'b' * 40, 'files': {name: sha(name.encode()) for name in (
+            'bank_quality/financial_acquisition.py', 'bank_quality/archive.py',
+            'bank_quality/windows_acquisition.py', 'scripts/acquire-financial.py',
+            'bank_quality/financial_acquisition_batch.py')},
+            'runtime': {'path': 'C:/fixture/python.exe', 'sha256': 'a' * 64}}
+        self.inject(self.batch, '_current_code_identity', lambda: copy.deepcopy(self.identity))
+        self.pins = {'contract': 'financial-acquisition-code-pins-v1', 'reviewed_commit': 'b' * 40,
+                     **copy.deepcopy(self.identity), 'policy_sha256': sha(canonical(self.batch._POLICIES))}
+
+    def initialize(self, destination='data/runs/batch-fixture'):
+        draft = self.write('data/runs/input/draft.json', self.prepare())
+        return self.batch._initialize_batch(self.root / draft['path'], draft['sha256'],
+                                           self.root / destination, code_pins=self.pins)
+
+    def test_new_scope_validated_by_singleton_and_standalone_blocked(self):
+        job = self.prepare()['members'][0]['job']
+        try:
+            targets = self.acquisition._execution_job(job)
+        except ValueError as error:
+            self.fail('Reviewed batch member rejected by trusted scope validator: ' + str(error))
+        self.assertEqual(len(targets), 7)
+        with self.assertRaisesRegex(ValueError, 'coordinator'):
+            self.acquisition.open_authority(job, bootstrap_sha256='0' * 64).__enter__()
+
+    def test_explicit_offline_initialization_and_external_pins(self):
+        self.assertTrue(callable(getattr(self.batch, '_initialize_batch', None)), 'Offline initialization missing')
+        refs = self.initialize()
+        result = self.batch._verify_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                         bootstrap_sha256=refs['bootstrap_sha256'])
+        self.assertEqual(result['totals']['attempts'], 0)
+        self.assertEqual(len(result['members']), 7)
+        with self.assertRaises(ValueError):
+            self.initialize('data/runs/second-budget')
+
+    def test_current_code_identity_mismatch_rejected_before_writes(self):
+        self.assertTrue(callable(getattr(self.batch, '_initialize_batch', None)), 'Code identity gate missing')
+        self.pins['files']['bank_quality/archive.py'] = 'c' * 64
+        with self.assertRaises(ValueError):
+            self.initialize()
+        self.assertFalse((self.root / 'data/runs/batch-fixture').exists())
+
+    def opened(self, refs, *, recover=False):
+        return self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                      refs['bootstrap_sha256'], recover=recover)
+
+    def recover(self, refs, number=1):
+        return self.batch._recover_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                         bootstrap_sha256=refs['bootstrap_sha256'],
+                                         output=self.root / f'data/runs/recovery-{number}.json')
+
+    def terminal(self, member, start, context):
+        api = self.acquisition
+        session = self.root / start['session']
+        session.mkdir(parents=True)
+        job, phase = member['job'], start['phase']
+        with api._open_authority(job, member['bootstrap_sha256'], coordinator=context) as authority:
+            if phase == 'metadata':
+                targets = job['targets']
+            else:
+                refs = {t['target_key']: authority.state['sources'][t['target_key']] for t in job['targets']}
+                resolved = api.resolve_sources(job, refs)
+                targets = resolved['numeric_targets']
+            reports = job['descriptors'][0]['selection']['reports']
+            for target in targets:
+                payload = ([{'c0': '1', 'c1': str(member['period'])}] if target['role'] == 'cadaster'
+                           else [{'id': rid, 'td': 3, 'a': 1, 'lid': rid} for rid in reports]
+                           if target['role'] == 'dictionary' else {'id': target['area'], 'values': [{'e': 1, 'v': [{'i': rid, 'v': 0} for rid in reports]}]})
+                source = self.bounded_source(target, payload)
+                reservation = api.reserve_attempt(authority, target, session_id=session.name)
+                authority.commit('finish', attempt_id=reservation['attempt_id'], target_key=target['target_key'],
+                                 session_id=session.name, status='source_complete', retryable=False,
+                                 source_ref=source, observed_bytes=len(canonical(payload)), observed_attempt_seconds=1, tree_extinct=True)
+            receipt = self.write(start['session'] + '/receipt.json', api._receipt(authority, session.name))
+            refs = {t['target_key']: authority.state['sources'][t['target_key']] for t in job['targets']}
+            resolved = api.resolve_sources(job, refs)
+            checkpoint = resolved['checkpoints'][0]
+            if phase == 'values':
+                metadata = next(p for p in context.batch.state['finished'].values()
+                                if p['period'] == member['period'] and p['phase'] == 'metadata')
+                projection = ('source_id', 'role', 'area', 'native_file', 'catalog_pointer', 'manifest_path',
+                              'manifest_sha256', 'body_sha256', 'provenance_sha256')
+                checkpoint = {**checkpoint, 'phase': 'complete',
+                              'checkpoint_a_sha256': metadata['result']['checkpoint']['sha256'],
+                              'sources': sorted(checkpoint['sources'] + [{key: authority.state['sources'][t['target_key']][key]
+                                             for key in projection} for t in targets], key=lambda ref: ref['source_id'])}
+            proof = self.write(start['session'] + ('/checkpoint-a.json' if phase == 'metadata' else '/checkpoint-b.json'), checkpoint)
+        return {'contract': 'financial-acquisition-phase-result-v1', 'status': 'complete',
+                'guard': '', 'error': '', 'receipt': receipt, 'checkpoint': proof}
+
+    def test_serial_phase_callable_uses_current_member_receipts_and_summed_journals(self):
+        refs = self.initialize()
+        dispatched = []
+        def terminal(member, start, context):
+            current = json.loads((self.root / 'data/runs/batch-fixture/head.json').read_bytes())
+            self.assertGreater(current['sequence'], 0)
+            self.assertEqual(context.batch.records[-1]['kind'], 'phase_start')
+            dispatched.append((member['period'], start['phase']))
+            return self.terminal(member, start, context)
+        result = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                        bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=terminal)
+        self.assertEqual(result['status'], 'verified', result)
+        self.assertEqual(len(dispatched), 14)
+        self.assertEqual(result['totals']['attempts'], 21)  # two metadata plus one native numeric shard per member
+        self.assertEqual(len(result['finished_phases']), 14)
+        self.assertEqual(result, self.batch._verify_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                                        bootstrap_sha256=refs['bootstrap_sha256']))
+        result2 = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                         bootstrap_sha256=refs['bootstrap_sha256'],
+                                         phase_callable=lambda *args: self.fail('Already finished phase dispatched'))
+        self.assertEqual(result, result2)
+
+    def test_crash_after_member_finish_reconciles_before_new_dispatch_idempotently(self):
+        class Crash(BaseException):
+            pass
+        refs = self.initialize()
+        def crash(member, start, context):
+            self.terminal(member, start, context)
+            raise Crash()
+        with self.assertRaises(Crash):
+            self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                   bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=crash)
+        recovered = self.recover(refs)
+        self.assertEqual(recovered['status'], 'verified', recovered)
+        self.assertEqual(recovered['totals']['attempts'], 2)
+        self.assertEqual(len(recovered['finished_phases']), 1)
+        self.assertEqual(recovered, self.recover(refs, 2))
+        with self.opened(refs) as batch:
+            self.assertEqual(batch.records[-1]['kind'], 'phase_finish')
+            self.assertTrue(batch.records[-1]['recovered'])
+
+    def test_partial_initialization_scope_binding_never_renews(self):
+        original = self.acquisition._write_exclusive
+        def interrupted(path, value):
+            if path.name == 'bootstrap.json' and path.parent.parent.name == 'financial-acquisition-authority':
+                raise OSError('fixture interruption')
+            return original(path, value)
+        with patch.object(self.acquisition, '_write_exclusive', interrupted):
+            with self.assertRaises(OSError):
+                self.initialize()
+        with self.assertRaisesRegex(ValueError, 'binding'):
+            self.initialize('data/runs/retry-after-partial')
+        self.assertFalse((self.root / 'data/runs/retry-after-partial').exists())
+
+    def test_missing_batch_binding_persists_halt_without_new_budget(self):
+        refs = self.initialize()
+        binding, _ = self.batch._batch_paths()
+        binding.unlink()
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertTrue((self.root / 'data/runs/batch-fixture/halt.json').is_file())
+
+    def test_pending_member_orphan_stays_charged_and_halts_without_dispatch(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(batch, member)) as authority:
+                self.acquisition.reserve_attempt(authority, member['job']['targets'][0], session_id=Path(start['session']).name)
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['totals']['attempts'], 1)
+        self.assertEqual(result['totals']['body_bytes'], 5 * 1024 * 1024)
+        self.assertEqual(result['totals']['attempt_seconds'], 120)
+        again = self.recover(refs, 2)
+        self.assertEqual(result, again)
+        self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                               bootstrap_sha256=refs['bootstrap_sha256'],
+                               phase_callable=lambda *args: self.fail('Halted batch dispatched'))
+
+    def test_partial_batch_tail_persists_halt(self):
+        refs = self.initialize()
+        journal = self.root / 'data/runs/batch-fixture/journal.jsonl'
+        journal.write_bytes(b'{"partial":')
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(journal.read_bytes(), b'{"partial":')
+
+    def test_two_metadata_starts_can_be_active_without_changing_singleton_claims(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            self.batch._start_phase(batch, batch.bundle['members'][0], 'metadata')
+            second = self.batch._start_phase(batch, batch.bundle['members'][1], 'metadata')
+            self.assertEqual(second['period'], 202409)
+            with self.assertRaises(ValueError):
+                self.batch._start_phase(batch, batch.bundle['members'][2], 'metadata')
+
+    def test_live_or_unknown_worker_identity_keeps_reservation_and_halts(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(batch, member)) as authority:
+                reservation = self.acquisition.reserve_attempt(authority, member['job']['targets'][0], session_id=Path(start['session']).name)
+                authority.commit('identity', attempt_id=reservation['attempt_id'], target_key=reservation['target_key'],
+                                 session_id=reservation['session_id'], identity={'pid': 77, 'creation_time': 8, 'contained': True})
+        self.inject(self.acquisition, 'identity_extinct', lambda identity: False)
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['members'][0]['pending_attempts'], 1)
+        self.assertEqual(result['totals']['attempt_seconds'], 120)
+
+    def test_stale_empty_receipt_and_session_folder_cannot_prove_success(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(batch, member)) as authority:
+                self.write(start['session'] + '/receipt.json', self.acquisition._receipt(authority, Path(start['session']).name))
+            self.write(start['session'] + '/checkpoint-a.json', {})
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['totals']['attempts'], 0)
+
+    def test_mutated_member_pin_fake_context_and_closed_context_refused(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            context = self.batch._MemberContext(batch, member)
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context):
+                pass
+            with self.assertRaises(ValueError):
+                with self.acquisition._open_authority(member['job'], 'c' * 64, coordinator=context):
+                    pass
+            with self.assertRaises(ValueError):
+                with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator={}):
+                    pass
+        with self.assertRaisesRegex(ValueError, 'active coordinator'):
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context):
+                pass
+
+    def failing_terminal(self, member, start, context, guard):
+        api = self.acquisition
+        (self.root / start['session']).mkdir(parents=True)
+        with api._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context) as authority:
+            authority.commit('guard_failure', target_key=member['job']['targets'][0]['target_key'],
+                             session_id=Path(start['session']).name, status='source_schema_failed', guard=guard)
+            receipt = self.write(start['session'] + '/receipt.json', api._receipt(authority, Path(start['session']).name))
+        return {'contract': 'financial-acquisition-phase-result-v1', 'status': 'failed',
+                'guard': guard, 'error': 'fixture terminal guard', 'receipt': receipt, 'checkpoint': None}
+
+    def test_terminal_failure_halt_requires_three_members_or_two_matching_guards(self):
+        refs = self.initialize()
+        dispatched = []
+        guards = iter(('schema', 'deadline', 'schema'))
+        def phase(member, start, context):
+            dispatched.append(member['period'])
+            return self.failing_terminal(member, start, context, next(guards))
+        result = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                        bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=phase)
+        self.assertEqual(len(dispatched), 3)
+        self.assertEqual(result['halt'], 'three_failed_members')
+
+    def test_two_matching_guard_conclusions_halt_in_durable_finish_order(self):
+        refs = self.initialize()
+        dispatched = []
+        def phase(member, start, context):
+            dispatched.append(member['period'])
+            return self.failing_terminal(member, start, context, 'schema')
+        result = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                        bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=phase)
+        self.assertEqual(len(dispatched), 2)
+        self.assertEqual(result['halt'], 'consecutive_guard')
+
+    def test_initialization_checks_current_head_but_offline_verification_accepts_later_document_head(self):
+        self.pins['reviewed_commit'] = 'c' * 40
+        with self.assertRaisesRegex(ValueError, 'HEAD'):
+            self.initialize()
+        self.pins['reviewed_commit'] = 'b' * 40
+        refs = self.initialize()
+        self.identity['reviewed_commit'] = 'c' * 40
+        self.assertEqual(self.batch._verify_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                         bootstrap_sha256=refs['bootstrap_sha256'])['status'], 'verified')
+
+    def test_member_boundary_rechecks_small_immutable_pins_without_reuse_corpus(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            with patch.object(self.batch, '_verify_draft', side_effect=AssertionError('Repeated corpus verification')):
+                with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                                                      coordinator=self.batch._MemberContext(batch, member)):
+                    pass
+            binding, _ = self.batch._batch_paths()
+            document = json.loads(binding.read_bytes())
+            document['bundle_sha256'] = 'c' * 64
+            binding.write_bytes(canonical(document))
+            with self.assertRaises(ValueError):
+                with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                                                      coordinator=self.batch._MemberContext(batch, member)):
+                    pass
+
+    def test_missing_batch_head_persists_halt(self):
+        refs = self.initialize()
+        (self.root / 'data/runs/batch-fixture/head.json').unlink()
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertFalse((self.root / 'data/runs/batch-fixture/head.json').exists())
+
+    def test_two_recovered_terminal_outcomes_with_unproven_order_halt(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            for index, member in enumerate(batch.bundle['members'][:2]):
+                start = self.batch._start_phase(batch, member, 'metadata')
+                context = self.batch._MemberContext(batch, member)
+                terminal = self.terminal(member, start, context) if index == 0 else self.failing_terminal(member, start, context, 'schema')
+                self.write(start['session'] + '/terminal.json', terminal)
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['halt'], 'recovered_phase_order_unprovable')
+        self.assertEqual(len(result['pending_phases']), 2)
+        self.assertEqual(result['totals']['attempts'], 2)
+        self.assertEqual(result, self.recover(refs, 2))
+
+    def test_new_scope_standalone_apis_and_v1_worker_refuse_before_launch(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+        api = self.acquisition
+        kwargs = {'bootstrap_sha256': member['bootstrap_sha256']}
+        calls = (lambda: api.initialize_authority(member['job']),
+                 lambda: api.verify_authority(self.root / member['job_path'], member['job_sha256'], **kwargs),
+                 lambda: api.recover_authority(self.root / member['job_path'], member['job_sha256'],
+                                              output=self.root / 'data/runs/standalone-recovery.json', **kwargs),
+                 lambda: api.run_acquisition(self.root / member['job_path'], member['job_sha256'],
+                                            self.root / 'data/runs/standalone-session', phase='metadata', **kwargs),
+                 lambda: api._worker_authorization({'job_path': member['job_path'], 'job_sha256': member['job_sha256']}))
+        for index, call in enumerate(calls):
+            with self.subTest(api=index), self.assertRaisesRegex(ValueError, 'coordinator'):
+                call()
+        self.assertFalse((self.root / 'data/runs/standalone-session').exists())
+        self.assertFalse((self.root / 'data/runs/standalone-recovery.json').exists())
+
+    def test_new_execution_jobs_reject_mutations_with_coherent_candidate_hash(self):
+        original = self.prepare()['members'][0]['job']
+        changes = (lambda j: j.update(version=True), lambda j: j.update(nonce='renew'),
+                   lambda j: j.update(acquisition_scope=SCOPE + '/202403'),
+                   lambda j: j['policies'].update(attempts=True), lambda j: j['policies'].update(attempts=1),
+                   lambda j: j['descriptors'].append(copy.deepcopy(j['descriptors'][0])),
+                   lambda j: j['descriptors'][0]['selection'].update(period=202409),
+                   lambda j: j['targets'][0].update(url='https://fixture/arbitrary'),
+                   lambda j: j['targets'].append(copy.deepcopy(j['targets'][0])))
+        for change in changes:
+            job = copy.deepcopy(original)
+            change(job)
+            job['job_sha256'] = self.acquisition._job_hash(job)
+            with self.subTest(job=job['job_sha256']), self.assertRaises(ValueError):
+                self.acquisition._execution_job(job)
+
+    def test_values_start_requires_complete_metadata_barrier(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            terminal = self.terminal(member, start, self.batch._MemberContext(batch, member))
+            batch.append('phase_finish', phase_id=start['phase_id'], result=terminal, recovered=False)
+            with self.assertRaisesRegex(ValueError, 'barrier'):
+                self.batch._start_phase(batch, member, 'values')
+
+    def test_batch_head_fsync_failure_prevents_phase_callable(self):
+        refs = self.initialize()
+        original = self.acquisition._replace_head
+        def head_failure(folder, head):
+            if folder == self.root / 'data/runs/batch-fixture' and head['sequence'] > 0:
+                raise OSError('fixture batch head fsync')
+            return original(folder, head)
+        with patch.object(self.acquisition, '_replace_head', head_failure), self.assertRaises(OSError):
+            self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                   bootstrap_sha256=refs['bootstrap_sha256'],
+                                   phase_callable=lambda *args: self.fail('Head durability failure dispatched'))
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['totals']['attempts'], 0)
+
+    def test_unknown_identity_error_keeps_pending_reservation(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(batch, member)) as authority:
+                reserve = self.acquisition.reserve_attempt(authority, member['job']['targets'][0], session_id=Path(start['session']).name)
+                authority.commit('identity', attempt_id=reserve['attempt_id'], target_key=reserve['target_key'],
+                                 session_id=reserve['session_id'], identity={'pid': 77, 'creation_time': 8, 'contained': True})
+        with patch.object(self.acquisition, 'identity_extinct', side_effect=OSError('fixture access denied')):
+            result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['members'][0]['pending_attempts'], 1)
+        self.assertEqual(result['totals']['body_bytes'], 5 * 1024 * 1024)
+
+    def test_new_bundle_and_code_pins_closed_schema_reject_boolean_and_extra_keys(self):
+        for mutation in (lambda pins: pins.update(nonce='renew'),
+                         lambda pins: pins['files'].update(extra='c' * 64),
+                         lambda pins: pins['runtime'].update(sha256=True),
+                         lambda pins: pins.update(reviewed_commit='not-full-head')):
+            pins = copy.deepcopy(self.pins)
+            mutation(pins)
+            with self.subTest(pins=pins), self.assertRaises(ValueError):
+                self.batch._code_identity(pins, current_head=True)
+
+    def test_batch_journal_wrong_sequence_or_extra_key_never_repairs(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            self.batch._start_phase(batch, batch.bundle['members'][0], 'metadata')
+        journal = self.root / 'data/runs/batch-fixture/journal.jsonl'
+        record = json.loads(journal.read_bytes())
+        record['sequence'] = True
+        record['record_sha256'] = sha(canonical({key: value for key, value in record.items() if key != 'record_sha256'}))
+        raw = canonical(record) + b'\n'
+        journal.write_bytes(raw)
+        result = self.recover(refs)
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(journal.read_bytes(), raw)
+
+
+    def test_active_second_metadata_can_finish_after_persisted_halt_without_corrupting_head(self):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            first, second = batch.bundle['members'][:2]
+            self.batch._start_phase(batch, first, 'metadata')
+            start = self.batch._start_phase(batch, second, 'metadata')
+            terminal = self.terminal(second, start, self.batch._MemberContext(batch, second))
+            batch.halt('fixture critical containment')
+            batch.append('phase_finish', phase_id=start['phase_id'], result=terminal, recovered=False)
+        try:
+            result = self.batch._verify_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                               bootstrap_sha256=refs['bootstrap_sha256'])
+        except ValueError as error:
+            self.fail('Durable finish after halt corrupted ledger/head: ' + str(error))
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['halt'], 'fixture critical containment')
+
+
+    def completed_metadata(self, refs):
+        with self.opened(refs) as batch:
+            for member in batch.bundle['members']:
+                start = self.batch._start_phase(batch, member, 'metadata')
+                result = self.terminal(member, start, self.batch._MemberContext(batch, member))
+                self.batch._proof(batch, start, result)
+                self.write(start['session'] + '/terminal.json', result)
+                batch.append('phase_finish', phase_id=start['phase_id'], result=result, recovered=False)
+            return copy.deepcopy(next(iter(batch.state['finished'].values()))), self.batch._totals(batch)
+
+    def damaged_finished_proof_blocks_recovery_and_resume(self, proof_name, *, recovery_first=False):
+        refs = self.initialize()
+        finished, before = self.completed_metadata(refs)
+        path = self.root / finished['result'][proof_name]['path']
+        path.write_bytes(b'{}')
+        journal = self.root / 'data/runs/batch-fixture/journal.jsonl'
+        head = self.root / 'data/runs/batch-fixture/head.json'
+        original_journal, original_head = journal.read_bytes(), head.read_bytes()
+        if recovery_first:
+            self.assertEqual(self.recover(refs, 2)['status'], 'halted')
+        called = []
+        def unexpected(member, start, context):
+            called.append(start['phase'])
+            raise AssertionError('Unproven finished phase crossed resume boundary')
+        try:
+            resumed = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                              bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=unexpected)
+        except AssertionError as error:
+            self.fail(str(error))
+        self.assertEqual(resumed['status'], 'halted')
+        recovered = self.recover(refs)
+        self.assertEqual(recovered['status'], 'halted')
+        self.assertEqual(resumed['totals'], before['totals'])
+        self.assertEqual(recovered['totals'], before['totals'])
+        self.assertEqual(called, [])
+        self.assertEqual(path.read_bytes(), b'{}')
+        self.assertEqual(journal.read_bytes(), original_journal)
+        self.assertEqual(head.read_bytes(), original_head)
+        self.assertTrue((self.root / 'data/runs/batch-fixture/halt.json').is_file())
+
+    def test_finished_checkpoint_corruption_blocks_recovery_and_resume(self):
+        self.damaged_finished_proof_blocks_recovery_and_resume('checkpoint')
+
+    def test_finished_receipt_corruption_blocks_recovery_and_resume(self):
+        self.damaged_finished_proof_blocks_recovery_and_resume('receipt')
+
+    def test_finished_checkpoint_corruption_blocks_direct_recovery(self):
+        self.damaged_finished_proof_blocks_recovery_and_resume('checkpoint', recovery_first=True)
+
+    def test_finished_receipt_corruption_blocks_direct_recovery(self):
+        self.damaged_finished_proof_blocks_recovery_and_resume('receipt', recovery_first=True)
+
+    def test_valid_historical_metadata_after_values_accepted_by_recovery_and_resume(self):
+        refs = self.initialize()
+        completed = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                           bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=self.terminal)
+        self.assertEqual(len(completed['finished_phases']), 14)
+        with self.opened(refs) as batch:
+            for finished in batch.state['finished'].values():
+                if finished['phase'] == 'metadata':
+                    member = next(m for m in batch.bundle['members'] if m['period'] == finished['period'])
+                    with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                           coordinator=self.batch._MemberContext(batch, member)) as authority:
+                        receipt = json.loads((self.root / finished['result']['receipt']['path']).read_bytes())
+                        self.assertLess(receipt['sequence'], len(authority.records))
+        self.assertEqual(completed, self.recover(refs))
+        resumed = self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                         bootstrap_sha256=refs['bootstrap_sha256'],
+                                         phase_callable=lambda *args: self.fail('Completed phase dispatched'))
+        self.assertEqual(completed, resumed)
+
+    def physical_job_change_refused_at_active_member_boundary(self, *, delete):
+        refs = self.initialize()
+        with self.opened(refs) as batch:
+            member = batch.bundle['members'][0]
+            path = self.root / member['job_path']
+            if delete:
+                path.unlink()
+            else:
+                path.write_bytes(b'{}')
+            with patch.object(self.batch, '_verify_draft', side_effect=AssertionError('Repeated full reuse authentication')):
+                with self.assertRaises((ValueError, OSError)):
+                    with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                           coordinator=self.batch._MemberContext(batch, member)):
+                        pass
+
+    def test_physical_job_corruption_refused_inside_active_context(self):
+        self.physical_job_change_refused_at_active_member_boundary(delete=False)
+
+    def test_physical_job_deletion_refused_inside_active_context(self):
+        self.physical_job_change_refused_at_active_member_boundary(delete=True)
 
 
 if __name__ == '__main__':
