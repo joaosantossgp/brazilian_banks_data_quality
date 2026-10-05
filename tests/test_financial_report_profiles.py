@@ -541,7 +541,7 @@ def legacy_bundle():
 
 @contextmanager
 def acquisition_bridge(*, limits=None):
-    """Only fixture roots/trust anchors change; physical validators stay real."""
+    """Synthetic claim/roots/trust anchors; physical validators stay real."""
     from bank_quality import financial_acquisition as api
     from bank_quality import financial_acquisition_batch as batch
     from tests.test_financial_acquisition import AcquisitionTests, CATALOG_URLS
@@ -549,6 +549,16 @@ def acquisition_bridge(*, limits=None):
     fixture.api = api
     fixture.setUp()
     try:
+        # Claim exclusivity has dedicated Windows tests. This single-process
+        # fixture needs the durable claim file without invoking the Win32 API.
+        @contextmanager
+        def fixture_claim(path):
+            if not path.exists():
+                path.touch()
+            yield
+        claim = patch.object(api, '_claim', fixture_claim)
+        claim.start()
+        fixture.addCleanup(claim.stop)
         # Native authoring also consumes names/fid, absent from acquisition-only
         # fixtures. Add them to original fixture bodies before preparing the job.
         def columns(nodes):
