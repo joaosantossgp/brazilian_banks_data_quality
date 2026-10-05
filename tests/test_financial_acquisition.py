@@ -17,31 +17,92 @@ def sha(body):
     return hashlib.sha256(body).hexdigest()
 
 
+# Fixture inventory is independent of the resolver's _MEMBERS: the boundary and
+# historical report transitions below are expectations, not copied at runtime.
+PERIODS = tuple(year * 100 + quarter for year in range(2010, 2026)
+                for quarter in (3, 6, 9, 12)) + (202603, 202606)
+CATALOG_URLS = {
+    'old': 'https://www3.bcb.gov.br/ifdata/rest/relatorios2000a2024',
+    'new': 'https://www3.bcb.gov.br/ifdata/rest/relatorios2025a2030',
+}
+
+
+def report_ids(period):
+    for end, ids in ((201412, (1, 3, 4, 5)), (201812, (75, 3, 4, 5)),
+                     (201909, (92, 3, 4, 91)), (202003, (92, 96, 97, 98)),
+                     (202412, (92, 96, 101, 98)), (202606, (119, 107, 110, 118))):
+        if period <= end:
+            return ids
+    raise AssertionError('Fixture period outside explicit inventory')
+
+
+def catalog_entry(period):
+    prefix = ('ifdata_2025_2030//' if period >= 202503 else 'ifdata/') + str(period) + '/'
+    files = [{'f': prefix + f'cadastro{period}_1005.json'},
+             {'f': prefix + f'info{period}.json'},
+             {'f': prefix + f'dados{period}_1.json'},
+             {'f': prefix + f'dados{period}_3.json'},
+             {'f': prefix + f'sel{period}.json', 'sel': [{'id': 1005}]}]
+    for rid, name in zip(report_ids(period), ('Resumo', 'Ativo', 'Passivo', 'DRE')):
+        parent = rid * 100 + 2
+        report = {'id': rid, 'n': name, 's': [{'id': 1004}, {'id': 1005}],
+                  'annotation': {'unit': 'unknown', 'window': 'unknown', 'literal': 'não harmonizar'},
+                  'c': [{'id': rid * 100 + 1, 'ifd': 79670, 'ip': None, 'sc': []},
+                        {'id': parent, 'ifd': 80000, 'ip': None, 'sc': [
+                            {'id': rid * 100 + 3, 'ifd': 80001, 'ip': parent, 'sc': []},
+                            {'id': rid * 100 + 4, 'ifd': 80002, 'ip': parent, 'sc': []}]}]}
+        files.append({'f': prefix + f'trel{period}_{rid}.json', 'trel': report})
+    return {'dt': period, 'files': files}
+
+
 class AcquisitionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        try:
-            cls.api = importlib.import_module('bank_quality.financial_acquisition')
-        except ModuleNotFoundError:
-            cls.api = None
-        cls.repo = Path(__file__).resolve().parents[1]
-        cls.pins = json.loads((cls.repo / '.superpowers/sdd/financial-historical-batch-design-20261004/primary-sources.json').read_text())
+        cls.api = importlib.import_module('bank_quality.financial_acquisition')
 
     def setUp(self):
-        self.assertIsNotNone(self.api, 'Offline resolver interface has not been implemented')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.index = self.root / 'catalog-index.json'
-        refs = {}
-        for name, pin in self.pins.items():
-            manifest = json.loads((self.repo / pin['manifest']).read_bytes(), parse_float=lambda value: {'json_number': value})
-            refs[name] = {'source_id': 'catalog-' + name, 'role': 'catalog',
-                          'manifest_path': pin['manifest'], 'manifest_sha256': pin['manifest_sha256'],
-                          'body_sha256': pin['body_sha256'], 'provenance_sha256': sha(canonical(manifest))}
+        self.catalogs = {name: [catalog_entry(period) for period in PERIODS
+                               if (period >= 202503) == (name == 'new')] for name in CATALOG_URLS}
+        frozen = {}
+        refs = {name: self.catalog_source(name, entries) for name, entries in self.catalogs.items()}
+        for name, ref in refs.items():
+            frozen[name] = (ref['manifest_sha256'], ref['body_sha256'], CATALOG_URLS[name])
+        # Only internal trust anchors/root are injected. All authentication,
+        # parsing, membership, origin and transport guards run unchanged.
+        for name, value in (('_ROOT', self.root), ('_FROZEN', frozen)):
+            injection = patch.object(self.api, name, value)
+            injection.start()
+            self.addCleanup(injection.stop)
         self.document = {'contract': 'financial-acquisition-catalog-index-v1',
                          'acquisition_scope': 'issue50/financial-202403-1005-native-four',
                          'selection': {'perspective': 1005, 'reports': 'native-four'}, 'catalogs': refs}
+
+    def catalog_source(self, name, entries):
+        folder = self.root / 'data/raw/catalog-fixture'
+        folder.mkdir(parents=True, exist_ok=True)
+        payload = canonical(entries)
+        manifest = {'url': CATALOG_URLS[name], 'method': 'GET', 'final_url': CATALOG_URLS[name],
+                    'http_status': 200, 'outcome': 'ok', 'truncated': False,
+                    'retrieved_at_utc': '2026-10-04T00:00:00+00:00',
+                    'response_headers': {'content-type': 'application/json'}, 'diagnostics': [],
+                    'body_path': name + '.bin', 'sha256': sha(payload), 'bytes': len(payload)}
+        (folder / manifest['body_path']).write_bytes(payload)
+        path = folder / (name + '.json')
+        path.write_bytes(canonical(manifest))
+        return {'source_id': 'catalog-' + name, 'role': 'catalog',
+                'manifest_path': path.relative_to(self.root).as_posix(),
+                'manifest_sha256': sha(path.read_bytes()), 'body_sha256': sha(payload),
+                'provenance_sha256': sha(canonical(manifest))}
+
+    def trusted_catalog_mutation(self, name, entries):
+        """A malformed authenticated catalog must still fail structural guards."""
+        ref = self.catalog_source(name, entries)
+        self.document['catalogs'][name] = ref
+        self.api._FROZEN[name] = (ref['manifest_sha256'], ref['body_sha256'], CATALOG_URLS[name])
 
     def prepare(self, periods=(202403,), **kwargs):
         self.index.write_bytes(canonical(self.document))
@@ -99,13 +160,7 @@ class AcquisitionTests(unittest.TestCase):
         return refs
 
     def resolve(self, job, refs):
-        for pin in self.pins.values():
-            for key in ('manifest', 'body'):
-                destination = self.root / pin[key]
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes((self.repo / pin[key]).read_bytes())
-        with patch.object(self.api, '_ROOT', self.root):
-            return self.api.resolve_sources(job, refs)
+        return self.api.resolve_sources(job, refs)
 
     def test_catalog_hash_changed(self):
         self.index.write_bytes(canonical(self.document))
@@ -140,6 +195,43 @@ class AcquisitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'frozen'):
             self.prepare()
 
+    def test_coherent_replacement_catalog_still_requires_frozen_pins(self):
+        changed = copy.deepcopy(self.catalogs['old'])
+        changed[-1]['files'][-1]['trel']['annotation']['literal'] = 'replacement'
+        self.document['catalogs']['old'] = self.catalog_source('old', changed)
+        with self.assertRaisesRegex(ValueError, 'frozen'):
+            self.prepare()
+
+    def test_missing_or_duplicate_catalog_period(self):
+        for entries in (self.catalogs['old'][1:], self.catalogs['old'] + [self.catalogs['old'][0]]):
+            with self.subTest(count=len(entries)):
+                self.trusted_catalog_mutation('old', entries)
+                with self.assertRaisesRegex(ValueError, 'catalog period'):
+                    self.prepare((201003,))
+
+    def test_report_financial_membership_is_required(self):
+        changed = copy.deepcopy(self.catalogs['old'])
+        changed[0]['files'][6]['trel']['s'] = [{'id': 1004}]
+        self.trusted_catalog_mutation('old', changed)
+        with self.assertRaisesRegex(ValueError, 'report selection'):
+            self.prepare((201003,))
+
+    def test_wrong_report_filename_blocks_even_with_trusted_catalog(self):
+        changed = copy.deepcopy(self.catalogs['old'])
+        changed[0]['files'][5]['f'] = 'ifdata/201003/trel201003_999.json'
+        self.trusted_catalog_mutation('old', changed)
+        with self.assertRaisesRegex(ValueError, 'report filename'):
+            self.prepare((201003,))
+
+    def test_source_and_selection_announcements_are_unique(self):
+        for position, message in ((0, 'source announcement'), (2, 'numeric announcement'), (4, 'financial selection')):
+            with self.subTest(position=position):
+                changed = copy.deepcopy(self.catalogs['old'])
+                changed[0]['files'].append(copy.deepcopy(changed[0]['files'][position]))
+                self.trusted_catalog_mutation('old', changed)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.prepare((201003,))
+
     def test_escape_or_symlink_rejected(self):
         for value in ('../escape.json', 'data/raw/../outside.json', 'C:/absolute.json', 'https://remote/x', 'data/raw\\x'):
             with self.subTest(value=value):
@@ -155,6 +247,13 @@ class AcquisitionTests(unittest.TestCase):
         one = self.prepare(limits={'attempts': 2, 'workers': 1, 'session_id': 'a', 'timestamp': 'today'})
         two = self.prepare(limits={'attempts': 2, 'workers': 4, 'session_id': 'b', 'timestamp': 'tomorrow'})
         self.assertEqual(one['job_sha256'], two['job_sha256'])
+
+    def test_index_formatting_does_not_change_canonical_job_identity(self):
+        job = self.prepare()
+        self.index.write_text(json.dumps(self.document, indent=2), encoding='utf-8')
+        reformatted = self.api.prepare_job(self.index, sha(self.index.read_bytes()), (202403,),
+                                          limits={'attempts': 2, 'workers': 1})
+        self.assertEqual(job, reformatted)
 
     def test_reordered_periods_same_job_hash(self):
         self.assertEqual(self.prepare((202403, 201003))['job_sha256'], self.prepare((201003, 202403))['job_sha256'])
@@ -194,6 +293,21 @@ class AcquisitionTests(unittest.TestCase):
         groups = [n for n in result['resolutions'][0]['nodes'] if n['kind'] == 'group']
         self.assertTrue(groups)
         self.assertTrue(all(n['origin'] is None for n in groups))
+        for group in groups:
+            self.assertEqual(len(group['children_pointers']), 2)
+            children = [n for n in result['resolutions'][0]['nodes'] if n['parent_pointer'] == group['catalog_pointer']]
+            self.assertEqual([n['catalog_pointer'] for n in children], group['children_pointers'])
+            self.assertEqual([n['origin']['lid'] for n in children], [80001, 80002])
+
+    def test_group_definition_must_match_structure(self):
+        job = self.prepare(); refs = self.metadata(job)
+        target = next(t for t in job['targets'] if t['role'] == 'dictionary')
+        path = self.root / refs[target['target_key']]['manifest_path']
+        definitions = json.loads((path.parent / json.loads(path.read_bytes())['body_path']).read_bytes())
+        next(d for d in definitions if d['id'] == 80000).update(td=3, lid=80000)
+        refs[target['target_key']] = self.source(target, definitions)
+        with self.assertRaisesRegex(ValueError, 'structure mismatch'):
+            self.resolve(job, refs)
 
     def test_unannounced_area_blocks(self):
         job = self.prepare(); refs = self.metadata(job)
@@ -224,7 +338,6 @@ class AcquisitionTests(unittest.TestCase):
         files.append({'f': 'ifdata/201003/sel201003.json', 'sel': [{'id': 1005}]})
         for item in descriptor['reports']:
             files.append({'f': f"ifdata/201003/trel201003_{item['report']['id']}.json", 'trel': item['report']})
-        catalog = [{'dt': 201003, 'files': files}]
         for changed in (files[:-1], files + [files[-1]]):
             with self.subTest(length=len(changed)), self.assertRaisesRegex(ValueError, 'report'):
                 self.api._descriptor([{'dt': 201003, 'files': changed}], job['catalogs']['old'], 201003)
@@ -235,6 +348,30 @@ class AcquisitionTests(unittest.TestCase):
         refs[key]['provenance_sha256'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'provenance'):
             self.resolve(job, refs)
+
+    def test_changed_manifest_context_requires_new_provenance_pin(self):
+        job = self.prepare(); refs = self.metadata(job)
+        key = next(iter(refs))
+        path = self.root / refs[key]['manifest_path']
+        manifest = json.loads(path.read_bytes())
+        manifest['retrieved_at_utc'] = '2026-10-04T00:00:01+00:00'
+        path.write_bytes(canonical(manifest))
+        refs[key]['manifest_sha256'] = sha(path.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            self.resolve(job, refs)
+
+    def test_catalog_manifest_and_body_bytes_are_authenticated(self):
+        ref = self.document['catalogs']['old']
+        path = self.root / ref['manifest_path']
+        manifest_bytes = path.read_bytes()
+        path.write_bytes(manifest_bytes + b' ')
+        with self.assertRaisesRegex(ValueError, 'manifest hash'):
+            self.prepare()
+        path.write_bytes(manifest_bytes)
+        body_path = path.parent / json.loads(manifest_bytes)['body_path']
+        body_path.write_bytes(body_path.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'hash'):
+            self.prepare()
 
     def test_reparse_point_is_rejected_before_read(self):
         from types import SimpleNamespace
@@ -302,17 +439,37 @@ class AcquisitionTests(unittest.TestCase):
             self.resolve(job, refs)
 
     def test_all_66_frozen_descriptors_and_unannounced_excluded(self):
-        members = tuple(self.api._MEMBERS)
-        job = self.prepare(tuple(reversed(members)))
+        job = self.prepare(tuple(reversed(PERIODS)))
         self.assertEqual(len(job['descriptors']), 66)
         self.assertEqual(len(job['targets']), 132)
-        self.assertEqual([d['selection']['period'] for d in job['descriptors']], sorted(members))
-        self.assertNotIn(202609, members)
-        self.assertNotIn(202612, members)
+        self.assertEqual([d['selection']['period'] for d in job['descriptors']], list(PERIODS))
+        for descriptor in job['descriptors']:
+            period = descriptor['selection']['period']
+            self.assertEqual(descriptor['selection']['reports'], list(report_ids(period)))
+            self.assertEqual([r['report']['n'] for r in descriptor['reports']], ['Resumo', 'Ativo', 'Passivo', 'DRE'])
+        for outsider in (202609, 202612):
+            with self.subTest(period=outsider), self.assertRaisesRegex(ValueError, '66'):
+                self.prepare((outsider,))
 
     def test_descriptor_matches_independent_compiler(self):
-        self.assertEqual(self.prepare()['descriptors'][0]['descriptor_sha256'],
-                         '346ad8010e4d97bc4e1c46280abe74cf8a6bedf458eeaabf1c0e42f866a544b2')
+        # Independently assemble the expected synthetic payload without calling
+        # _descriptor/_canonical or importing the private real-catalog compiler.
+        entry = catalog_entry(202403)
+        position = PERIODS.index(202403)
+        ref = self.document['catalogs']['old']
+        expected = {'selection': {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]},
+                    'catalog': {key: ref[key] for key in ('manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')},
+                    'reports': [{'report': entry['files'][p]['trel'], 'catalog_pointer': f'/{position}/files/{p}/trel'}
+                                for p in (5, 6, 7, 8)],
+                    'source_offers': [
+                        {'source_id': source_id, 'role': role, 'area': area,
+                         'native_file': entry['files'][p]['f'], 'catalog_pointer': f'/{position}/files/{p}/f'}
+                        for p, source_id, role, area in ((0, 'cadaster', 'cadaster', None),
+                                                        (1, 'dictionary', 'dictionary', None),
+                                                        (2, 'numeric:1', 'numeric', 1), (3, 'numeric:3', 'numeric', 3))]}
+        expected['catalog']['reference_pointer'] = '/' + str(position)
+        actual = self.prepare()['descriptors'][0]
+        self.assertEqual(actual, {**expected, 'descriptor_sha256': sha(canonical(expected))})
 
     def numeric(self, body, origins=None):
         return self.api.validate_numeric_source(body, area=1, required_origins=origins or [])
