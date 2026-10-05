@@ -112,14 +112,23 @@ class AcquisitionTests(unittest.TestCase):
     def source(self, target, body, **changes):
         folder = self.root / 'data/raw/fixture'
         folder.mkdir(parents=True, exist_ok=True)
-        stem = target['source_id'].replace('/', '-')
+        stem = target['source_id'].replace('/', '-').replace(':', '-')
         payload = body if isinstance(body, bytes) else canonical(body)
         manifest = {'url': target['url'], 'method': 'GET', 'final_url': target['url'],
                     'http_status': 200, 'outcome': 'ok', 'truncated': False,
                     'retrieved_at_utc': '2026-10-04T00:00:00+00:00', 'response_headers': {},
                     'diagnostics': [], 'context': {'period': target['period'], 'perspective': 1005, 'role': target['role']},
                     'body_path': stem + '.bin', 'sha256': sha(payload), 'bytes': len(payload)}
+        manifest.update(contract='bounded-http-archive-v1', source_complete=True, body_available=True,
+                        completion_basis='content_length', eof_observed=False, content_length=len(payload),
+                        bytes_observed=len(payload), body_budget_bytes=max(1, len(payload)),
+                        response_headers_raw=[['Content-Length', str(len(payload))]],
+                        response_metadata_path=stem + '.response.json')
         manifest.update(changes)
+        metadata = {key: manifest[key] for key in ('http_status', 'final_url', 'response_headers_raw')}
+        sidecar = folder / manifest['response_metadata_path']
+        sidecar.write_bytes(canonical(metadata))
+        manifest['response_metadata_sha256'] = sha(sidecar.read_bytes())
         (folder / manifest['body_path']).write_bytes(payload)
         path = folder / (stem + '.json')
         path.write_bytes(canonical(manifest))
@@ -519,6 +528,487 @@ class AcquisitionTests(unittest.TestCase):
         result = self.numeric(b'{"id":1,"values":[{"e":1,"v":[{"i":2,"v":0}]}]}', origins)
         self.assertEqual([p['catalog_pointer'] for p in result['origins']], ['/r1/c/0', '/r2/c/4'])
         self.assertTrue(all(p['cells'][0]['source_pointer'] == '/values/0/v/0/v' for p in result['origins']))
+
+
+    def test_unframed_new_and_reused_sources_rejected(self):
+        job = self.prepare()
+        refs = self.metadata(job)
+        target = job['targets'][0]
+        ref = refs[target['target_key']]
+        path = self.root / ref['manifest_path']
+        manifest = json.loads(path.read_bytes())
+        manifest.pop('contract', None)
+        manifest.update(source_complete=False, eof_observed=False, diagnostics=['framing_unverified'],
+                        content_length=manifest['bytes'] + 1)
+        path.write_bytes(canonical(manifest))
+        ref['manifest_sha256'], ref['provenance_sha256'] = sha(path.read_bytes()), sha(canonical(manifest))
+        with self.assertRaisesRegex(ValueError, 'bounded|framing|contract'):
+            self.api.resolve_sources(job, refs)
+        reuse = self.root / 'reuse.json'
+        reuse.write_bytes(canonical({'contract': 'financial-acquisition-reuse-index-v1', 'job_sha256': job['job_sha256'],
+                                     'sources': {target['target_key']: ref}}))
+        with self.assertRaisesRegex(ValueError, 'bounded|framing|contract'):
+            self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
+
+    def test_unknown_source_contract_rejected(self):
+        job = self.prepare()
+        refs = self.metadata(job)
+        target = job['targets'][0]
+        ref = refs[target['target_key']]
+        path = self.root / ref['manifest_path']
+        manifest = json.loads(path.read_bytes())
+        manifest['contract'] = 'unknown-completeness-v1'
+        path.write_bytes(canonical(manifest))
+        ref['manifest_sha256'], ref['provenance_sha256'] = sha(path.read_bytes()), sha(canonical(manifest))
+        with self.assertRaisesRegex(ValueError, 'bounded|contract'):
+            self.api.resolve_sources(job, refs)
+
+    def test_new_metadata_positive_framing_cannot_be_removed_with_coherent_pins(self):
+        for changes in ({'source_complete': False}, {'diagnostics': ['framing_unverified']},
+                        {'content_length': 999999}, {'completion_basis': None}, {'body_available': False}):
+            with self.subTest(changes=changes):
+                job = self.prepare()
+                refs = self.metadata(job)
+                target = job['targets'][0]
+                ref = refs[target['target_key']]
+                path = self.root / ref['manifest_path']
+                manifest = json.loads(path.read_bytes())
+                manifest.update(changes)
+                path.write_bytes(canonical(manifest))
+                ref['manifest_sha256'], ref['provenance_sha256'] = sha(path.read_bytes()), sha(canonical(manifest))
+                with self.assertRaises(ValueError):
+                    self.api.resolve_sources(job, refs)
+
+    def test_unframed_numeric_reuse_rejected(self):
+        job = self.prepare()
+        checkpoint = self.resolve(job, self.metadata(job))
+        target = checkpoint['numeric_targets'][0]
+        ref = self.source(target, {'id': target['area'], 'values': []})
+        path = self.root / ref['manifest_path']
+        manifest = json.loads(path.read_bytes())
+        manifest.pop('contract')
+        path.write_bytes(canonical(manifest))
+        ref['manifest_sha256'], ref['provenance_sha256'] = sha(path.read_bytes()), sha(canonical(manifest))
+        reuse = self.root / 'numeric-reuse.json'
+        reuse.write_bytes(canonical({'contract': 'financial-acquisition-reuse-index-v1', 'job_sha256': job['job_sha256'],
+                                     'sources': {target['target_key']: ref}}))
+        with self.assertRaisesRegex(ValueError, 'bounded'):
+            self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
+
+
+class AuthorityTests(unittest.TestCase):
+    """Pure authority model uses synthetic catalogs and a fake OS claim."""
+    catalog_source = AcquisitionTests.catalog_source
+    prepare = AcquisitionTests.prepare
+    metadata = AcquisitionTests.metadata
+    source = AcquisitionTests.source
+    bounded_source = AcquisitionTests.bounded_source
+
+    def setUp(self):
+        from contextlib import nullcontext
+        self.api = importlib.import_module('bank_quality.financial_acquisition')
+        AcquisitionTests.setUp(self)
+        self.job = self.prepare()
+        # Claim behavior has separate real Windows tests, never a runner fallback.
+        claim = patch.object(self.api, '_claim', lambda path: nullcontext(), create=True)
+        claim.start()
+        self.addCleanup(claim.stop)
+
+    def initialize(self):
+        self.assertTrue(hasattr(self.api, 'initialize_authority'), 'Explicit offline authority missing')
+        return self.api.initialize_authority(self.job)
+
+    def test_missing_authority_not_reinitialized(self):
+        self.assertTrue(hasattr(self.api, 'open_authority'), 'Authority context missing')
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            with self.api.open_authority(self.job, bootstrap_sha256='0' * 64):
+                self.fail('Missing authority opened')
+
+    def test_two_sessions_share_one_authority(self):
+        pin = self.initialize()
+        for position, session in enumerate(('first', 'second')):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+                self.api.reserve_attempt(authority, self.job['targets'][position], session_id=session)
+                self.api._recover_pending(authority)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.assertEqual(authority.state['attempts'], 2)
+            with self.assertRaisesRegex(ValueError, 'Attempt|pending'):
+                self.api.reserve_attempt(authority, self.job['targets'][0], session_id='third')
+
+    def test_orphan_reservation_charged(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+            self.assertEqual(authority.state['attempt_seconds'], 120)
+
+    def test_partial_journal_tail_blocks_without_truncation(self):
+        pin = self.initialize()
+        path = self.api._authority_paths(self.job)[0] / 'journal.jsonl'
+        with path.open('ab') as output:
+            output.write(b'{"partial":')
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'tail'):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin):
+                pass
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_valid_old_prefix_conflicts_with_current_head(self):
+        pin = self.initialize()
+        folder = self.api._authority_paths(self.job)[0]
+        old = (folder / 'journal.jsonl').read_bytes()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+        (folder / 'journal.jsonl').write_bytes(old)
+        with self.assertRaisesRegex(ValueError, 'head'):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin):
+                pass
+
+    def test_counter_underflow_or_reduced_counter_rejected(self):
+        pin = self.initialize()
+        folder = self.api._authority_paths(self.job)[0]
+        raw = json.loads((folder / 'head.json').read_bytes())
+        raw['state_sha256'] = '0' * 64
+        (folder / 'head.json').write_bytes(canonical(raw))
+        with self.assertRaisesRegex(ValueError, 'state|head'):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin):
+                pass
+
+    def test_reserve_fsync_failure_no_launch(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            with patch.object(self.api.os, 'fsync', side_effect=OSError('disk sync')):
+                with self.assertRaises(OSError):
+                    self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+        with self.assertRaisesRegex(ValueError, 'head'):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin):
+                pass
+
+    def test_head_commit_failure_no_launch(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            with patch.object(self.api, '_replace_head', side_effect=OSError('head commit')):
+                with self.assertRaises(OSError):
+                    self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+
+    def test_initialize_does_not_reset_budget(self):
+        self.initialize()
+        with self.assertRaises((ValueError, FileExistsError)):
+            self.api.initialize_authority(self.job)
+
+    def test_changed_limits_rejected_by_existing_scope_binding(self):
+        self.initialize()
+        changed = self.prepare(limits={'attempts': 3})
+        with self.assertRaises(ValueError):
+            self.api.initialize_authority(changed)
+
+    def test_old_receipt_cannot_restore_budget(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            old = self.api._receipt(authority, 'a')
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='b')
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api._verify_receipt(old, authority)
+            self.assertEqual(authority.state['attempts'], 1)
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+
+    def test_recover_transport_calls_zero(self):
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.parent.mkdir(parents=True, exist_ok=True)
+        job_path.write_bytes(canonical(self.job))
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+        with patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('transport called')):
+            result = self.api.recover_authority(job_path, self.job['job_sha256'], bootstrap_sha256=pin,
+                                                output=self.root / 'data/runs/recovery.json')
+        self.assertEqual(result['state']['body_bytes'], 5 * 1024 * 1024)
+        self.assertEqual(result['state']['failure_streak'], 1)
+
+    def test_recover_live_worker_refused(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            attempt = self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+            authority.commit('identity', attempt_id=attempt['attempt_id'], identity={'pid': 55, 'creation_time': 99, 'contained': True})
+            with patch.object(self.api, 'identity_extinct', return_value=False):
+                with self.assertRaisesRegex(ValueError, 'Live worker'):
+                    self.api._recover_pending(authority)
+            self.assertIn(attempt['attempt_id'], authority.state['pending'])
+
+    def test_backoff_charged_once_across_resume(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            authority.commit('backoff', attempt_id='wait', reserved_backoff_seconds=5, session_id='a')
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api._recover_pending(authority)
+            self.assertEqual(authority.state['backoff_seconds'], 5)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api._recover_pending(authority)
+            self.assertEqual(authority.state['backoff_seconds'], 5)
+
+    def test_deadline_guard_streak_not_reset_by_receipt(self):
+        pin = self.initialize()
+        for position in range(2):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+                attempt = self.api.reserve_attempt(authority, self.job['targets'][position], session_id='a')
+                authority.commit('finish', attempt_id=attempt['attempt_id'], status='deadline', retryable=False,
+                                 guard='deadline', observed_bytes=attempt['reserved_bytes'], observed_attempt_seconds=120,
+                                 tree_extinct=True)
+                old = self.api._receipt(authority, 'a')
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api._verify_receipt(old, authority)
+            self.assertEqual(authority.state.get('guard_streak'), 2)
+            numeric = next(t for t in authority.targets.values() if t['role'] == 'numeric')
+            with self.assertRaisesRegex(ValueError, 'guard'):
+                self.api.reserve_attempt(authority, numeric, session_id='b')
+
+    def test_run_metadata_reuse_and_complete_values_offline(self):
+        self.assertTrue(hasattr(self.api, 'run_acquisition'), 'Acquisition coordinator missing')
+        refs = self.metadata(self.job)
+        checkpoint = self.api.resolve_sources(self.job, refs)
+        numeric = checkpoint['numeric_targets'][0]
+        self.job['reuse_sources'] = {**refs, numeric['target_key']: self.source(numeric, {'id': numeric['area'], 'values': []})}
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        with patch.object(self.api, 'require_supported'), patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('transport launch')):
+            metadata = self.api.run_acquisition(job_path, self.job['job_sha256'], self.root / 'data/runs/session-a',
+                                                phase='metadata', bootstrap_sha256=pin)
+            a_path = self.root / 'data/runs/session-a/checkpoint-a.json'
+            a = json.loads(a_path.read_bytes())
+            self.assertEqual(set(a), {'contract', 'phase', 'selection', 'descriptor_sha256', 'catalog', 'sources'})
+            complete = self.api.run_acquisition(job_path, self.job['job_sha256'], self.root / 'data/runs/session-b',
+                                                phase='values', bootstrap_sha256=pin, checkpoint_sha256=sha(a_path.read_bytes()),
+                                                resume_from=self.root / 'data/runs/session-a/receipt.json',
+                                                resume_sha256=sha((self.root / 'data/runs/session-a/receipt.json').read_bytes()))
+        b = json.loads((self.root / 'data/runs/session-b/checkpoint-b.json').read_bytes())
+        self.assertEqual(b['checkpoint_a_sha256'], sha(a_path.read_bytes()))
+        self.assertEqual(b['phase'], 'complete')
+        self.assertEqual(len(b['sources']), 3)
+        self.assertEqual(complete['state']['attempts'], 0)
+        self.assertEqual(metadata['state']['attempts'], 0)
+
+    def test_values_without_physical_checkpoint_blocked_before_launch(self):
+        self.assertTrue(hasattr(self.api, 'run_acquisition'), 'Acquisition coordinator missing')
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        with patch.object(self.api, 'require_supported'), patch.object(self.api, 'run_contained_attempt') as launch:
+            with self.assertRaisesRegex(ValueError, 'checkpoint'):
+                self.api.run_acquisition(job_path, self.job['job_sha256'], self.root / 'data/runs/session-a',
+                                        phase='values', bootstrap_sha256=pin)
+            launch.assert_not_called()
+
+    def test_complete_uncommitted_record_recover_preserves_charge(self):
+        pin = self.initialize()
+        folder = self.api._authority_paths(self.job)[0]
+        old_head = (folder / 'head.json').read_bytes()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+        (folder / 'head.json').write_bytes(old_head)
+        with self.api._open_authority(self.job, pin, recover=True) as authority:
+            self.api._recover_pending(authority)
+            self.assertEqual(authority.state['attempts'], 1)
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+
+    def test_internal_worker_standalone_has_zero_get(self):
+        self.assertTrue(hasattr(self.api, '_worker_main'), 'Authenticated internal worker missing')
+        pin = self.initialize()
+        folder = self.root / 'data/runs'
+        job_path = folder / 'job.json'
+        job_path.write_bytes(canonical(self.job))
+        import sys
+        spec = {'contract': 'financial-acquisition-worker-v1', 'job_path': 'data/runs/job.json',
+                'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': pin, 'attempt_id': 'standalone',
+                'target_key': self.job['targets'][0]['target_key'], 'body_budget_bytes': 5 * 1024 * 1024,
+                'parent_identity': {'pid': 1, 'creation_time': 1}, 'output_path': 'data/runs/unauthorized-output',
+                'application_sha256': sha(Path(sys.executable).read_bytes()), 'worker_sha256': sha(Path(self.api.__file__).read_bytes())}
+        spec_path = folder / 'worker.json'
+        spec_path.write_bytes(canonical(spec))
+        with patch.object(self.api, 'require_supported'), patch('bank_quality.archive.fetch_bounded') as fetch:
+            with self.assertRaisesRegex(ValueError, 'journal|reservation'):
+                self.api._worker_main(spec_path, sha(spec_path.read_bytes()))
+            fetch.assert_not_called()
+        self.assertFalse((folder / 'unauthorized-output').exists())
+
+    def test_bad_schema_guard_is_persisted(self):
+        self.assertTrue(hasattr(self.api, 'run_acquisition'), 'Coordinator missing')
+        refs = self.metadata(self.job)
+        cadaster = next(t for t in self.job['targets'] if t['role'] == 'cadaster')
+        refs[cadaster['target_key']] = self.source(cadaster, [])
+        self.job['reuse_sources'] = refs
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        with patch.object(self.api, 'require_supported'), patch.object(self.api, 'run_contained_attempt') as launch:
+            with self.assertRaises(ValueError):
+                self.api.run_acquisition(job_path, self.job['job_sha256'], self.root / 'data/runs/session-a',
+                                        phase='metadata', bootstrap_sha256=pin)
+            launch.assert_not_called()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.assertEqual(authority.state['guard'], 'schema')
+            self.assertEqual(authority.state['guard_streak'], 1)
+            self.assertIn(cadaster['target_key'], authority.state['failed_targets'])
+
+    def test_run_reserve_and_head_failures_have_zero_launch(self):
+        for failure in ('fsync', 'head'):
+            with self.subTest(failure=failure):
+                # Different root per subtest preserves all failed evidence.
+                if failure == 'head':
+                    self.temp2 = tempfile.TemporaryDirectory()
+                    self.addCleanup(self.temp2.cleanup)
+                    patcher = patch.object(self.api, '_ROOT', Path(self.temp2.name))
+                    patcher.start()
+                    self.addCleanup(patcher.stop)
+                    # Authenticated catalog inputs remain relative to original root:
+                    import shutil
+                    shutil.copytree(self.root / 'data/raw', Path(self.temp2.name) / 'data/raw')
+                active_root = self.api._ROOT
+                pin = self.initialize()
+                path = active_root / 'data/runs/job.json'
+                path.write_bytes(canonical(self.job))
+                fault = patch.object(self.api.os, 'fsync', side_effect=OSError('disk')) if failure == 'fsync' else \
+                        patch.object(self.api, '_replace_head', side_effect=OSError('head'))
+                with patch.object(self.api, 'require_supported'), patch.object(self.api, 'run_contained_attempt') as launch, fault:
+                    with self.assertRaises(OSError):
+                        self.api.run_acquisition(path, self.job['job_sha256'], active_root / 'data/runs/session-a',
+                                                phase='metadata', bootstrap_sha256=pin)
+                    launch.assert_not_called()
+
+    def test_retry_only_transient_network_or_allowed_http(self):
+        self.assertFalse(self.api._retryable({'outcome': 'network_error', 'http_status': None,
+                                              'diagnostics': [{'code': 'transport_exception', 'detail': 'SSLCertVerificationError: invalid certificate'}]}))
+        self.assertFalse(self.api._retryable({'outcome': 'transport_error', 'http_status': 503,
+                                              'diagnostics': [{'code': 'incomplete_framing', 'detail': 'short body'}]}))
+        for status in (408, 429, 500, 503, 599):
+            self.assertTrue(self.api._retryable({'outcome': 'http_error', 'http_status': status,
+                                                 'diagnostics': [{'code': 'http_status', 'detail': 'failed status'}]}))
+        self.assertTrue(self.api._retryable({'outcome': 'network_error', 'http_status': None,
+                                              'diagnostics': [{'code': 'transport_exception', 'detail': 'TimeoutError: timed out'}]}))
+        self.assertFalse(self.api._retryable({'outcome': 'http_error', 'http_status': 302, 'diagnostics': []}))
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Real Win32 worker ancestry proof required')
+    def test_live_standalone_worker_cannot_claim_own_identity(self):
+        pin = self.initialize()
+        import sys
+        identity = self.api._current_identity()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            attempt = self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+            authority.commit('identity', attempt_id=attempt['attempt_id'], identity={**identity, 'contained': True})
+            folder = self.root / 'data/runs'
+            (folder / 'job.json').write_bytes(canonical(self.job))
+            spec = {'contract': 'financial-acquisition-worker-v1', 'job_path': 'data/runs/job.json',
+                    'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': pin, 'attempt_id': attempt['attempt_id'],
+                    'target_key': self.job['targets'][0]['target_key'], 'body_budget_bytes': attempt['reserved_bytes'],
+                    'parent_identity': identity, 'output_path': 'data/runs/unauthorized-output',
+                    'application_sha256': sha(Path(sys.executable).read_bytes()), 'worker_sha256': sha(Path(self.api.__file__).read_bytes())}
+            spec_path = folder / 'standalone.json'
+            spec_path.write_bytes(canonical(spec))
+            with patch('bank_quality.archive.fetch_bounded') as fetch:
+                with self.assertRaisesRegex(ValueError, 'ancestry'):
+                    self.api._worker_main(spec_path, sha(spec_path.read_bytes()))
+                fetch.assert_not_called()
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Real Win32 worker ancestry proof required')
+    def test_contained_fixture_proves_current_reserve_and_launcher_ancestry(self):
+        from bank_quality import windows_acquisition as windows
+        import sys
+        from tests import test_windows_acquisition
+        pin = self.initialize()
+        path = self.root / 'data/runs/job.json'
+        path.write_bytes(canonical(self.job))
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            attempt = self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+            spec = {'contract': 'financial-acquisition-worker-v1', 'job_path': 'data/runs/job.json',
+                    'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': pin, 'attempt_id': attempt['attempt_id'],
+                    'target_key': self.job['targets'][0]['target_key'], 'body_budget_bytes': attempt['reserved_bytes'],
+                    'parent_identity': self.api._current_identity(), 'application_sha256': sha(Path(sys.executable).read_bytes()),
+                    'worker_sha256': sha(Path(test_windows_acquisition.__file__).read_bytes()),
+                    'fixture_authorization': True, 'fixture_root': str(self.root), 'fixture_frozen': self.api._FROZEN,
+                    'marker': str(self.root / 'proof.json')}
+            spec_path = self.root / 'data/runs/proof-worker.json'
+            spec_path.write_bytes(canonical(spec))
+            def before(identity):
+                authority.commit('identity', attempt_id=attempt['attempt_id'], identity=identity)
+            with patch.object(windows, '_WORKER_MODULE', 'tests.test_windows_acquisition'):
+                result = windows.run_contained_attempt(spec_path, sha(spec_path.read_bytes()), deadline_seconds=4, before_resume=before)
+            self.assertEqual(result['exit_code'], 0)
+            self.assertEqual(json.loads((self.root / 'proof.json').read_bytes())['authorized_target'], self.job['targets'][0]['target_key'])
+            self.assertTrue(result['tree_extinct'])
+
+    def fake_attempt(self, spec_path, pin, *, deadline_seconds, before_resume):
+        """Known fixture receipt; production parent authenticates every saved file."""
+        import shutil
+        spec = json.loads(spec_path.read_bytes())
+        target = next(t for t in self.job['targets'] if t['target_key'] == spec['target_key'])
+        before_resume({'pid': 7, 'creation_time': 9, 'contained': True})
+        ref = self.bounded_source(target, {'fixture': 'entity body'})
+        original = self.root / ref['manifest_path']
+        manifest = json.loads(original.read_bytes())
+        manifest['body_budget_bytes'] = spec['body_budget_bytes']
+        if self.fake_status != 200:
+            manifest.update(http_status=self.fake_status, outcome='http_error', source_complete=False,
+                            diagnostics=[{'code': 'http_status', 'detail': 'HTTP ' + str(self.fake_status)}])
+        sidecar = original.parent / manifest['response_metadata_path']
+        metadata = json.loads(sidecar.read_bytes())
+        metadata['http_status'] = self.fake_status
+        sidecar.write_bytes(canonical(metadata))
+        manifest['response_metadata_sha256'] = sha(sidecar.read_bytes())
+        output = self.root / spec['output_path']
+        output.mkdir()
+        for name in (manifest['body_path'], manifest['response_metadata_path']):
+            shutil.copyfile(original.parent / name, output / name)
+        saved = output / original.name
+        saved.write_bytes(canonical(manifest))
+        (output / 'worker-receipt.json').write_bytes(canonical({'attempt_id': spec['attempt_id'], 'spec_sha256': pin,
+                  'manifest_path': saved.relative_to(self.root).as_posix(), 'manifest_sha256': sha(saved.read_bytes())}))
+        return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
+                'exit_code': 0, 'elapsed_seconds': 1.25}
+
+    def test_attempt_observed_body_and_backend_time_replace_reservation(self):
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/attempt-model'
+        session.mkdir()
+        self.fake_status = 503
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, '_current_identity', return_value={'pid': 1, 'creation_time': 2}), \
+                patch.object(self.api, 'run_contained_attempt', side_effect=self.fake_attempt):
+            self.assertTrue(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
+            body_size = len(canonical({'fixture': 'entity body'}))
+            self.assertEqual(authority.state['body_bytes'], body_size)
+            self.assertEqual(authority.state['attempt_seconds'], 2)
+            self.assertEqual(authority.state['failures'], 1)
+            self.fake_status = 200
+            self.assertFalse(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
+            self.assertEqual(authority.state['body_bytes'], 2 * body_size)
+            self.assertEqual(authority.state['attempt_seconds'], 4)
+            self.assertEqual(authority.state['attempts'], 2)
+            self.assertEqual(authority.state['failure_streak'], 0)
+            self.assertIn(self.job['targets'][0]['target_key'], authority.state['sources'])
+            self.assertEqual(len(list(session.glob('attempt-*/worker-receipt.json'))), 2)
+            self.assertLess(authority.records[-3]['reserved_bytes'], 5 * 1024 * 1024)
+
+    def test_deadline_without_receipt_never_refunds_body_and_records_actual_overshoot(self):
+        pin = self.initialize()
+        path = self.root / 'data/runs/job.json'
+        path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/deadline-model'
+        session.mkdir()
+        def deadline(spec_path, pin, *, deadline_seconds, before_resume):
+            before_resume({'pid': 7, 'creation_time': 9, 'contained': True})
+            return {'tree_extinct': True, 'deadline_reached': True, 'deadline_overshoot_seconds': .2,
+                    'exit_code': 2, 'elapsed_seconds': 120.2}
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, '_current_identity', return_value={'pid': 1, 'creation_time': 2}), \
+                patch.object(self.api, 'run_contained_attempt', side_effect=deadline):
+            self.assertFalse(self.api._attempt(authority, path, session, self.job['targets'][0]))
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+            self.assertEqual(authority.state['attempt_seconds'], 121)
+            self.assertEqual(authority.state['guard'], 'deadline')
+            self.assertEqual(authority.records[-1]['overshoot_microseconds'], 200000)
+            self.assertFalse(authority.state['pending'])
 
 
 if __name__ == '__main__':

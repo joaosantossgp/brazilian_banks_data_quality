@@ -1,17 +1,26 @@
-"""Finite, authenticated offline source resolution; no acquisition authority/admission.
+"""Finite authenticated resolution and local acquisition authority; no admission.
 
 Catalog indexes use financial-acquisition-catalog-index-v1 and pinned O/N captures.
 Source provenance hashes cover the complete manifest with fractional JSON numbers
 represented as {json_number: lexical_token}, as in the existing financial reader.
 """
 import hashlib
+from contextlib import contextmanager
+import copy
 import json
+import math
+import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
+import time
+import uuid
 from urllib.parse import quote
 
 from .archive import load_body
+from .windows_acquisition import (exclusive_claim as _claim, identity_extinct, require_supported,
+                                  run_contained_attempt, _current_identity, verify_worker_ancestry)
 
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -131,6 +140,10 @@ def _authenticated(ref, *, expected=None, frozen=None):
              'Source provenance hash mismatch')
     _require(manifest.get('http_status') == 200 and manifest.get('outcome') == 'ok'
              and manifest.get('truncated') is False, 'Source is not complete')
+    # Frozen O/N have exact preexisting physical pins. New C/D/N never inherit
+    # legacy completeness merely from an ok flag, coherent hashes or their role.
+    _require(frozen is not None or manifest.get('contract') == 'bounded-http-archive-v1',
+             'Nonfrozen source requires bounded transport contract and positive framing')
     if manifest.get('contract') == 'bounded-http-archive-v1':
         _require(manifest.get('source_complete') is True and manifest.get('body_available') is True
                  and manifest.get('diagnostics') == []
@@ -463,3 +476,612 @@ def validate_numeric_source(body: bytes, *, area: int, required_origins: list[di
     # Completeness is a transport claim and cannot be inferred from valid JSON bytes.
     return {'area': area, 'body_sha256': _sha(body), 'source_validated': True,
             'entities': entities, 'origins': origins, 'missing': missing}
+
+
+# Execution is intentionally closed to the first real scope. Candidate preparation
+# remains multiperiod; neither candidate changes nor session receipts grant budget.
+_SCOPE = 'issue50/financial-202403-1005-native-four'
+_POLICIES = {'attempts': 2, 'metadata_body_bytes': 5 * 1024 * 1024,
+             'numeric_body_bytes': 64 * 1024 * 1024, 'timeout_seconds': 30,
+             'deadline_seconds': 120, 'max_backoff_seconds': 5,
+             'max_backoffs': 7, 'attempt_seconds': 1680, 'backoff_seconds': 35,
+             'scheduling_seconds': 1715, 'max_failed_targets': 3, 'max_guard_streak': 2}
+_EMPTY_HASH = '0' * 64
+
+
+def _execution_job(job):
+    _require(isinstance(job, dict) and job.get('contract') == JOB_CONTRACT
+             and job.get('job_sha256') == _job_hash(job), 'Job hash/schema mismatch')
+    _require(job.get('acquisition_scope') == _SCOPE and len(job.get('descriptors', [])) == 1
+             and job['descriptors'][0]['selection'] == {'period': 202403, 'perspective': 1005,
+                                                        'reports': [92, 96, 101, 98]}, 'Execution outside fixed 202403 scope')
+    _require(isinstance(job.get('policies'), dict) and all(key in _POLICIES and type(value) is int
+             and 0 < value <= _POLICIES[key] for key, value in job['policies'].items()), 'Execution policies exceed fixed caps')
+    catalogs = _catalogs(job['catalogs'])
+    descriptor = _descriptor(catalogs['old'], job['catalogs']['old'], 202403)
+    _require(job['descriptors'][0] == descriptor, 'Execution descriptor differs from frozen catalog')
+    expected = sorted((_target(o, 202403) for o in descriptor['source_offers'] if o['role'] != 'numeric'),
+                      key=lambda t: t['target_key'])
+    _require(job['targets'] == expected, 'Execution target set differs from descriptor')
+    _require(len(descriptor['source_offers']) <= 7, 'Execution exceeds seven-file bound')
+    return {t['target_key']: t for t in (_target(o, 202403) for o in descriptor['source_offers'])}
+
+
+def _safe_destination(path):
+    """Validate each existing ancestor before creating operational paths."""
+    path = Path(path).absolute()
+    _require(path.is_relative_to(_ROOT.absolute()), 'Destination outside package root')
+    relative = path.relative_to(_ROOT.absolute())
+    _require(len(relative.parts) >= 3 and relative.parts[:2] == ('data', 'runs')
+             and all(p not in ('.', '..') and ':' not in p for p in relative.parts), 'Destination outside approved runs')
+    current = _ROOT
+    for part in relative.parts:
+        current = current / part
+        if current.exists() or current.is_symlink():
+            info = current.lstat()
+            _require(not stat.S_ISLNK(info.st_mode) and not (getattr(info, 'st_file_attributes', 0) & 0x400),
+                     'Destination symlink/reparse point forbidden')
+    return path
+
+
+def _authority_paths(job):
+    base = _safe_destination(_ROOT / 'data/runs/financial-acquisition-authority')
+    scope = _sha(job['acquisition_scope'].encode())
+    return base / job['job_sha256'], base / ('scope-' + scope + '.binding.json'), base / ('scope-' + scope + '.lock')
+
+
+def _write_exclusive(path, value):
+    path = _safe_destination(path)
+    with path.open('xb') as output:
+        output.write(_canonical(value))
+        output.flush()
+        os.fsync(output.fileno())
+    _require(path.read_bytes() == _canonical(value), 'Durable write verification failed')
+
+
+def _replace_head(folder, head):
+    _safe_destination(folder / 'head.json')
+    temporary = folder / ('head-' + uuid.uuid4().hex + '.tmp')
+    _write_exclusive(temporary, head)
+    os.replace(temporary, folder / 'head.json')
+    with (folder / 'head.json').open('r+b') as output:
+        os.fsync(output.fileno())
+    _require((folder / 'head.json').read_bytes() == _canonical(head), 'Head durability verification failed')
+
+
+def _initial_state():
+    return {'attempts': 0, 'body_bytes': 0, 'attempt_seconds': 0, 'backoff_seconds': 0,
+            'backoffs': 0, 'failures': 0, 'failure_streak': 0, 'guard': '', 'guard_streak': 0,
+            'failed_targets': [], 'targets': {}, 'pending': {}, 'sources': {}}
+
+
+def _limits(job):
+    return {**_POLICIES, **job['policies']}
+
+
+def _body_cap(target, policies=None):
+    policies = policies or _POLICIES
+    return policies['numeric_body_bytes'] if target['role'] == 'numeric' else policies['metadata_body_bytes']
+
+
+def _apply_record(state, record, targets, policies=None):
+    """Recompute transitions, never trust persisted cumulative counter fields."""
+    policies = policies or _POLICIES
+    kind, attempt = record['kind'], record['attempt_id']
+    for key in ('attempt_delta', 'reserved_bytes', 'reserved_attempt_seconds', 'reserved_backoff_seconds'):
+        _require(type(record[key]) is int and record[key] >= 0, 'Counter underflow/type invalid')
+    if kind != 'reserve':
+        _require(record['attempt_delta'] == record['reserved_bytes'] == record['reserved_attempt_seconds'] == 0,
+                 'Unexpected reservation counters on non-reserve record')
+    if kind != 'backoff':
+        _require(record['reserved_backoff_seconds'] == 0, 'Unexpected backoff reservation counters')
+    if kind == 'reserve':
+        key = record['target_key']
+        _require(key in targets and attempt not in state['pending'] and not state['pending'], 'Invalid or pending attempt')
+        target = state['targets'].setdefault(key, {'attempts': 0, 'body_bytes': 0, 'retryable': True})
+        _require(record['attempt_delta'] == 1 and target['attempts'] < policies['attempts'] and target['retryable']
+                 and key not in state['sources'] and len(state['failed_targets']) < policies['max_failed_targets']
+                 and state['guard_streak'] < policies['max_guard_streak'], 'Attempt/failure guard exhausted')
+        budget = _body_cap(targets[key], policies) - target['body_bytes']
+        _require(budget > 0 and record['reserved_bytes'] == budget and record['reserved_attempt_seconds'] == policies['deadline_seconds']
+                 and record['reserved_backoff_seconds'] == 0, 'Reservation counter reduced or inflated')
+        _require(state['attempts'] < 14 and state['attempt_seconds'] + policies['deadline_seconds'] <= policies['attempt_seconds']
+                 and state['attempt_seconds'] + state['backoff_seconds'] + policies['deadline_seconds'] <= policies['scheduling_seconds'],
+                 'Scheduling/attempt budget exhausted')
+        _require(state['body_bytes'] + budget <= 2 * policies['metadata_body_bytes'] + 5 * policies['numeric_body_bytes'],
+                 'Aggregate body budget exhausted')
+        target['attempts'] += 1
+        target['body_bytes'] += budget
+        state['attempts'] += 1
+        state['body_bytes'] += budget
+        state['attempt_seconds'] += policies['deadline_seconds']
+        state['pending'][attempt] = copy.deepcopy(record)
+    elif kind == 'identity':
+        _require(attempt in state['pending'] and state['pending'][attempt]['kind'] == 'reserve'
+                 and 'identity' not in state['pending'][attempt], 'Unknown/duplicate worker identity')
+        identity = record['identity']
+        _require(type(identity.get('pid')) is int and identity['pid'] > 0
+                 and type(identity.get('creation_time')) is int and identity['creation_time'] > 0
+                 and identity.get('contained') is True, 'Invalid worker identity')
+        state['pending'][attempt]['identity'] = identity
+    elif kind in ('finish', 'orphan'):
+        _require(attempt in state['pending'] and state['pending'][attempt]['kind'] == 'reserve', 'Unknown attempt conclusion')
+        reservation = state['pending'].pop(attempt)
+        key, target = reservation['target_key'], state['targets'][reservation['target_key']]
+        if kind == 'finish':
+            _require(record.get('tree_extinct') is True, 'Conclusion requires verified owned tree extinction')
+            observed, elapsed = record['observed_bytes'], record['observed_attempt_seconds']
+            _require(type(observed) is int and 0 <= observed <= reservation['reserved_bytes']
+                     and type(elapsed) is int and elapsed >= 0, 'Invalid observed counters')
+            state['body_bytes'] += observed - reservation['reserved_bytes']
+            target['body_bytes'] += observed - reservation['reserved_bytes']
+            state['attempt_seconds'] += elapsed - reservation['reserved_attempt_seconds']
+        success = record['status'] == 'source_complete'
+        _require(kind != 'orphan' or not success, 'Orphan cannot accept source')
+        target['retryable'] = record['retryable'] is True and not success
+        if success:
+            _require(isinstance(record['source_ref'], dict), 'Source conclusion missing reference')
+            state['sources'][key] = record['source_ref']
+            state['failure_streak'] = 0
+        else:
+            state['failures'] += 1
+            state['failure_streak'] += 1
+            if not target['retryable'] and key not in state['failed_targets']:
+                state['failed_targets'].append(key)
+        guard = record.get('guard', '')
+        _require(type(guard) is str, 'Invalid guard classification')
+        state['guard_streak'] = (state['guard_streak'] + 1 if state['guard'] == guard else 1) if guard else 0
+        state['guard'] = guard
+    elif kind == 'backoff':
+        _require(not state['pending'] and attempt not in state['pending'] and record['reserved_backoff_seconds'] == policies['max_backoff_seconds']
+                 and state['backoffs'] < policies['max_backoffs']
+                 and state['backoff_seconds'] + policies['max_backoff_seconds'] <= policies['backoff_seconds']
+                 and state['attempt_seconds'] + state['backoff_seconds'] + policies['max_backoff_seconds'] <= policies['scheduling_seconds'],
+                 'Backoff budget exhausted or pending')
+        state['backoffs'] += 1
+        state['backoff_seconds'] += policies['max_backoff_seconds']
+        state['pending'][attempt] = copy.deepcopy(record)
+    elif kind == 'backoff_finish':
+        _require(attempt in state['pending'] and state['pending'][attempt]['kind'] == 'backoff', 'Unknown backoff')
+        observed = record['observed_backoff_seconds']
+        _require(type(observed) is int and observed >= 0, 'Backoff observed counter invalid')
+        state['backoff_seconds'] += observed - policies['max_backoff_seconds']
+        state['pending'].pop(attempt)
+    elif kind == 'backoff_orphan':
+        _require(attempt in state['pending'] and state['pending'][attempt]['kind'] == 'backoff', 'Unknown orphan backoff')
+        state['pending'].pop(attempt)  # full reservation remains charged
+    elif kind == 'reuse':
+        key = record['target_key']
+        _require(key in targets and key not in state['sources'] and not state['pending'], 'Invalid reused source')
+        state['sources'][key] = record['source_ref']
+    elif kind == 'guard_failure':
+        key, guard = record['target_key'], record['guard']
+        _require(key in targets and not state['pending'] and type(guard) is str and guard, 'Invalid source validation guard')
+        state['failures'] += 1
+        state['failure_streak'] += 1
+        if key not in state['failed_targets']:
+            state['failed_targets'].append(key)
+        state['guard_streak'] = state['guard_streak'] + 1 if state['guard'] == guard else 1
+        state['guard'] = guard
+    elif kind != 'recovery':
+        raise ValueError('Unknown authority journal transition')
+    _require(record['failure_count'] == state['failures'] and record['failure_streak'] == state['failure_streak'],
+             'Failure counters disagree with transitions')
+
+
+class _Authority:
+    """One claim owner and journal writer; instances never escape their context."""
+    def __init__(self, job, folder, bootstrap_sha256, records, state, targets):
+        self.job, self.folder, self.bootstrap_sha256 = job, folder, bootstrap_sha256
+        self.records, self.state, self.targets, self.active = records, state, targets, True
+        self.policies = _limits(job)
+
+    def commit(self, kind, *, attempt_id='', target_key='', session_id='', **details):
+        _require(self.active, 'Authority claim is closed')
+        record = {'sequence': len(self.records) + 1, 'previous_record_sha256': self.records[-1]['record_sha256'] if self.records else _EMPTY_HASH,
+                  'kind': kind, 'job_sha256': self.job['job_sha256'], 'attempt_id': attempt_id,
+                  'target_key': target_key, 'session_id': session_id, 'attempt_delta': 0,
+                  'reserved_bytes': 0, 'observed_bytes': None, 'reserved_attempt_seconds': 0,
+                  'observed_attempt_seconds': None, 'reserved_backoff_seconds': 0,
+                  'observed_backoff_seconds': None, 'failure_count': self.state['failures'],
+                  'failure_streak': self.state['failure_streak'], **details}
+        candidate = copy.deepcopy(self.state)
+        if kind in ('finish', 'orphan', 'guard_failure'):
+            record['failure_count'] += record['status'] != 'source_complete'
+            record['failure_streak'] = 0 if record['status'] == 'source_complete' else record['failure_streak'] + 1
+        _apply_record(candidate, record, self.targets, self.policies)
+        record['record_sha256'] = _sha(_canonical(record))
+        with _safe_destination(self.folder / 'journal.jsonl').open('ab') as output:
+            output.write(_canonical(record) + b'\n')
+            output.flush()
+            os.fsync(output.fileno())
+        head = {'sequence': record['sequence'], 'record_sha256': record['record_sha256'],
+                'state_sha256': _sha(_canonical(candidate))}
+        _replace_head(self.folder, head)
+        # Verify physical append and head before permitting any child creation.
+        _require((self.folder / 'journal.jsonl').read_bytes().endswith(_canonical(record) + b'\n'), 'Journal commit verification failed')
+        self.records.append(record)
+        self.state = candidate
+        return record
+
+
+def initialize_authority(job: dict) -> str:
+    """Explicit offline, exclusive bootstrap; never resets/rebinds an existing scope."""
+    targets = _execution_job(job)
+    folder, binding_path, lock = _authority_paths(job)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with _claim(lock):
+        _require(not binding_path.exists(), 'Scope binding already exists; no reset/rebinding')
+        _safe_destination(folder).mkdir(exist_ok=False)
+        bootstrap = {'contract': 'financial-acquisition-authority-v1', 'acquisition_scope': job['acquisition_scope'],
+                     'job_sha256': job['job_sha256'], 'policies': _limits(job), 'targets': targets}
+        pin = _sha(_canonical(bootstrap))
+        _write_exclusive(folder / 'bootstrap.json', bootstrap)
+        with (folder / 'journal.jsonl').open('xb') as output:
+            output.flush()
+            os.fsync(output.fileno())
+        _replace_head(folder, {'sequence': 0, 'record_sha256': _EMPTY_HASH, 'state_sha256': _sha(_canonical(_initial_state()))})
+        _write_exclusive(binding_path, {'acquisition_scope': job['acquisition_scope'], 'job_sha256': job['job_sha256'], 'bootstrap_sha256': pin})
+        return pin
+
+
+@contextmanager
+def _open_authority(job, bootstrap_sha256, *, recover=False):
+    targets = _execution_job(job)
+    folder, binding_path, lock = _authority_paths(job)
+    _require(binding_path.is_file() and folder.is_dir(), 'Acquisition authority missing; explicit initialization required')
+    for path in (folder, binding_path, lock, folder / 'bootstrap.json', folder / 'journal.jsonl', folder / 'head.json'):
+        _safe_destination(path)
+    with _claim(lock):
+        binding = _json(binding_path.read_bytes())
+        _require(binding == {'acquisition_scope': job['acquisition_scope'], 'job_sha256': job['job_sha256'],
+                             'bootstrap_sha256': _digest(bootstrap_sha256)}, 'Scope job/bootstrap binding mismatch')
+        raw = (folder / 'bootstrap.json').read_bytes()
+        _require(_sha(raw) == bootstrap_sha256, 'Bootstrap hash mismatch')
+        bootstrap = _json(raw)
+        _require(bootstrap == {'contract': 'financial-acquisition-authority-v1', 'acquisition_scope': job['acquisition_scope'],
+                              'job_sha256': job['job_sha256'], 'policies': _limits(job), 'targets': targets}, 'Bootstrap contract mismatch')
+        journal = (folder / 'journal.jsonl').read_bytes()
+        _require(not journal or journal.endswith(b'\n'), 'Partial journal tail blocks; never truncate')
+        state, records, states = _initial_state(), [], [_initial_state()]
+        for line in journal.splitlines():
+            record = _json(line)
+            pin = record.pop('record_sha256')
+            _require(pin == _sha(_canonical(record)) and record['sequence'] == len(records) + 1
+                     and record['job_sha256'] == job['job_sha256'] and record['previous_record_sha256'] ==
+                     (records[-1]['record_sha256'] if records else _EMPTY_HASH), 'Journal chain integrity failure')
+            _apply_record(state, record, targets, _limits(job))
+            record['record_sha256'] = pin
+            records.append(record)
+            states.append(copy.deepcopy(state))
+        head = _json((folder / 'head.json').read_bytes())
+        sequence = head.get('sequence')
+        _require(type(sequence) is int and 0 <= sequence <= len(records), 'Authority head ahead/invalid')
+        _require(head == {'sequence': sequence, 'record_sha256': records[sequence - 1]['record_sha256'] if sequence else _EMPTY_HASH,
+                          'state_sha256': _sha(_canonical(states[sequence]))}, 'Authority head/state digest mismatch')
+        _require(recover or sequence == len(records), 'Authority head conflicts with complete journal tail; recover offline')
+        if recover:
+            for pending in state['pending'].values():
+                if 'identity' in pending:
+                    _require(identity_extinct(pending['identity']), 'Live worker blocks recovery before source reads')
+        # Current accepted sources must still be physically authenticated.
+        for key, ref in state['sources'].items():
+            _authenticated(ref, expected=targets[key])
+        authority = _Authority(job, folder, bootstrap_sha256, records, state, targets)
+        try:
+            if recover and sequence != len(records):
+                _replace_head(folder, {'sequence': len(records), 'record_sha256': records[-1]['record_sha256'],
+                                       'state_sha256': _sha(_canonical(state))})
+            yield authority
+        finally:
+            authority.active = False
+
+
+def open_authority(job: dict, *, bootstrap_sha256: str):
+    return _open_authority(job, bootstrap_sha256)
+
+
+def reserve_attempt(authority, target: dict, *, session_id: str) -> dict:
+    _require(type(session_id) is str and re.fullmatch('[A-Za-z0-9_-]{1,80}', session_id), 'Invalid session ID')
+    key = target.get('target_key')
+    _require(key in authority.targets and target == authority.targets[key], 'Attempt target outside fixed job')
+    used = authority.state['targets'].get(key, {}).get('body_bytes', 0)
+    return authority.commit('reserve', attempt_id=uuid.uuid4().hex, target_key=key, session_id=session_id,
+                            attempt_delta=1, reserved_bytes=_body_cap(target, authority.policies) - used,
+                            reserved_attempt_seconds=authority.policies['deadline_seconds'])
+
+
+def _receipt(authority, session_id):
+    return {'contract': 'financial-acquisition-receipt-v1', 'job_sha256': authority.job['job_sha256'],
+            'bootstrap_sha256': authority.bootstrap_sha256, 'sequence': len(authority.records),
+            'record_sha256': authority.records[-1]['record_sha256'] if authority.records else _EMPTY_HASH,
+            'state_sha256': _sha(_canonical(authority.state)), 'state': copy.deepcopy(authority.state), 'session_id': session_id}
+
+
+def _verify_receipt(receipt, authority):
+    _require(receipt.get('contract') == 'financial-acquisition-receipt-v1' and receipt.get('job_sha256') == authority.job['job_sha256']
+             and receipt.get('bootstrap_sha256') == authority.bootstrap_sha256, 'Receipt authority mismatch')
+    sequence = receipt.get('sequence')
+    _require(type(sequence) is int and 0 <= sequence <= len(authority.records), 'Receipt is ahead of current authority')
+    state = _initial_state()
+    for record in authority.records[:sequence]:
+        _apply_record(state, record, authority.targets, authority.policies)
+    _require(receipt.get('record_sha256') == (authority.records[sequence - 1]['record_sha256'] if sequence else _EMPTY_HASH)
+             and receipt.get('state_sha256') == _sha(_canonical(state)) and receipt.get('state') == state, 'Receipt does not match journal prefix')
+
+
+def _recover_pending(authority):
+    # No body is opened before every durable identity is proved extinct. Job handle
+    # is parent-only: releasing claim after parent crash closes it and kills tree.
+    for pending in authority.state['pending'].values():
+        if 'identity' in pending:
+            _require(identity_extinct(pending['identity']), 'Live worker blocks offline recovery')
+    for attempt, pending in list(authority.state['pending'].items()):
+        authority.commit('backoff_orphan' if pending['kind'] == 'backoff' else 'orphan',
+                         attempt_id=attempt, target_key=pending['target_key'], session_id=pending['session_id'],
+                         status='orphan_charged', retryable=False)
+    authority.commit('recovery')
+
+
+def _load_job(path, pin):
+    path = _local(Path(path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    job = _json(path.read_bytes())
+    _require(job.get('job_sha256') == _digest(pin) == _job_hash(job), 'External job hash mismatch')
+    _execution_job(job)
+    return job
+
+
+def recover_authority(job_path: Path, job_sha256: str, *, bootstrap_sha256: str, output: Path) -> dict:
+    job = _load_job(job_path, job_sha256)
+    destination = _safe_destination(output)
+    _require(not destination.exists(), 'Recovery receipt destination must be new')
+    with _open_authority(job, bootstrap_sha256, recover=True) as authority:
+        _recover_pending(authority)
+        receipt = _receipt(authority, 'recovery-' + uuid.uuid4().hex)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _write_exclusive(destination, receipt)
+        return receipt
+
+
+def _worker_authorization(spec):
+    """Read-only current authority proof while its sole writer holds the claim."""
+    job = _load_job(_ROOT / spec['job_path'], spec['job_sha256'])
+    targets = _execution_job(job)
+    folder, binding_path, _ = _authority_paths(job)
+    binding = _json(_local(binding_path.relative_to(_ROOT).as_posix()).read_bytes())
+    _require(binding == {'acquisition_scope': _SCOPE, 'job_sha256': job['job_sha256'],
+                         'bootstrap_sha256': spec['bootstrap_sha256']}, 'Worker scope/bootstrap binding mismatch')
+    _require(_sha(_local((folder / 'bootstrap.json').relative_to(_ROOT).as_posix()).read_bytes()) == spec['bootstrap_sha256'],
+             'Worker bootstrap hash mismatch')
+    raw = _local((folder / 'journal.jsonl').relative_to(_ROOT).as_posix()).read_bytes()
+    _require(raw.endswith(b'\n'), 'Worker journal partial/missing')
+    state, previous, sequence = _initial_state(), _EMPTY_HASH, 0
+    for line in raw.splitlines():
+        record = _json(line)
+        pin = record.pop('record_sha256')
+        sequence += 1
+        _require(pin == _sha(_canonical(record)) and record['sequence'] == sequence
+                 and record['previous_record_sha256'] == previous and record['job_sha256'] == job['job_sha256'], 'Worker journal integrity failure')
+        _apply_record(state, record, targets, _limits(job))
+        previous = pin
+    head = _json(_local((folder / 'head.json').relative_to(_ROOT).as_posix()).read_bytes())
+    _require(head == {'sequence': sequence, 'record_sha256': previous, 'state_sha256': _sha(_canonical(state))}, 'Worker authority head mismatch')
+    pending = state['pending'].get(spec['attempt_id'])
+    _require(pending and pending['kind'] == 'reserve' and pending['target_key'] == spec['target_key']
+             and pending['reserved_bytes'] == spec['body_budget_bytes'] and 'identity' in pending, 'Worker lacks current durable reservation/identity')
+    verify_worker_ancestry(pending['identity'], spec['parent_identity'])
+    return job, targets[spec['target_key']]
+
+
+def _worker_main(spec_path, spec_sha256):
+    """Internal known worker: standalone invocation cannot bypass reservation."""
+    require_supported()
+    path = _local(Path(spec_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    raw = path.read_bytes()
+    _require(_sha(raw) == _digest(spec_sha256), 'Worker spec hash mismatch')
+    spec = _json(raw)
+    _require(set(spec) == {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
+                          'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
+             and spec['contract'] == 'financial-acquisition-worker-v1'
+             and spec['worker_sha256'] == _sha(Path(__file__).read_bytes())
+             and spec['application_sha256'] == _sha(Path(sys.executable).read_bytes()), 'Worker contract/runtime pin mismatch')
+    job, target = _worker_authorization(spec)
+    destination = _safe_destination(_ROOT / spec['output_path'])
+    _require(not destination.exists(), 'Worker destination must be new')
+    destination.mkdir()
+    # Imported only after all authorization checks; this is the sole request site.
+    from .archive import fetch_bounded
+    manifest = fetch_bounded(target['url'], destination, spec['attempt_id'],
+                             {'period': target['period'], 'perspective': 1005, 'role': target['role']},
+                             body_budget_bytes=spec['body_budget_bytes'], timeout_seconds=_limits(job)['timeout_seconds'])
+    manifest_path = destination / manifest['manifest_path']
+    for name in (manifest['body_path'], manifest['manifest_path'], manifest.get('response_metadata_path')):
+        if name:
+            with _safe_destination(destination / name).open('r+b') as saved:
+                os.fsync(saved.fileno())
+    _write_exclusive(destination / 'worker-receipt.json', {'attempt_id': spec['attempt_id'],
+                     'spec_sha256': spec_sha256, 'manifest_path': manifest_path.relative_to(_ROOT).as_posix(),
+                     'manifest_sha256': _sha(manifest_path.read_bytes())})
+
+
+def _retryable(manifest):
+    diagnostics = manifest.get('diagnostics', [])
+    if not isinstance(diagnostics, list):
+        return False
+    codes = {item.get('code') for item in diagnostics if isinstance(item, dict)}
+    status = manifest.get('http_status')
+    if manifest.get('outcome') == 'http_error' and codes <= {'http_status'}:
+        return status in (408, 429) or (type(status) is int and 500 <= status <= 599)
+    # The transport preserves a typed code and exception text. Unknown errors are
+    # deliberately nonretryable; certificate/configuration failures are excluded.
+    if manifest.get('outcome') == 'network_error' and codes == {'transport_exception'}:
+        details = ' '.join(item.get('detail', '') for item in diagnostics)
+        return any(token in details for token in ('TimeoutError', 'timed out', 'ConnectionResetError',
+                                                   'ConnectionAbortedError', 'ConnectionRefusedError',
+                                                   'Temporary failure in name resolution'))
+    return False
+
+
+def _attempt(authority, job_path, session, target):
+    reservation = reserve_attempt(authority, target, session_id=session.name)
+    attempt = reservation['attempt_id']
+    spec_path = session / ('worker-' + attempt + '.json')
+    output = session / ('attempt-' + attempt)
+    spec = {'contract': 'financial-acquisition-worker-v1', 'job_path': Path(job_path).absolute().relative_to(_ROOT.absolute()).as_posix(),
+            'job_sha256': authority.job['job_sha256'], 'bootstrap_sha256': authority.bootstrap_sha256,
+            'attempt_id': attempt, 'target_key': target['target_key'], 'body_budget_bytes': reservation['reserved_bytes'],
+            'parent_identity': _current_identity(), 'worker_sha256': _sha(Path(__file__).read_bytes()),
+            'application_sha256': _sha(Path(sys.executable).read_bytes()), 'output_path': output.relative_to(_ROOT).as_posix()}
+    _write_exclusive(spec_path, spec)
+    spec_pin = _sha(spec_path.read_bytes())
+    def before_resume(identity):
+        authority.commit('identity', attempt_id=attempt, target_key=target['target_key'], session_id=session.name, identity=identity,
+                         spec_path=spec_path.relative_to(_ROOT).as_posix(), spec_sha256=spec_pin)
+    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'], before_resume=before_resume)
+    _require(result['tree_extinct'], 'Worker tree extinction not verified')
+    observed, status, retryable, source, guard = reservation['reserved_bytes'], 'worker_failed', False, None, 'containment'
+    evidence = {}
+    # A missing/inconclusive receipt never proves zero bytes and never refunds.
+    if result['deadline_reached'] or result['deadline_overshoot_seconds'] > 0:
+        status, guard = 'deadline', 'deadline'
+    elif result['exit_code'] == 0:
+        receipt_path = _local((output / 'worker-receipt.json').relative_to(_ROOT).as_posix())
+        receipt = _json(receipt_path.read_bytes())
+        _require(receipt['attempt_id'] == attempt and receipt['spec_sha256'] == spec_pin, 'Worker receipt mismatch')
+        manifest_path = _local(receipt['manifest_path'])
+        _require(manifest_path.parent == output, 'Worker manifest outside immutable attempt directory')
+        manifest_raw = manifest_path.read_bytes()
+        _require(_sha(manifest_raw) == _digest(receipt['manifest_sha256']), 'Attempt manifest hash mismatch')
+        manifest = _json(manifest_raw)
+        evidence = {'worker_receipt_path': receipt_path.relative_to(_ROOT).as_posix(),
+                    'worker_receipt_sha256': _sha(receipt_path.read_bytes()), 'manifest_path': receipt['manifest_path'],
+                    'manifest_sha256': receipt['manifest_sha256']}
+        _require(manifest.get('contract') == 'bounded-http-archive-v1' and manifest.get('url') == target['url']
+                 and manifest.get('body_budget_bytes') == reservation['reserved_bytes'], 'Attempt manifest context mismatch')
+        bytes_seen = manifest.get('bytes_observed')
+        _require(type(bytes_seen) is int and 0 <= bytes_seen <= reservation['reserved_bytes'], 'Attempt observed body counter invalid')
+        # Validate saved body and sidecar even for a failed request before refund.
+        _require(manifest.get('body_available') is True and manifest.get('bytes') == bytes_seen,
+                 'Inconclusive stored byte count')
+        body = load_body(manifest, manifest_path.parent)
+        _require(len(body) == bytes_seen, 'Attempt body byte count mismatch')
+        observed = bytes_seen
+        source = {**target, 'manifest_path': receipt['manifest_path'], 'manifest_sha256': receipt['manifest_sha256'],
+                  'body_sha256': manifest['sha256'], 'provenance_sha256': _sha(_canonical(manifest)), 'context': _native(manifest['context'])}
+        if manifest.get('source_complete') is True and manifest.get('outcome') == 'ok':
+            _authenticated(source, expected=target)
+            status, guard = 'source_complete', ''
+        else:
+            source = None
+            status, retryable = manifest.get('outcome', 'transport_error'), _retryable(manifest)
+            guard = '' if retryable else 'transport'
+    used_attempts = authority.state['targets'][target['target_key']]['attempts']
+    retryable = retryable and used_attempts < authority.policies['attempts'] and observed < reservation['reserved_bytes']
+    authority.commit('finish', attempt_id=attempt, target_key=target['target_key'], session_id=session.name,
+                     observed_bytes=observed, observed_attempt_seconds=math.ceil(result['elapsed_seconds']),
+                     actual_elapsed_microseconds=math.ceil(result['elapsed_seconds'] * 1000000),
+                     overshoot_microseconds=math.ceil(result['deadline_overshoot_seconds'] * 1000000),
+                     status=status, retryable=retryable, source_ref=source, guard=guard, attempt_evidence=evidence,
+                     tree_extinct=True, worker_exit_code=result['exit_code'], deadline_reached=result['deadline_reached'])
+    return retryable
+
+
+def _obtain(authority, job_path, session, target):
+    key = target['target_key']
+    if key in authority.state['sources']:
+        return
+    reused = authority.job.get('reuse_sources', {}).get(key)
+    if reused:
+        _authenticated(reused, expected=target)
+        authority.commit('reuse', target_key=key, session_id=session.name, source_ref=reused)
+        return
+    while key not in authority.state['sources']:
+        if not _attempt(authority, job_path, session, target):
+            break
+        backoff = authority.commit('backoff', attempt_id=uuid.uuid4().hex, target_key=key,
+                                   session_id=session.name, reserved_backoff_seconds=authority.policies['max_backoff_seconds'])
+        began = time.monotonic()
+        time.sleep(max(0, authority.policies['max_backoff_seconds'] - .05))
+        elapsed = time.monotonic() - began
+        authority.commit('backoff_finish', attempt_id=backoff['attempt_id'], target_key=key,
+                         session_id=session.name, observed_backoff_seconds=math.ceil(elapsed),
+                         actual_elapsed_microseconds=math.ceil(elapsed * 1000000))
+
+
+def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: str, bootstrap_sha256: str,
+                    checkpoint_sha256: str | None = None, resume_from: Path | None = None,
+                    resume_sha256: str | None = None) -> dict:
+    require_supported()
+    job = _load_job(job_path, job_sha256)
+    _require(phase in ('metadata', 'values'), 'Unknown acquisition phase')
+    _require((resume_from is None) == (resume_sha256 is None), 'Resume receipt requires external pin')
+    _require(phase != 'values' or checkpoint_sha256 is not None, 'Values require physical checkpoint A pin')
+    session = _safe_destination(session)
+    _require(re.fullmatch('[A-Za-z0-9_-]{1,80}', session.name) and not session.exists(), 'Session destination must be new with safe ID')
+    with open_authority(job, bootstrap_sha256=bootstrap_sha256) as authority:
+        _require(not authority.state['pending'], 'Pending attempt requires offline recovery before any new launch')
+        if resume_from is not None:
+            raw = _local(Path(resume_from).absolute().relative_to(_ROOT.absolute()).as_posix()).read_bytes()
+            _require(_sha(raw) == _digest(resume_sha256), 'Resume receipt hash mismatch')
+            _verify_receipt(_json(raw), authority)
+        checkpoint = None
+        if phase == 'values':
+            _require(resume_from is not None, 'Values require checkpoint A receipt location')
+            a_path = _local((Path(resume_from).absolute().parent / 'checkpoint-a.json').relative_to(_ROOT.absolute()).as_posix())
+            raw = a_path.read_bytes()
+            _require(_sha(raw) == _digest(checkpoint_sha256), 'Physical checkpoint A hash mismatch')
+            checkpoint = _json(raw)
+            refs = {target['target_key']: authority.state['sources'][target['target_key']] for target in job['targets']
+                    if target['target_key'] in authority.state['sources']}
+            resolved = resolve_sources(job, refs)
+            _require(checkpoint == resolved['checkpoints'][0], 'Checkpoint A differs from revalidated physical sources')
+            _require(all(authority.state['sources'].get(key) == ref for key, ref in refs.items()), 'Checkpoint sources differ from current authority')
+        session.mkdir(parents=True)
+        try:
+            if phase == 'metadata':
+                for target in job['targets']:
+                    _obtain(authority, job_path, session, target)
+                refs = {t['target_key']: authority.state['sources'][t['target_key']] for t in job['targets'] if t['target_key'] in authority.state['sources']}
+                _require(len(refs) == len(job['targets']), 'Metadata source set incomplete; no checkpoint acceptance')
+                failed_key = next(t['target_key'] for t in job['targets'] if t['role'] == 'cadaster')
+                try:
+                    body, _ = _authenticated(refs[failed_key], expected=authority.targets[failed_key])
+                    _cadaster(body, 202403)
+                    failed_key = next(t['target_key'] for t in job['targets'] if t['role'] == 'dictionary')
+                    resolved = resolve_sources(job, refs)
+                except ValueError as error:
+                    authority.commit('guard_failure', target_key=failed_key, session_id=session.name,
+                                     status='source_schema_failed', guard='schema', diagnostic=str(error))
+                    raise
+                _write_exclusive(session / 'checkpoint-a.json', resolved['checkpoints'][0])
+                _write_exclusive(session / 'resolution.json', resolved)
+            else:
+                for target in resolved['numeric_targets']:
+                    _obtain(authority, job_path, session, target)
+                    _require(target['target_key'] in authority.state['sources'], 'Numeric source missing; no complete acceptance')
+                    body, _ = _authenticated(authority.state['sources'][target['target_key']], expected=target)
+                    origins = [n['origin'] for r in resolved['resolutions'] for n in r['nodes']
+                               if n['kind'] == 'numeric' and n['origin']['area'] == target['area']]
+                    try:
+                        validation = validate_numeric_source(body, area=target['area'], required_origins=origins)
+                    except ValueError as error:
+                        authority.commit('guard_failure', target_key=target['target_key'], session_id=session.name,
+                                         status='source_schema_failed', guard='schema', diagnostic=str(error))
+                        raise
+                    _write_exclusive(session / ('numeric-' + str(target['area']) + '-validation.json'), validation)
+                complete = {**checkpoint, 'phase': 'complete', 'checkpoint_a_sha256': checkpoint_sha256,
+                            'sources': sorted(checkpoint['sources'] + [{key: authority.state['sources'][t['target_key']][key]
+                                               for key in ('source_id', 'role', 'area', 'native_file', 'catalog_pointer',
+                                                           'manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')}
+                                              for t in resolved['numeric_targets']],
+                                              key=lambda ref: ref['source_id'])}
+                _write_exclusive(session / 'checkpoint-b.json', complete)
+        finally:
+            _write_exclusive(session / 'receipt.json', _receipt(authority, session.name))
+        return _receipt(authority, session.name)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        raise SystemExit('Internal contained worker requires authenticated spec and SHA-256')
+    _worker_main(Path(sys.argv[1]), sys.argv[2])
