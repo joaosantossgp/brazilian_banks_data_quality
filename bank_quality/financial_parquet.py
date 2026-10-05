@@ -329,7 +329,8 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
              and _sha(body) == source_manifest_sha256, 'Source manifest hash mismatch')
     manifest = _json(body)
     if isinstance(manifest, dict) and manifest.get('contract') in (
-            'ifdata-financial-reports-snapshot-202412-v1', 'ifdata-financial-reports-snapshot-202503-v1'):
+            'ifdata-financial-reports-snapshot-202412-v1', 'ifdata-financial-reports-snapshot-202503-v1',
+            'ifdata-financial-reports-historical-snapshot-v1'):
         from .financial_reports_parquet import convert_financial as convert_reports
         return convert_reports(source, destination, source_manifest_sha256=source_manifest_sha256)
     _common(manifest)
@@ -451,7 +452,8 @@ def _snapshot_contract(destination, expected_hash):
 
 def validate_snapshot(destination: Path, *, manifest_sha256: str) -> dict:
     if _snapshot_contract(destination, manifest_sha256) in (
-            'ifdata-financial-reports-parquet-202412-v1', 'ifdata-financial-reports-parquet-202503-v1'):
+            'ifdata-financial-reports-parquet-202412-v1', 'ifdata-financial-reports-parquet-202503-v1',
+            'ifdata-financial-reports-historical-parquet-v1', 'ifdata-financial-reports-historical-parquet-v2'):
         from .financial_reports_parquet import validate_snapshot as validate_reports
         return validate_reports(destination, manifest_sha256=manifest_sha256)
     con, manifest, _ = _open_snapshot(destination, manifest_sha256)
@@ -462,7 +464,8 @@ def validate_snapshot(destination: Path, *, manifest_sha256: str) -> dict:
 def snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.DuckDBPyConnection':
     """Open a validated, in-memory financial snapshot. Caller closes the connection."""
     if _snapshot_contract(destination, manifest_sha256) in (
-            'ifdata-financial-reports-parquet-202412-v1', 'ifdata-financial-reports-parquet-202503-v1'):
+            'ifdata-financial-reports-parquet-202412-v1', 'ifdata-financial-reports-parquet-202503-v1',
+            'ifdata-financial-reports-historical-parquet-v1', 'ifdata-financial-reports-historical-parquet-v2'):
         from .financial_reports_parquet import snapshot_connection as reports_connection
         return reports_connection(destination, manifest_sha256=manifest_sha256)
     con, manifest, metadata = _open_snapshot(destination, manifest_sha256)
