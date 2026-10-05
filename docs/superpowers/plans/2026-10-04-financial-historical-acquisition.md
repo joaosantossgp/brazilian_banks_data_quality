@@ -10,6 +10,8 @@
 
 **Spec:** docs/engineering/financial-historical-batch-design-20261004.md e [Issue 50](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/50), contrato específico revisto.
 
+**Execução verificada:** Tasks1–4/correções revisadas independentemente; codehead `1a5a4e4d22195c234e510055c0dd4a72865c9cec`, suíte Windows339PASS/zero skips e3NodePASS. CI push/PR do codehead SUCCESS. Prova real202403:3GETs/16.342.157bytes, pausa entre fases/reusoC/D/metadata→N1, checkpoints externos e recuperação/verificação offline. [Ledger de execução](../../engineering/financial-historical-acquisition-20261004.md) conserva contagens, hashes, recursos e limites. Os checkboxes abaixo registram o plano original; comandos/casos prescritos não substituem os resultados concretos do ledger. Revisão whole-branch/fechamento remoto permanecem posteriores.
+
 **Review Focus:**
 
 1. Corpo JSON válido transportado parcialmente: conferir framing/EOF e preservar falha.
@@ -131,6 +133,8 @@ O parent mantém o único handle do job; child não o herda nem duplica. Deadlin
 Indispensável agora: transporte/framing, resolver/schema C/D/N, uma autoridade local durável, claim exclusivo, um helper Windows contido e receipt/recover offline. Não criar banco de jobs, serviço/scheduler, motor de plataforma, retry universal, assinatura criptográfica própria ou 66 pipelines. Um ledger/journal local por job e módulos focados bastam para o recorte.
 
 Expansões: quatro batches completos, concorrência real maior que 1, admissão/registry/Parquet/query, guardas de processo Linux e estratégias de reparo de corrupção mais amplas. Lotes continuam 11/12/23/20 referências, mas esta Issue mede 202403 e não valida regimes desconhecidos por extrapolação. Questões acadêmicas/produto/conteúdo complementar seguem a autoridade própria de João/orientador.
+
+**Execução do intervalo:** 202403 é a prova inicial do mecanismo, não uma estratégia de execução manual trimestre a trimestre. Após este gate, preparar jobs para os lotes da nota 47, começando por 202312–202606, e medir a concorrência de downloads adequada ao host. As fontes nativas continuam separadas por referência; checkpoints e contratos preservam essa separação mesmo quando várias fontes são adquiridas em paralelo. O reuso autenticado evita novos GETs. Concorrência de rede e concorrência de admissão/conversão são medidas separadamente; a versão desta Issue, com um worker real, ainda não comprova o agendamento concorrente dos lotes.
 
 ## Fontes e verificação desta revisão
 
