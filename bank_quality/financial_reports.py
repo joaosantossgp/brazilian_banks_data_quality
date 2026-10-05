@@ -1,4 +1,4 @@
-"""Closed offline admission of the four native financial reports in202412/202503.
+"""Closed offline admission of native four-report financial snapshots.
 
 The installed profile is trusted metadata. An index selects only local archived
 manifests; it cannot select a profile, period, perspective or report subset.
@@ -153,6 +153,11 @@ def _context(selection=None):
 
 
 def _check_sources(sources, context):
+    if 'source_members' in context:
+        _same(sources, context['source_members'], 'Historical source provenance differs from installed map')
+        origins = [(r['role'], r['area'], r['body_path'], r['body_sha256']) for r in sources.values()]
+        _require(len(origins) == len(set(origins)), 'Ambiguous historical source origin map')
+        return
     _require(isinstance(sources, dict) and set(sources) == ROLES, 'Incomplete source provenance')
     for role, record in sources.items():
         _require(isinstance(record, dict) and set(record) == {'url', 'final_url', 'retrieved_at_utc',
@@ -180,8 +185,9 @@ def _cadaster(cadastro, context):
     _require(isinstance(cadastro, list) and cadastro, 'Empty or missing financial cadaster')
     seen = set()
     for row in cadastro:
-        _require(isinstance(row, dict) and set(row) == {f'c{i}' for i in range(38)}
-                 and all(type(v) is str for v in row.values()), 'Unexpected native38 cadaster schema')
+        columns = context.get('cadaster_columns', [f'c{i}' for i in range(38)])
+        _require(isinstance(row, dict) and set(row) == set(columns)
+                 and all(type(v) is str for v in row.values()), 'Unexpected native cadaster schema')
         _require(row['c1'] == str(context['period']) and row['c0'] and row['c0'] not in seen,
                  'Wrong reference, empty or duplicate opaque cadaster identifier')
         seen.add(row['c0'])
@@ -199,18 +205,26 @@ def _value(value, kind):
     state = classify(None if value is None else raw)
     if state == 'blank':
         state = 'empty'
+    if kind == 'numeric':
+        _require(state != 'invalid', 'Invalid native historical numeric token')
     if kind == 'attribute':
         state = 'empty' if raw.strip() == '' else 'text'
     number = str(Decimal(raw.strip())) if kind != 'attribute' and state in ('numeric', 'zero') else ''
     return raw, source_kind, state, number
 
 
+def _numeric(node):
+    return node.get('origin_kind') == 'numeric' if 'origin_kind' in node else node['kind'] == 'money'
+
+
 def _base(node, report, code, sources, context):
-    role = 'numeric' if node['kind'] == 'money' else 'cadaster'
+    role = 'numeric' if _numeric(node) else 'cadaster'
+    sid = node['origin_source_id'] if 'source_members' in context else role
+    source = sources[sid]
     return {**context['envelope'], 'report_id': report['id'], 'institution_id': code,
             **{k: node[k] for k in BIND_FIELDS}, 'variable': node['name'],
-            'source_role': role, 'source_body': sources[role]['body_path'],
-            'source_sha256': sources[role]['sha256'], 'report_generation': report.get('ge', ''),
+            'source_role': role, 'source_body': source['body_path'],
+            'source_sha256': source.get('body_sha256', source.get('sha256')), 'report_generation': report.get('ge', ''),
             'report_version': report.get('v', ''),
             'report_generation_state': 'reported_text' if report.get('ge') else 'unknown',
             'report_version_state': 'reported_text' if report.get('v') else 'unknown'}
@@ -233,10 +247,100 @@ def _diagnostics(cadastro, variables, cells, context):
             'coverage': coverage, 'limitations': list(context['limitations'])}
 
 
+def _historical_inputs(index, index_body):
+    """Authenticate one installed complete handoff; consume each shard once."""
+    from . import financial_report_profiles as profiles
+    context = profiles.load_installed_context(index.get('selection'))
+    _require(context['contract'] == profiles.SNAPSHOT_CONTRACT, 'Historical index requires historical profile')
+    _require(_sha(index_body) == context['profile'].get('final_handoff_sha256'),
+             'Historical index differs from externally installed handoff pin')
+    _require(index.get('phase') == 'complete' and not any(k in index for k in
+             ('root', 'base', 'profile_path', 'profile_sha256', 'accepted')), 'Invalid complete historical handoff')
+    descriptor = profiles.descriptor_for_selection(context['selection'])
+    _require(index.get('descriptor_sha256') == descriptor['descriptor_sha256'], 'Historical descriptor mismatch')
+    _same(index.get('catalog'), descriptor['catalog'], 'Historical catalog anchor mismatch')
+    _require(index.get('checkpoint_a_sha256') == context['profile']['metadata_handoff_sha256'] or
+             ('checkpoint_a_sha256' not in index and context['profile'].get('legacy_index') is not None),
+             'Historical checkpoint lineage mismatch')
+    members = index.get('sources')
+    _require(isinstance(members, list) and all(isinstance(s, dict) for s in members), 'Invalid historical source list')
+    by_id = {s.get('source_id'): s for s in members}
+    _require(len(by_id) == len(members) and set(by_id) == set(context['source_members']),
+             'Incomplete/duplicate historical source membership')
+    sources, entities = {}, {}
+    document = _variables(context)
+    order = ['catalog', 'dictionary', 'cadaster', 'portal',
+             *sorted(sid for sid in by_id if sid.startswith('numeric:'))]
+    for sid in order:
+        body, sources[sid] = profiles._authenticate_installed_source(by_id[sid], context)
+        if sid == 'portal':
+            body.decode('utf-8')
+        elif sid == 'catalog':
+            catalog = _json(body)
+            for item in context['profile']['reports']:
+                _same(_metadata_native(profiles._pointer(catalog, item['catalog_pointer'])), item['report'],
+                      'Historical report differs from installed native tree')
+            del catalog
+        elif sid == 'dictionary':
+            dictionary = _json(body)
+            _require(isinstance(dictionary, list), 'Invalid historical dictionary')
+            ids = set()
+            for definition in dictionary:
+                _require(isinstance(definition, dict) and type(definition.get('id')) is int
+                         and definition['id'] not in ids, 'Invalid or duplicate historical definition')
+                ids.add(definition['id'])
+            for node in document['nodes']:
+                _same(_metadata_native(profiles._pointer(dictionary, node['definition_pointer'])), node['definition'],
+                      'Historical binding definition mismatch')
+            del dictionary, ids
+        elif sid == 'cadaster':
+            cadastro = _json(body)
+            _cadaster(cadastro, context)
+            codes = {row['c0'] for row in cadastro}
+        else:
+            numeric = _json(body, numeric=True)
+            _require(isinstance(numeric, dict) and set(numeric) == {'id', 'values'}
+                     and legacy._number_id(numeric['id']) == str(sources[sid]['area'])
+                     and isinstance(numeric['values'], list), 'Invalid numeric shard schema')
+            needed = {str(node['lid']) for node in document['variables'] if node['origin_source_id'] == sid}
+            seen = set()
+            for p, entity in enumerate(numeric['values']):
+                _require(isinstance(entity, dict) and set(entity) == {'e', 'v'} and isinstance(entity['v'], list),
+                         'Invalid numeric entity schema')
+                code = legacy._number_id(entity['e'])
+                _require(code not in seen, 'Duplicate numeric entity')
+                seen.add(code)
+                values, localizers = {}, set()
+                for q, cell in enumerate(entity['v']):
+                    _require(isinstance(cell, dict) and set(cell) == {'i', 'v'}, 'Invalid numeric cell schema')
+                    lid = legacy._number_id(cell['i'])
+                    _require(lid not in localizers, 'Duplicate numeric information localizer')
+                    localizers.add(lid)
+                    legacy._value(cell['v'])
+                    if code in codes and lid in needed:
+                        values[lid] = (cell['v'], f'/values/{p}/v/{q}/v')
+                if code in codes:
+                    entities[(sid, code)] = (values, f'/values/{p}')
+            del numeric, seen, needed
+            entity = cell = None  # Release the last full entity before reading the next shard.
+        del body
+    _check_sources(sources, context)
+    return context, sources, cadastro, document, entities
+
+
 def _read(index_path):
     path = Path(index_path).resolve()
     index_body = path.read_bytes()
     index = _json(index_body)
+    historical = isinstance(index, dict) and index.get('contract') == 'ifdata-financial-historical-sources-v1'
+    if historical:
+        context, sources, cadastro, document, entities = _historical_inputs(index, index_body)
+    else:
+        return _read_legacy(path, index_body, index)
+    return _grade(index, index_body, context, sources, cadastro, document, entities, historical=True)
+
+
+def _read_legacy(path, index_body, index):
     _require(isinstance(index, dict) and set(index) <= {'contract', 'selection', 'sources', 'code_revision'}
              and index.get('contract') == INDEX_CONTRACT, 'Wrong four-report source index')
     _require('selection' in index, 'Wrong closed financial selection')
@@ -320,16 +424,21 @@ def _read(index_path):
                 values[lid] = (cell['v'], f'/values/{p}/v/{q}/v')
         entities[code] = (values, f'/values/{p}')
     del numeric, bodies
+    return _grade(index, index_body, context, sources, cadastro, document, entities)
+
+
+def _grade(index, index_body, context, sources, cadastro, document, entities, historical=False):
     cells, observations = [], []
     reports = {item['report']['id']: item['report'] for item in context['profile']['reports']}
     for node in document['variables']:
         for p, cad in enumerate(cadastro):
             row = _base(node, reports[node['report_id']], cad['c0'], sources, context)
             presence, pointer, value = 'stored', f'/{p}/c{node["lid"]}', None
-            if node['kind'] != 'money':
+            if not _numeric(node):
                 value = cad[f'c{node["lid"]}']
             else:
-                entity = entities.get(cad['c0'])
+                key = (node['origin_source_id'], cad['c0']) if historical else cad['c0']
+                entity = entities.get(key)
                 if entity is None:
                     presence, pointer = 'entity_not_stored', '/values'
                 elif str(node['lid']) not in entity[0]:
@@ -346,7 +455,7 @@ def _read(index_path):
     diagnostics = _diagnostics(cadastro, document['variables'], cells, context)
     diagnostics['nodes'] = len(document['nodes'])
     provenance = {'input_index_sha256': _sha(index_body), 'profile_sha256': context['profile_sha256'],
-                  'reader_version': '1', 'reader_source_sha256': _sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
+                  'reader_version': 'historical-1' if historical else '1', 'reader_source_sha256': _sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
                   'code_revision': index.get('code_revision', 'unknown')}
     return dict(context['envelope']), observations, cells, cadastro, document, diagnostics, sources, provenance
 
@@ -357,13 +466,16 @@ def admit(index_path: Path, output: Path) -> dict:
     if output.exists():
         raise FileExistsError('Financial destination already exists: ' + str(output))
     envelope, observations, cells, cadastro, document, diagnostics, sources, provenance = _read(index_path)
+    context = (_historical_context(document['selection']) if envelope['contract'] ==
+               'ifdata-financial-reports-historical-snapshot-v1' else _context(document['selection']))
+    _require(context['profile_sha256'] == provenance['profile_sha256'], 'Installed profile changed during admission')
     output.mkdir(parents=True, exist_ok=False)
     legacy._csv(output / INPUTS[0], observations, FIELDS)
     legacy._csv(output / INPUTS[1], cells, FIELDS)
     legacy._csv(output / INPUTS[2], (
         {**envelope, **cad, 'source_body': sources['cadaster']['body_path'],
-         'source_sha256': sources['cadaster']['sha256'], 'source_pointer': '/' + str(p)}
-        for p, cad in enumerate(cadastro)), CAD_FIELDS)
+         'source_sha256': sources['cadaster'].get('body_sha256', sources['cadaster'].get('sha256')), 'source_pointer': '/' + str(p)}
+        for p, cad in enumerate(cadastro)), context.get('cad_csv_fields', CAD_FIELDS))
     legacy._write_json(output / INPUTS[3], document)
     legacy._write_json(output / INPUTS[4], diagnostics)
     files = []
@@ -394,6 +506,13 @@ def _csv_bytes(body, fields):
     return list(_iter_csv_bytes(body, fields))
 
 
+def _historical_context(selection):
+    from .financial_report_profiles import load_installed_context
+    context = load_installed_context(selection)
+    _require(context['contract'] == 'ifdata-financial-reports-historical-snapshot-v1', 'Wrong historical snapshot profile')
+    return context
+
+
 def validate_admission(manifest, bodies):
     """Reconstruct an admission from explicit verified payload bytes.
 
@@ -403,9 +522,13 @@ def validate_admission(manifest, bodies):
     """
     _require(isinstance(manifest, dict) and manifest.get('accepted') is True, 'Unaccepted financial admission')
     _require('selection' in manifest, 'Wrong admission selection')
-    context = _context(manifest['selection'])
+    historical = manifest.get('contract') == 'ifdata-financial-reports-historical-snapshot-v1'
+    context = _historical_context(manifest['selection']) if historical else _context(manifest['selection'])
     _same({k: manifest.get(k) for k in ENVELOPE}, context['envelope'], 'Wrong admission scope')
     _require(manifest.get('profile_sha256') == context['profile_sha256'], 'Unknown admitted profile')
+    if historical:
+        _require(manifest.get('input_index_sha256') == context['profile']['final_handoff_sha256'],
+                 'Historical admission lineage differs from installed handoff pin')
     _check_sources(manifest.get('sources'), context)
     _same(manifest.get('limitations'), context['limitations'], 'Changed admission qualifications')
     _require(isinstance(bodies, dict) and set(bodies) == set(INPUTS), 'Invalid explicit payload membership')
@@ -421,13 +544,14 @@ def validate_admission(manifest, bodies):
                  and _sha(body) == entry['sha256'], 'Payload size/hash mismatch')
     document = _json(bodies['financial-variables.json'])
     _same(document, _variables(context), 'Variable metadata differs from installed profile')
-    cad_rows = _csv_bytes(bodies['financial-cadastro.csv'], CAD_FIELDS)
-    cadastro = [{f'c{i}': row[f'c{i}'] for i in range(38)} for row in cad_rows]
+    cad_rows = _csv_bytes(bodies['financial-cadastro.csv'], context.get('cad_csv_fields', CAD_FIELDS))
+    columns = context.get('cadaster_columns', [f'c{i}' for i in range(38)])
+    cadastro = [{k: row[k] for k in columns} for row in cad_rows]
     _cadaster(cadastro, context)
     for p, row in enumerate(cad_rows):
         expected = {**{k: str(v) for k, v in context['envelope'].items()}, **cadastro[p],
                     'source_body': manifest['sources']['cadaster']['body_path'],
-                    'source_sha256': manifest['sources']['cadaster']['sha256'], 'source_pointer': '/' + str(p)}
+                    'source_sha256': manifest['sources']['cadaster'].get('body_sha256', manifest['sources']['cadaster'].get('sha256')), 'source_pointer': '/' + str(p)}
         _same(row, expected, 'Wrong admitted cadaster provenance/scope')
     cells = _csv_bytes(bodies['financial-cells.csv'], FIELDS)
     _require(len(cells) == len(cadastro) * len(document['variables']), 'Incomplete admitted grade')
@@ -440,7 +564,7 @@ def validate_admission(manifest, bodies):
             offset += 1
             expected = {k: str(v) for k, v in _base(node, reports[node['report_id']], cad['c0'], manifest['sources'], context).items()}
             _require(all(row[k] == v for k, v in expected.items()), 'Admitted grade binding/scope/provenance mismatch')
-            if node['kind'] != 'money':
+            if not _numeric(node):
                 raw, kind, state, number = _value(cad[f'c{node["lid"]}'], node['kind'])
                 token = {'presence': 'stored', 'source_pointer': f'/{p}/c{node["lid"]}',
                          'raw_value': raw, 'source_kind': kind, 'value_state': state, 'numeric_value': number}
@@ -469,20 +593,23 @@ def validate_admission(manifest, bodies):
                 token = {'presence': row['presence'], 'source_pointer': pointer, 'raw_value': '',
                          'source_kind': 'not_stored', 'value_state': 'unobserved_cell', 'numeric_value': ''}
             _require(all(row[k] == v for k, v in token.items()), 'Invalid native token/state/Decimal')
-            if node['kind'] == 'money':
-                key = (cad['c0'], node['lid'])
+            if _numeric(node):
+                sid = node['origin_source_id'] if historical else 'numeric'
+                key = (sid, cad['c0'], node['lid'])
                 _require(key not in originals or originals[key] == token, 'Divergent repeated native source key')
                 originals[key] = token
                 entity = None if row['presence'] == 'entity_not_stored' else row['source_pointer'].split('/')[2]
-                _require(cad['c0'] not in entity_presence or entity_presence[cad['c0']] == entity,
+                entity_key = (sid, cad['c0'])
+                _require(entity_key not in entity_presence or entity_presence[entity_key] == entity,
                          'Divergent numeric entity source pointer')
-                entity_presence[cad['c0']] = entity
+                entity_presence[entity_key] = entity
                 if entity is not None:
-                    _require(entity not in entity_codes or entity_codes[entity] == cad['c0'],
+                    pointer_key = (sid, entity)
+                    _require(pointer_key not in entity_codes or entity_codes[pointer_key] == cad['c0'],
                              'Numeric entity pointer identifies two cadaster codes')
-                    entity_codes[entity] = cad['c0']
+                    entity_codes[pointer_key] = cad['c0']
                 if row['presence'] == 'stored':
-                    pointer = row['source_pointer']
+                    pointer = (sid, row['source_pointer'])
                     _require(pointer not in pointer_keys or pointer_keys[pointer] == key,
                              'Numeric cell pointer identifies two native keys')
                     pointer_keys[pointer] = key
