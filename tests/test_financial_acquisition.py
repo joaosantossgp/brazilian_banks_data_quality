@@ -596,6 +596,280 @@ class AcquisitionTests(unittest.TestCase):
             self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
 
 
+class AcquisitionCliTests(unittest.TestCase):
+    """Actual CLI/package flow; only trust anchors/root and OS claim are fixtures."""
+    catalog_source = AcquisitionTests.catalog_source
+    prepare = AcquisitionTests.prepare
+    metadata = AcquisitionTests.metadata
+    source = AcquisitionTests.source
+
+    def setUp(self):
+        import os
+        from contextlib import contextmanager
+        self.api = importlib.import_module('bank_quality.financial_acquisition')
+        AcquisitionTests.setUp(self)
+        if os.name != 'nt':
+            @contextmanager
+            def model_claim(path):
+                path.touch(exist_ok=True)
+                yield
+            claim = patch.object(self.api, '_claim', model_claim)
+            claim.start()
+            self.addCleanup(claim.stop)
+        self.job = self.prepare(limits=dict(self.api._POLICIES))
+        self.job_path = self.root / 'data/runs/preparation/job.json'
+        self.job_path.parent.mkdir(parents=True)
+        self.job_path.write_bytes(canonical(self.job))
+        self.job_args = ['--job', str(self.job_path), '--job-sha256', self.job['job_sha256']]
+        transport = patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Unexpected GET'))
+        transport.start()
+        self.addCleanup(transport.stop)
+        launch = patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('Unexpected launch'))
+        launch.start()
+        self.addCleanup(launch.stop)
+
+    def invoke(self, *arguments):
+        import importlib.util
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        path = Path(__file__).resolve().parents[1] / 'scripts/acquire-financial.py'
+        self.assertTrue(path.is_file(), 'Thin acquisition CLI missing')
+        spec = importlib.util.spec_from_file_location('acquisition_cli_test', path)
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                code = cli.main(list(arguments))
+            except SystemExit as error:
+                code = error.code
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def initialize(self):
+        code, out, err = self.invoke('initialize-authority', *self.job_args)
+        self.assertEqual((code, err), (0, ''))
+        return json.loads(out)['bootstrap_sha256']
+
+    def bound_args(self, pin):
+        return [*self.job_args, '--bootstrap-sha256', pin]
+
+    def snapshot(self):
+        folder = self.api._authority_paths(self.job)[0]
+        return {p.name: p.read_bytes() for p in folder.iterdir() if p.is_file()}
+
+    def test_prepare_is_offline_exclusive_and_never_grants_authority(self):
+        output = self.root / 'data/runs/new-preparation/job.json'
+        args = ['prepare', '--catalog-index', str(self.index), '--catalog-index-sha256', sha(self.index.read_bytes()),
+                '--output', str(output)]
+        code, out, err = self.invoke(*args)
+        self.assertEqual((code, err), (0, ''))
+        prepared = json.loads(output.read_bytes())
+        self.assertFalse(prepared['executable'])
+        self.assertEqual(prepared['job_sha256'], self.job['job_sha256'])
+        self.assertEqual(prepared['policies'], self.api._POLICIES)
+        self.assertEqual(json.loads(out)['status'], 'candidate')
+        self.assertFalse(self.api._authority_paths(prepared)[1].exists())
+        before = output.read_bytes()
+        code, out, err = self.invoke(*args)
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('new', err.lower())
+        self.assertEqual(output.read_bytes(), before)
+
+    def test_prepare_wrong_index_hash_and_destination_fail_without_output(self):
+        for output, pin in ((self.root / 'data/runs/bad/job.json', '0' * 64),
+                            (self.root / 'outside/job.json', sha(self.index.read_bytes()))):
+            code, out, err = self.invoke('prepare', '--catalog-index', str(self.index), '--catalog-index-sha256', pin,
+                                         '--output', str(output))
+            self.assertEqual((code, out), (2, ''))
+            self.assertTrue(err)
+            self.assertFalse(output.exists())
+
+    def test_explicit_initialization_cannot_reset_existing_budget(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='fixture')
+        before = self.snapshot()
+        code, out, err = self.invoke('initialize-authority', *self.job_args)
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('no reset', err)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_recover_pending_is_offline_and_conservatively_charged(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='fixture')
+        output = self.root / 'data/runs/recovery/receipt.json'
+        code, out, err = self.invoke('recover', *self.bound_args(pin), '--output', str(output))
+        self.assertEqual((code, err), (0, ''))
+        receipt = json.loads(output.read_bytes())
+        self.assertFalse(receipt['state']['pending'])
+        self.assertEqual(receipt['state']['attempts'], 1)
+        self.assertEqual(receipt['state']['body_bytes'], 5 * 1024 * 1024)
+        self.assertEqual(json.loads(out)['attempt_seconds'], 120)
+        self.assertEqual(self.invoke('recover', *self.bound_args(pin), '--output', str(output))[0], 2)
+
+    def test_verify_current_authority_with_pending_is_readonly_and_private(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='private-coordination')
+        before = self.snapshot()
+        code, out, err = self.invoke('verify', *self.bound_args(pin))
+        self.assertEqual((code, err), (0, ''))
+        result = json.loads(out)
+        self.assertEqual(result['status'], 'verified_pending')
+        self.assertEqual(result['pending_attempts'], 1)
+        self.assertEqual(result['attempts'], 1)
+        for secret in ('private-coordination', 'headers', 'sources', 'targets', 'pid', 'context', 'https:', str(self.root)):
+            self.assertNotIn(secret, out)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_old_receipt_verify_reports_current_expense_without_reset(self):
+        pin = self.initialize()
+        output = self.root / 'data/runs/old/receipt.json'
+        self.assertEqual(self.invoke('recover', *self.bound_args(pin), '--output', str(output))[0], 0)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='new')
+        before = self.snapshot()
+        code, out, err = self.invoke('verify', *self.bound_args(pin), '--receipt', str(output),
+                                     '--receipt-sha256', sha(output.read_bytes()))
+        self.assertEqual((code, err), (0, ''))
+        result = json.loads(out)
+        self.assertTrue(result['receipt_is_historical'])
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_wrong_job_bootstrap_receipt_and_missing_authority_refused(self):
+        self.assertEqual(self.invoke('verify', *self.bound_args('0' * 64))[0], 2)
+        self.assertFalse(self.api._authority_paths(self.job)[1].exists())
+        pin = self.initialize()
+        receipt = self.root / 'data/runs/receipt.json'
+        self.api.recover_authority(self.job_path, self.job['job_sha256'], bootstrap_sha256=pin, output=receipt)
+        for args in (['verify', '--job', str(self.job_path), '--job-sha256', '0' * 64, '--bootstrap-sha256', pin],
+                     ['verify', *self.bound_args('0' * 64)],
+                     ['verify', *self.bound_args(pin), '--receipt', str(receipt), '--receipt-sha256', '0' * 64]):
+            before = self.snapshot()
+            code, out, err = self.invoke(*args)
+            self.assertEqual((code, out), (2, ''))
+            self.assertIn('mismatch', err.lower())
+            self.assertEqual(self.snapshot(), before)
+
+    def test_historical_resume_new_session_keeps_spent_budget(self):
+        self.job['reuse_sources'] = self.metadata(self.job)
+        self.job_path.write_bytes(canonical(self.job))
+        pin = self.initialize()
+        old = self.root / 'data/runs/old/receipt.json'
+        self.api.recover_authority(self.job_path, self.job['job_sha256'], bootstrap_sha256=pin, output=old)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='spent')
+        recovered = self.root / 'data/runs/recovered/receipt.json'
+        self.api.recover_authority(self.job_path, self.job['job_sha256'], bootstrap_sha256=pin, output=recovered)
+        with patch.object(self.api, 'require_supported'):
+            code, out, err = self.invoke('metadata', *self.bound_args(pin), '--session', str(self.root / 'data/runs/new'),
+                                         '--resume-from', str(old), '--resume-sha256', sha(old.read_bytes()))
+        self.assertEqual((code, err), (0, ''))
+        result = json.loads(out)
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(result['body_bytes'], 5 * 1024 * 1024)
+        self.assertEqual(result['attempt_seconds'], 120)
+
+    def test_pending_authority_blocks_metadata_and_unsupported_never_falls_back(self):
+        pin = self.initialize()
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            self.api.reserve_attempt(authority, self.job['targets'][0], session_id='pending')
+        session = self.root / 'data/runs/new'
+        before = self.snapshot()
+        with patch.object(self.api, 'require_supported'):
+            code, out, err = self.invoke('metadata', *self.bound_args(pin), '--session', str(session))
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('offline recovery', err)
+        with patch.object(self.api, 'require_supported', side_effect=RuntimeError('Unsupported fixture platform')):
+            code, out, err = self.invoke('metadata', *self.bound_args(pin), '--session', str(session))
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('Unsupported', err)
+        self.assertFalse(session.exists())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_corrupt_current_head_cannot_be_repaired_by_verify(self):
+        pin = self.initialize()
+        head = self.api._authority_paths(self.job)[0] / 'head.json'
+        head.write_bytes(b'{"sequence":999}')
+        before = self.snapshot()
+        code, out, err = self.invoke('verify', *self.bound_args(pin))
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('head', err.lower())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_verify_missing_claim_file_refuses_without_recreation(self):
+        pin = self.initialize()
+        lock = self.api._authority_paths(self.job)[2]
+        lock.unlink()
+        before = self.snapshot()
+        code, out, err = self.invoke('verify', *self.bound_args(pin))
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('claim', err.lower())
+        self.assertFalse(lock.exists())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_metadata_and_values_use_authenticated_reuse_and_physical_a(self):
+        refs = self.metadata(self.job)
+        resolved = self.api.resolve_sources(self.job, refs)
+        numeric = resolved['numeric_targets'][0]
+        self.job['reuse_sources'] = {**refs, numeric['target_key']: self.source(numeric, {'id': numeric['area'], 'values': []})}
+        self.job_path.write_bytes(canonical(self.job))
+        pin = self.initialize()
+        # Platform check alone is modeled for Linux; actual auth/runner/reuse stays intact.
+        with patch.object(self.api, 'require_supported'):
+            a_session, b_session = self.root / 'data/runs/a', self.root / 'data/runs/b'
+            code, out, err = self.invoke('metadata', *self.bound_args(pin), '--session', str(a_session))
+            self.assertEqual((code, err), (0, ''))
+            self.assertEqual(json.loads(out)['status'], 'metadata_complete')
+            a, receipt = a_session / 'checkpoint-a.json', a_session / 'receipt.json'
+            code, out, err = self.invoke('values', *self.bound_args(pin), '--session', str(b_session),
+                                         '--checkpoint-a-sha256', '0' * 64, '--resume-from', str(receipt),
+                                         '--resume-sha256', sha(receipt.read_bytes()))
+            self.assertEqual((code, out), (2, ''))
+            self.assertIn('Physical checkpoint A hash mismatch', err)
+            self.assertFalse(b_session.exists())
+            code, out, err = self.invoke('values', *self.bound_args(pin), '--session', str(b_session),
+                                         '--checkpoint-a-sha256', sha(a.read_bytes()), '--resume-from', str(receipt),
+                                         '--resume-sha256', sha(receipt.read_bytes()))
+            self.assertEqual((code, err), (0, ''))
+            self.assertEqual(json.loads(out)['status'], 'values_complete')
+            self.assertEqual(json.loads(out)['attempts'], 0)
+            b = json.loads((b_session / 'checkpoint-b.json').read_bytes())
+            self.assertEqual(b['checkpoint_a_sha256'], sha(a.read_bytes()))
+            self.assertEqual(self.invoke('metadata', *self.bound_args(pin), '--session', str(a_session))[0], 2)
+
+    def test_values_before_a_and_wrong_a_fail_before_session_or_launch(self):
+        pin = self.initialize()
+        session = self.root / 'data/runs/refused'
+        code, out, err = self.invoke('values', *self.bound_args(pin), '--session', str(session))
+        self.assertEqual((code, out), (2, ''))
+        self.assertFalse(session.exists())
+        receipt = self.root / 'data/runs/no-a/receipt.json'
+        self.api.recover_authority(self.job_path, self.job['job_sha256'], bootstrap_sha256=pin, output=receipt)
+        with patch.object(self.api, 'require_supported'):
+            code, out, err = self.invoke('values', *self.bound_args(pin), '--session', str(session),
+                                         '--checkpoint-a-sha256', '0' * 64, '--resume-from', str(receipt),
+                                         '--resume-sha256', sha(receipt.read_bytes()))
+        self.assertEqual((code, out), (2, ''))
+        self.assertIn('checkpoint-a.json', err)
+        self.assertFalse(session.exists())
+
+    def test_parser_rejects_unknown_phase_knobs_and_unpaired_pins(self):
+        for args in ([], ['download'], ['prepare', '--url', 'https://example.test'],
+                     ['metadata', *self.bound_args('0' * 64), '--session', str(self.root / 'data/runs/s'), '--workers', '2'],
+                     ['verify', *self.bound_args('0' * 64), '--receipt', str(self.root / 'data/runs/receipt.json')],
+                     ['metadata', *self.bound_args('0' * 64), '--session', str(self.root / 'data/runs/s'), '--resume-sha256', '0' * 64]):
+            code, out, err = self.invoke(*args)
+            self.assertEqual((code, out), (2, ''))
+            self.assertTrue(err)
+        for knob in ('--root', '--base', '--url', '--command', '--deadline-seconds'):
+            code, out, err = self.invoke('verify', *self.bound_args('0' * 64), knob, 'unsafe')
+            self.assertEqual((code, out), (2, ''))
+            self.assertIn('unrecognized arguments', err)
+
+
 class AuthorityTests(unittest.TestCase):
     """Pure authority model uses synthetic catalogs and a fake OS claim."""
     catalog_source = AcquisitionTests.catalog_source
@@ -1044,7 +1318,8 @@ class AuthorityTests(unittest.TestCase):
                     receipt_path.write_bytes(canonical(receipt))
                     return result
                 with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
-                        patch.object(self.api, 'run_contained_attempt', side_effect=invalid_evidence):
+                        patch.object(self.api, 'run_contained_attempt', side_effect=invalid_evidence), \
+                        patch.object(self.api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}):
                     with self.assertRaises((ValueError, FileNotFoundError)):
                         self.api._attempt(authority, job_path, session, self.job['targets'][0])
                     self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
@@ -1084,7 +1359,8 @@ class AuthorityTests(unittest.TestCase):
             receipt_path.write_bytes(canonical(receipt))
             return result
         with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
-                patch.object(self.api, 'run_contained_attempt', side_effect=partial_response):
+                patch.object(self.api, 'run_contained_attempt', side_effect=partial_response), \
+                patch.object(self.api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}):
             self.assertFalse(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
             self.assertEqual(authority.state['body_bytes'], len(canonical({'fixture': 'entity body'})))
             self.assertEqual(authority.records[-1]['status'], 'http_error')
@@ -1115,7 +1391,8 @@ class AuthorityTests(unittest.TestCase):
             return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
                     'exit_code': 0, 'elapsed_seconds': 1.25}
         with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
-                patch.object(self.api, 'run_contained_attempt', side_effect=connection_failure):
+                patch.object(self.api, 'run_contained_attempt', side_effect=connection_failure), \
+                patch.object(self.api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}):
             self.assertTrue(self.api._attempt(authority, job_path, session, target))
             self.assertEqual(authority.state['body_bytes'], 0)
             self.assertEqual(authority.records[-1]['status'], 'network_error')

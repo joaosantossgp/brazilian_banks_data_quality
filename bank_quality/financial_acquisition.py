@@ -912,6 +912,34 @@ def recover_authority(job_path: Path, job_sha256: str, *, bootstrap_sha256: str,
         return receipt
 
 
+def verify_authority(job_path: Path, job_sha256: str, *, bootstrap_sha256: str,
+                     receipt_path: Path | None = None, receipt_sha256: str | None = None) -> dict:
+    """Authenticate the current authority and optional receipt offline, without recovery."""
+    job = _load_job(job_path, job_sha256)
+    _require((receipt_path is None) == (receipt_sha256 is None), 'Receipt requires external pin')
+    _require(_authority_paths(job)[2].is_file(), 'Existing authority claim file required for readonly verification')
+    with open_authority(job, bootstrap_sha256=bootstrap_sha256) as authority:
+        receipt = None
+        if receipt_path is not None:
+            path = _local(Path(receipt_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+            raw = path.read_bytes()
+            _require(_sha(raw) == _digest(receipt_sha256), 'Receipt hash mismatch')
+            receipt = _json(raw)
+            _verify_receipt(receipt, authority)
+        state = authority.state
+        result = {'status': 'verified_pending' if state['pending'] else 'verified',
+                  'job_sha256': job_sha256, 'bootstrap_sha256': bootstrap_sha256,
+                  'sequence': len(authority.records),
+                  'record_sha256': authority.records[-1]['record_sha256'] if authority.records else _EMPTY_HASH,
+                  'state_sha256': _sha(_canonical(state)), 'pending_attempts': len(state['pending'])}
+        result.update({key: state[key] for key in ('attempts', 'body_bytes', 'attempt_seconds',
+                                                  'backoff_seconds', 'backoffs', 'failures')})
+        if receipt is not None:
+            result.update(receipt_sha256=receipt_sha256, receipt_sequence=receipt['sequence'],
+                          receipt_is_historical=receipt['sequence'] != len(authority.records))
+        return result
+
+
 def _worker_authorization(spec):
     """Read-only current authority proof while its sole writer holds the claim."""
     job = _load_job(_ROOT / spec['job_path'], spec['job_sha256'])
