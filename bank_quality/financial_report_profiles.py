@@ -581,7 +581,21 @@ def compose_acquisition_handoffs(source_entry_path: Path, *, source_entry_sha256
     descriptor = descriptor_for_selection(originals['metadata']['selection'])
     _same(descriptor['selection'], {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]},
           'Acquisition bridge is restricted to native202403')
-    for original in originals.values():
+    projected = _project_acquisition_handoffs(originals, descriptor)
+    metadata_hash = _digest(projected['metadata'])
+    return {'contract': 'ifdata-financial-acquisition-bridge-envelope-v1',
+            'selection': copy.deepcopy(descriptor['selection']), 'descriptor_sha256': descriptor['descriptor_sha256'],
+            'source_entry': {'path': name, 'sha256': source_entry_sha256}, 'trusted_entry': copy.deepcopy(entry),
+            'authority': copy.deepcopy(verified['authority']),
+            'metadata_handoff': projected['metadata'], 'metadata_handoff_sha256': metadata_hash,
+            'final_handoff': projected['complete'], 'final_handoff_sha256': _digest(projected['complete'])}
+
+
+def _project_acquisition_handoffs(originals, descriptor):
+    """Append authenticated authoring sources to fresh native checkpoint copies."""
+    for phase, original in originals.items():
+        _require(original.get('contract') == SOURCES_CONTRACT and original.get('phase') == phase,
+                 'Original acquisition handoff contract/phase differs')
         _same(original.get('selection'), descriptor['selection'], 'Original acquisition selection differs')
         _require(original.get('descriptor_sha256') == descriptor['descriptor_sha256'],
                  'Original acquisition descriptor differs from installed offer')
@@ -604,12 +618,116 @@ def compose_acquisition_handoffs(source_entry_path: Path, *, source_entry_sha256
         projected[phase] = handoff
     metadata_hash = _digest(projected['metadata'])
     projected['complete']['checkpoint_a_sha256'] = metadata_hash
-    return {'contract': 'ifdata-financial-acquisition-bridge-envelope-v1',
-            'selection': copy.deepcopy(descriptor['selection']), 'descriptor_sha256': descriptor['descriptor_sha256'],
-            'source_entry': {'path': name, 'sha256': source_entry_sha256}, 'trusted_entry': copy.deepcopy(entry),
-            'authority': copy.deepcopy(verified['authority']),
-            'metadata_handoff': projected['metadata'], 'metadata_handoff_sha256': metadata_hash,
-            'final_handoff': projected['complete'], 'final_handoff_sha256': _digest(projected['complete'])}
+    return projected
+
+
+def _batch_bridge_state_files(batch, handoff_name):
+    """Capture small physical authority images; readers retain body validation."""
+    from . import financial_acquisition_batch as api
+
+    names = {batch.binding['bundle_path'], handoff_name,
+             PACKAGE_ROOT.relative_to(CHECKOUT_ROOT).as_posix() + '/financial-reports-registry.json',
+             api._batch_paths()[0].relative_to(CHECKOUT_ROOT).as_posix(), *batch.bundle['code_pins']['files']}
+    for folder in [batch.bundle['destination']] + [m['authority_path'] for m in batch.bundle['members']]:
+        names.update(folder + '/' + name for name in ('bootstrap.json', 'journal.jsonl', 'head.json'))
+    for member in batch.bundle['members']:
+        names.add(member['job_path'])
+        names.add(api.acquisition._authority_paths(member['job'])[1].relative_to(CHECKOUT_ROOT).as_posix())
+    for phase in batch.state['finished'].values():
+        names.update(phase['result'][key]['path'] for key in ('checkpoint', 'receipt'))
+    return [{'path': name, 'sha256': _sha(body), 'bytes': len(body)} for name in sorted(names)
+            for body in [_contained(CHECKOUT_ROOT, name).read_bytes()]]
+
+
+def compose_batch_acquisition_handoffs(bundle_path: Path, handoff_path: Path, *,
+                                      bundle_sha256: str, bootstrap_sha256: str, handoff_sha256: str) -> dict:
+    """Project all seven acquired members inside one authenticated batch claim.
+
+    No recovery, acquisition, installation or writes. The envelope and its small
+    source_state_files must be pinned and rechecked by the preparation/runner;
+    compile/freeze do not retain this evidence. Native bodies remain reader inputs.
+    """
+    from . import financial_acquisition_batch as api
+
+    bundle_name = Path(bundle_path).absolute().relative_to(CHECKOUT_ROOT.absolute()).as_posix()
+    handoff_name = Path(handoff_path).absolute().relative_to(CHECKOUT_ROOT.absolute()).as_posix()
+    _, handoff = _read_hashed(_contained(CHECKOUT_ROOT, handoff_name), handoff_sha256)
+    fields = {'contract', 'scope', 'bundle', 'bootstrap_sha256', 'entries', 'accepted_parquet_periods',
+              'sources_only_periods', 'missing_periods', 'totals', 'claim'}
+    _require(type(handoff) is dict and set(handoff) == fields
+             and handoff['contract'] == 'financial-acquisition-batch-handoff-v1', 'Invalid batch handoff shape')
+    _same({k: handoff[k] for k in ('scope', 'bundle', 'bootstrap_sha256', 'accepted_parquet_periods',
+                                  'sources_only_periods', 'missing_periods', 'claim')},
+          {'scope': api._SCOPE, 'bundle': {'path': bundle_name, 'sha256': bundle_sha256},
+           'bootstrap_sha256': bootstrap_sha256, 'accepted_parquet_periods': [202312, 202412, 202503],
+           'sources_only_periods': [202403, *api._ACQUIRE], 'missing_periods': [],
+           'claim': 'native source completion; no historical financial comparability or new Parquet admission'},
+          'Batch handoff scope/pins/claim differs')
+    entries = handoff['entries']
+    _require(type(entries) is list and len(entries) == 11 and all(type(e) is dict and type(e.get('period')) is int for e in entries)
+             and sorted(e['period'] for e in entries) == list(api._WINDOW), 'Exactly eleven unique native entries required')
+    by_period = {e['period']: e for e in entries}
+    with api._open_batch(bundle_path, bundle_sha256, bootstrap_sha256) as batch:
+        _require(not batch.halted and not batch.state['pending'] and len(batch.state['finished']) == 14
+                 and {(p['period'], p['phase']) for p in batch.state['finished'].values()} ==
+                     {(p, phase) for p in api._ACQUIRE for phase in ('metadata', 'values')}
+                 and all(p['result']['status'] == 'complete' for p in batch.state['finished'].values()),
+                 'Batch phases incomplete, pending or halted')
+        images = _batch_bridge_state_files(batch, handoff_name)
+        _require(next(p['sha256'] for p in images if p['path'] == handoff_name) == handoff_sha256,
+                 'Batch handoff bytes changed before authenticated claim')
+        api._finished_proofs(batch)
+        state = api._totals(batch)
+        _require(state['status'] == 'verified' and all(m['pending_attempts'] == 0 for m in state['members']),
+                 'Current member authority is pending or halted')
+        _same(handoff['totals'], state['totals'], 'Handoff totals differ from current counters')
+        for reused in batch.bundle['reuse']:
+            _same(by_period[reused['period']], {'period': reused['period'], 'state': 'reused_' + reused['kind'],
+                  'new_http_requests': 0, 'reuse_evidence': reused}, 'Handoff reuse differs from authenticated bundle')
+        members = []
+        for member in sorted(batch.bundle['members'], key=lambda m: m['period']):
+            period = member['period']
+            phases = {p['phase']: p['result'] for p in batch.state['finished'].values() if p['period'] == period}
+            a, b = phases['metadata']['checkpoint'], phases['values']['checkpoint']
+            originals = {'metadata': api._read(a), 'complete': api._read(b)}
+            _require(originals['complete'].get('checkpoint_a_sha256') == a['sha256'], 'Original B linkage differs')
+            descriptor = descriptor_for_selection(member['job']['descriptors'][0]['selection'])
+            _require(descriptor['descriptor_sha256'] == member['job']['descriptors'][0]['descriptor_sha256'],
+                     'Acquisition descriptor differs from installed offer')
+            counters = next(m for m in state['members'] if m['period'] == period)
+            expected = {'period': period, 'state': 'acquired_validated_sources',
+                        'selection': descriptor['selection'], 'descriptor_sha256': descriptor['descriptor_sha256'],
+                        'job': {'path': member['job_path'], 'sha256': member['job_file_sha256'],
+                                'canonical_sha256': member['job_sha256']},
+                        'bootstrap_sha256': member['bootstrap_sha256'],
+                        'metadata_receipt': phases['metadata']['receipt'], 'values_receipt': phases['values']['receipt'],
+                        'checkpoint_a': a, 'checkpoint_b': b, 'sources': originals['complete']['sources'],
+                        'counters': counters, 'financial_admission': False, 'parquet_admission': False}
+            _same(by_period[period], expected, 'Acquired handoff member differs from physical batch proof')
+            projected = _project_acquisition_handoffs(originals, descriptor)
+            head = _json(_contained(CHECKOUT_ROOT, member['authority_path'] + '/head.json').read_bytes())
+            metadata_receipt = api._read(phases['metadata']['receipt'])
+            values_receipt = api._read(phases['values']['receipt'])
+            authority = {'status': 'verified', **head, 'job_sha256': member['job_sha256'],
+                         'bootstrap_sha256': member['bootstrap_sha256'], 'counters': copy.deepcopy(counters),
+                         'metadata_receipt_sequence': metadata_receipt['sequence'],
+                         'values_receipt_sequence': values_receipt['sequence'],
+                         'metadata_receipt_is_historical': metadata_receipt['sequence'] != head['sequence'],
+                         'values_receipt_is_historical': values_receipt['sequence'] != head['sequence']}
+            members.append({'selection': copy.deepcopy(descriptor['selection']),
+                            'descriptor_sha256': descriptor['descriptor_sha256'],
+                            'acquisition_evidence': copy.deepcopy(expected), 'authority': authority,
+                            'metadata_handoff': projected['metadata'], 'metadata_handoff_sha256': _digest(projected['metadata']),
+                            'final_handoff': projected['complete'], 'final_handoff_sha256': _digest(projected['complete'])})
+        api._bound_bytes(batch)
+        _same(_batch_bridge_state_files(batch, handoff_name), images, 'Batch source authority changed during projection')
+        return {'contract': 'ifdata-financial-acquisition-batch-bridge-v1',
+                'batch': {'bundle': {'path': bundle_name, 'sha256': bundle_sha256},
+                          'handoff': {'path': handoff_name, 'sha256': handoff_sha256}, 'bootstrap_sha256': bootstrap_sha256},
+                'source_state': copy.deepcopy(state), 'source_state_files': images, 'members': members,
+                'limitations': ['Native source completion only; no financial or Parquet admission.',
+                                'Compiler/freeze omit acquisition evidence; preparation/runner must pin and recheck it.',
+                                'Readers must authenticate native bodies on use; no historical comparability is asserted.']}
 
 
 def wrap_legacy_202312_index(index_path: Path, *, index_sha256: str) -> dict:
