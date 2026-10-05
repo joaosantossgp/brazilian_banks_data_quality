@@ -723,6 +723,63 @@ class AcquisitionCliTests(unittest.TestCase):
             self.assertNotIn(secret, out)
         self.assertEqual(self.snapshot(), before)
 
+    def test_verify_api_rejects_pinned_nonobject_receipt_readonly(self):
+        pin = self.initialize()
+        receipt = self.root / 'data/runs/nonobject-receipt.json'
+        before = self.snapshot()
+        with patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Unexpected GET')) as transport, \
+                patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('Unexpected launch')) as launch:
+            for raw in (b'[]', b'null', b'"receipt"', b'1', b'1.5', b'true'):
+                with self.subTest(raw=raw):
+                    receipt.write_bytes(raw)
+                    try:
+                        with self.assertRaisesRegex(ValueError, 'Receipt must be a JSON object'):
+                            self.api.verify_authority(self.job_path, self.job['job_sha256'], bootstrap_sha256=pin,
+                                                      receipt_path=receipt, receipt_sha256=sha(raw))
+                    finally:
+                        self.assertEqual(self.snapshot(), before)
+                        transport.assert_not_called()
+                        launch.assert_not_called()
+
+    def test_verify_cli_rejects_pinned_nonobject_receipt_with_exit_two_readonly(self):
+        pin = self.initialize()
+        receipt = self.root / 'data/runs/nonobject-receipt.json'
+        before = self.snapshot()
+        with patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Unexpected GET')) as transport, \
+                patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('Unexpected launch')) as launch:
+            for raw in (b'[]', b'null', b'"receipt"', b'1', b'1.5', b'true'):
+                with self.subTest(raw=raw):
+                    receipt.write_bytes(raw)
+                    try:
+                        code, out, err = self.invoke('verify', *self.bound_args(pin), '--receipt', str(receipt),
+                                                     '--receipt-sha256', sha(raw))
+                        self.assertEqual((code, out), (2, ''))
+                        self.assertIn('Receipt must be a JSON object', err)
+                        self.assertNotIn('Traceback', err)
+                    finally:
+                        self.assertEqual(self.snapshot(), before)
+                        transport.assert_not_called()
+                        launch.assert_not_called()
+
+    def test_verify_cli_rejects_nonobject_job_with_exit_two_readonly(self):
+        pin = self.initialize()
+        before = self.snapshot()
+        with patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Unexpected GET')) as transport, \
+                patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('Unexpected launch')) as launch:
+            for raw in (b'[]', b'null', b'"job"', b'1', b'1.5', b'true'):
+                with self.subTest(raw=raw):
+                    self.job_path.write_bytes(raw)
+                    try:
+                        code, out, err = self.invoke('verify', '--job', str(self.job_path), '--job-sha256', sha(raw),
+                                                     '--bootstrap-sha256', pin)
+                        self.assertEqual((code, out), (2, ''))
+                        self.assertIn('Job must be a JSON object', err)
+                        self.assertNotIn('Traceback', err)
+                    finally:
+                        self.assertEqual(self.snapshot(), before)
+                        transport.assert_not_called()
+                        launch.assert_not_called()
+
     def test_old_receipt_verify_reports_current_expense_without_reset(self):
         pin = self.initialize()
         output = self.root / 'data/runs/old/receipt.json'

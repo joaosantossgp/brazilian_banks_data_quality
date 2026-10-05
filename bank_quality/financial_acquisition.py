@@ -868,6 +868,7 @@ def _receipt(authority, session_id):
 
 
 def _verify_receipt(receipt, authority):
+    _require(type(receipt) is dict, 'Receipt must be a JSON object')
     _require(receipt.get('contract') == 'financial-acquisition-receipt-v1' and receipt.get('job_sha256') == authority.job['job_sha256']
              and receipt.get('bootstrap_sha256') == authority.bootstrap_sha256, 'Receipt authority mismatch')
     sequence = receipt.get('sequence')
@@ -895,6 +896,7 @@ def _recover_pending(authority):
 def _load_job(path, pin):
     path = _local(Path(path).absolute().relative_to(_ROOT.absolute()).as_posix())
     job = _json(path.read_bytes())
+    _require(type(job) is dict, 'Job must be a JSON object')
     _require(job.get('job_sha256') == _digest(pin) == _job_hash(job), 'External job hash mismatch')
     _execution_job(job)
     return job
