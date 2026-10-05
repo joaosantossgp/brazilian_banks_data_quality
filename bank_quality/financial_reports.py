@@ -44,6 +44,15 @@ _json = legacy._json
 _canonical = legacy._canonical
 
 
+class NativeSchemaError(ValueError):
+    """Known native content failure; caller must authenticate trust separately."""
+
+
+def _schema_require(condition, message):
+    if not condition:
+        raise NativeSchemaError(message)
+
+
 def _sha(body):
     return hashlib.sha256(body).hexdigest()
 
@@ -182,12 +191,12 @@ def _variables(context):
 
 
 def _cadaster(cadastro, context):
-    _require(isinstance(cadastro, list) and cadastro, 'Empty or missing financial cadaster')
+    _schema_require(isinstance(cadastro, list) and cadastro, 'Empty or missing financial cadaster')
     seen = set()
     for row in cadastro:
         columns = context.get('cadaster_columns', [f'c{i}' for i in range(38)])
-        _require(isinstance(row, dict) and set(row) == set(columns)
-                 and all(type(v) is str for v in row.values()), 'Unexpected native cadaster schema')
+        _schema_require(isinstance(row, dict) and set(row) == set(columns)
+                        and all(type(v) is str for v in row.values()), 'Unexpected native cadaster schema')
         _require(row['c1'] == str(context['period']) and row['c0'] and row['c0'] not in seen,
                  'Wrong reference, empty or duplicate opaque cadaster identifier')
         seen.add(row['c0'])
@@ -201,12 +210,12 @@ def _value(value, kind):
     elif value is None:
         raw, source_kind = 'null', 'json_null'
     else:
-        raise ValueError('Unsupported native cell type')
+        raise NativeSchemaError('Unsupported native cell type')
     state = classify(None if value is None else raw)
     if state == 'blank':
         state = 'empty'
     if kind == 'numeric':
-        _require(state != 'invalid', 'Invalid native historical numeric token')
+        _schema_require(state != 'invalid', 'Invalid native historical numeric token')
     if kind == 'attribute':
         state = 'empty' if raw.strip() == '' else 'text'
     number = str(Decimal(raw.strip())) if kind != 'attribute' and state in ('numeric', 'zero') else ''
@@ -316,7 +325,7 @@ def _historical_inputs(index, index_body):
                     lid = legacy._number_id(cell['i'])
                     _require(lid not in localizers, 'Duplicate numeric information localizer')
                     localizers.add(lid)
-                    legacy._value(cell['v'])
+                    _value(cell['v'], 'numeric')
                     if code in codes and lid in needed:
                         values[lid] = (cell['v'], f'/values/{p}/v/{q}/v')
                 if code in codes:
@@ -497,8 +506,14 @@ def _iter_csv_bytes(body, fields):
     with io.TextIOWrapper(io.BytesIO(body), encoding='utf-8-sig', newline='') as stream:
         reader = csv.DictReader(stream)
         _require(reader.fieldnames == list(fields), 'Invalid admitted CSV headers')
+        previous = {}  # At most one immutable string per field, local to this iterator.
         for row in reader:
             _require(set(row) == set(fields) and all(type(v) is str for v in row.values()), 'Malformed admitted CSV row')
+            for key, value in row.items():
+                cached = previous.get(key)
+                if cached == value:
+                    row[key] = cached
+                previous[key] = row[key]
             yield row
 
 

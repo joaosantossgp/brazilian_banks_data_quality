@@ -683,6 +683,213 @@ def acquisition_bridge(*, limits=None):
         fixture.doCleanups()
 
 
+@contextmanager
+def acquisition_batch_bridge():
+    from test_financial_acquisition_batch import BatchAuthorityTests
+    BatchAuthorityTests.setUpClass()
+    f = BatchAuthorityTests('test_explicit_offline_initialization_and_external_pins')
+    original_write = f.write
+    def write(relative, value):
+        if relative in ('data/raw/catalog/old.json', 'data/raw/catalog/new.json'):
+            value.update({'diagnostics': [], 'retrieved_at_utc': '2026-10-01T12:00:00Z',
+                     'response_headers': {'Content-Length': str(value['bytes'])},
+                     'context': {'purpose': 'official source discovery'}})
+        return original_write(relative, value)
+    f.write = write
+    try:
+        f.setUp()
+        f.pkg = f.root / 'bank_quality'
+        f.pkg.mkdir(exist_ok=True)
+        f.inject(profiles, 'CHECKOUT_ROOT', f.root)
+        f.inject(profiles, 'PACKAGE_ROOT', f.pkg)
+        for name in f.identity['files']:
+            f.write(name, name.encode())
+        f.refs = f.initialize()
+        f.batch._run_serial(f.root / f.refs['bundle_path'], f.refs['bundle_sha256'],
+                            bootstrap_sha256=f.refs['bootstrap_sha256'], phase_callable=f.terminal)
+        with f.opened(f.refs) as authority:
+            totals = f.batch._totals(authority)
+            f.bundle = copy.deepcopy(authority.bundle)
+            entries = []
+            for reuse in authority.bundle['reuse']:
+                entries.append({'period': reuse['period'], 'new_http_requests': 0,
+                                'state': 'reused_' + reuse['kind'], 'reuse_evidence': copy.deepcopy(reuse)})
+            for member in authority.bundle['members']:
+                phases = {p['phase']: p['result'] for p in authority.state['finished'].values()
+                          if p['period'] == member['period']}
+                final = f.batch._read(phases['values']['checkpoint'])
+                entries.append({'period': member['period'], 'state': 'acquired_validated_sources',
+                    'selection': member['job']['descriptors'][0]['selection'],
+                    'descriptor_sha256': member['job']['descriptors'][0]['descriptor_sha256'],
+                    'job': {'path': member['job_path'], 'sha256': member['job_file_sha256'],
+                            'canonical_sha256': member['job_sha256']},
+                    'bootstrap_sha256': member['bootstrap_sha256'],
+                    'metadata_receipt': phases['metadata']['receipt'], 'values_receipt': phases['values']['receipt'],
+                    'checkpoint_a': phases['metadata']['checkpoint'], 'checkpoint_b': phases['values']['checkpoint'],
+                    'sources': final['sources'],
+                    'counters': next(c for c in totals['members'] if c['period'] == member['period']),
+                    'financial_admission': False, 'parquet_admission': False})
+        f.handoff = {'contract': 'financial-acquisition-batch-handoff-v1', 'scope': f.batch._SCOPE,
+            'bundle': {'path': f.refs['bundle_path'], 'sha256': f.refs['bundle_sha256']},
+            'bootstrap_sha256': f.refs['bootstrap_sha256'], 'entries': sorted(entries, key=lambda e: e['period']),
+            'accepted_parquet_periods': [202312, 202412, 202503],
+            'sources_only_periods': [202403, *f.batch._ACQUIRE], 'missing_periods': [],
+            'totals': totals['totals'],
+            'claim': 'native source completion; no historical financial comparability or new Parquet admission'}
+        body = b'synthetic formatter'
+        f.write('data/raw/portal/portal.bin', body)
+        manifest = {'method': 'GET', 'http_status': 200, 'outcome': 'ok', 'truncated': False,
+                    'diagnostics': [], 'bytes': len(body), 'sha256': sha(body), 'body_path': 'portal.bin',
+                    'url': 'https://www3.bcb.gov.br/ifdata/index.html',
+                    'final_url': 'https://www3.bcb.gov.br/ifdata/index.html',
+                    'retrieved_at_utc': '2026-10-01T12:00:00Z',
+                    'response_headers': {'Content-Length': str(len(body))},
+                    'context': {'purpose': 'official source discovery'}}
+        pin = f.write('data/raw/portal/portal.json', manifest)
+        f.portal = {'source_id': 'portal', 'role': 'portal', 'area': None, 'native_file': None,
+                    'catalog_pointer': None, 'manifest_path': pin['path'], 'manifest_sha256': pin['sha256'],
+                    'body_sha256': sha(body), 'provenance_sha256': sha(dump(manifest))}
+        f.write('bank_quality/financial-reports-registry.json', {'contract': profiles.REGISTRY_CONTRACT,
+            'members': [m['job']['descriptors'][0] for m in f.bundle['members']],
+            'legacy_202312_sources': {'portal': f.portal}})
+        f.handoff_pin = f.write('data/runs/batch-handoff.json', f.handoff)
+        yield f
+    finally:
+        f.doCleanups()
+
+
+class BatchAcquisitionBridgeTests(unittest.TestCase):
+    snapshot = lambda self, f: {p.relative_to(f.root).as_posix(): sha(p.read_bytes())
+                               for p in f.root.rglob('*') if p.is_file()}
+
+    def compose(self, f, value=None, **overrides):
+        self.assertTrue(callable(getattr(profiles, 'compose_batch_acquisition_handoffs', None)),
+                        'Aggregate offline acquisition handoff composer is absent')
+        pin = f.handoff_pin if value is None else f.write('data/runs/forged-handoff.json', value)
+        args = {'bundle_sha256': f.refs['bundle_sha256'], 'bootstrap_sha256': f.refs['bootstrap_sha256'],
+                'handoff_sha256': pin['sha256'], **overrides}
+        return profiles.compose_batch_acquisition_handoffs(f.root / f.refs['bundle_path'],
+                                                          f.root / pin['path'], **args)
+
+    def test_batch_bridge_projects_all_seven_without_rewriting_originals(self):
+        with acquisition_batch_bridge() as f:
+            before = self.snapshot(f)
+            result = self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+            self.assertEqual(set(result), {'contract', 'batch', 'source_state', 'source_state_files', 'members', 'limitations'})
+            self.assertEqual(result['contract'], 'ifdata-financial-acquisition-batch-bridge-v1')
+            self.assertEqual([m['selection']['period'] for m in result['members']], list(f.batch._ACQUIRE))
+            for member in result['members']:
+                period = member['selection']['period']
+                evidence = next(e for e in f.handoff['entries'] if e['period'] == period)
+                self.assertEqual(member['acquisition_evidence'], evidence)
+                self.assertEqual(member['authority']['counters'], evidence['counters'])
+                self.assertLess(member['authority']['metadata_receipt_sequence'], member['authority']['sequence'])
+                self.assertEqual(member['final_handoff']['checkpoint_a_sha256'], member['metadata_handoff_sha256'])
+                self.assertEqual(member['metadata_handoff_sha256'], sha(dump(member['metadata_handoff'])))
+                self.assertEqual(member['final_handoff_sha256'], sha(dump(member['final_handoff'])))
+                expected_reports = [119, 107, 110, 118] if period >= 202503 else [92, 96, 101, 98]
+                self.assertEqual(member['selection']['reports'], expected_reports)
+                sources = {s['source_id']: s for s in member['final_handoff']['sources']}
+                self.assertEqual(sources['portal'], f.portal)
+                descriptor = next(m['job']['descriptors'][0] for m in f.bundle['members'] if m['period'] == period)
+                self.assertEqual(sources['catalog']['body_sha256'], descriptor['catalog']['body_sha256'])
+                prefix = ('ifdata_2025_2030//' if period >= 202503 else 'ifdata/') + str(period) + '/'
+                self.assertTrue(sources['dictionary']['native_file'].startswith(prefix))
+                original = f.batch._read(evidence['checkpoint_a'])
+                self.assertEqual({k: v for k, v in member['metadata_handoff'].items() if k != 'sources'},
+                                 {k: v for k, v in original.items() if k != 'sources'})
+            for pin in result['source_state_files']:
+                body = (f.root / pin['path']).read_bytes()
+                self.assertEqual((len(body), sha(body)), (pin['bytes'], pin['sha256']))
+
+    def test_batch_bridge_refuses_forged_member_or_pending_current_authority(self):
+        with acquisition_batch_bridge() as f:
+            for mutation in ('selection', 'receipt', 'bootstrap', 'counter', 'sources', 'job', 'descriptor',
+                             'duplicate', 'missing', 'extra', 'reuse', 'totals', 'claim'):
+                with self.subTest(mutation=mutation):
+                    value = copy.deepcopy(f.handoff)
+                    e = value['entries'][2]
+                    if mutation == 'selection': e['selection']['reports'].reverse()
+                    elif mutation == 'receipt': e['metadata_receipt']['sha256'] = '0' * 64
+                    elif mutation == 'bootstrap': e['bootstrap_sha256'] = '0' * 64
+                    elif mutation == 'counter': e['counters']['attempts'] = 0
+                    elif mutation == 'sources': e['sources'][0]['native_file'] = 'forged'
+                    elif mutation == 'job': e['job']['canonical_sha256'] = '0' * 64
+                    elif mutation == 'descriptor': e['descriptor_sha256'] = '0' * 64
+                    elif mutation == 'duplicate': value['entries'][3] = copy.deepcopy(e)
+                    elif mutation == 'missing': value['entries'].pop()
+                    elif mutation == 'extra': e['extra'] = True
+                    elif mutation == 'reuse': value['entries'][0]['reuse_evidence']['manifest_sha256'] = '0' * 64
+                    elif mutation == 'totals': value['totals']['attempts'] = 0
+                    else: value['claim'] = 'financial admission approved'
+                    pin = f.write('data/runs/forged-handoff.json', value)
+                    before = self.snapshot(f)
+                    with self.assertRaises(ValueError): self.compose(f, value)
+                    self.assertEqual(before, self.snapshot(f))
+            with self.assertRaises(ValueError): self.compose(f, handoff_sha256='0' * 64)
+            with f.opened(f.refs) as authority:
+                member = authority.bundle['members'][0]
+                with f.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                        coordinator=f.batch._MemberContext(authority, member)) as single:
+                    target = next(t for t in single.targets.values() if t['role'] == 'numeric' and t['area'] == 2)
+                    f.acquisition.reserve_attempt(single, target, session_id='pending-fixture')
+            before = self.snapshot(f)
+            with self.assertRaises(ValueError): self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+
+    def test_batch_bridge_opens_authority_once_for_all_members(self):
+        with acquisition_batch_bridge() as f:
+            with patch.object(f.batch, '_open_batch', wraps=f.batch._open_batch) as opened, \
+                 patch.object(f.batch, '_finished_proofs', wraps=f.batch._finished_proofs) as proofs, \
+                 patch.object(f.batch, '_verify_batch', side_effect=AssertionError('Second verifier')):
+                self.compose(f)
+            self.assertEqual(opened.call_count, 1)
+            self.assertEqual(proofs.call_count, 1)
+            original_open = f.batch._open_batch
+            path = f.root / f.handoff_pin['path']
+            body = path.read_bytes()
+            @contextmanager
+            def changed_between_read_and_claim(*args, **kwargs):
+                with original_open(*args, **kwargs) as authority:
+                    path.write_bytes(body + b' ')
+                    yield authority
+            with patch.object(f.batch, '_open_batch', changed_between_read_and_claim):
+                with self.assertRaisesRegex(ValueError, 'handoff.*changed'):
+                    self.compose(f)
+            path.write_bytes(body)
+            f.write(f.bundle['destination'] + '/halt.json', {
+                'contract': 'financial-acquisition-batch-halt-v1', 'bundle_sha256': f.refs['bundle_sha256'],
+                'bootstrap_sha256': f.refs['bootstrap_sha256'], 'reason': 'fixture_halt'})
+            before = self.snapshot(f)
+            with self.assertRaisesRegex(ValueError, 'halted'): self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+            (f.root / f.bundle['destination'] / 'halt.json').unlink()
+            evidence = f.handoff['entries'][2]
+            final = f.batch._read(evidence['checkpoint_b'])
+            original_b = dump(final)
+            final['checkpoint_a_sha256'] = '0' * 64
+            f.write(evidence['checkpoint_b']['path'], final)
+            before = self.snapshot(f)
+            with self.assertRaisesRegex(ValueError, 'hash'): self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+            f.write(evidence['checkpoint_b']['path'], original_b)
+            folder = f.root / f.bundle['destination']
+            lines = (folder / 'journal.jsonl').read_bytes().splitlines()[:-1]
+            state = f.batch._ledger_state()
+            for line in lines:
+                record = json.loads(line)
+                record.pop('record_sha256')
+                f.batch._apply_phase(state, record, f.bundle)
+            f.write(f.bundle['destination'] + '/journal.jsonl', b'\n'.join(lines) + b'\n')
+            f.write(f.bundle['destination'] + '/head.json', {
+                'sequence': len(lines), 'record_sha256': json.loads(lines[-1])['record_sha256'],
+                'state_sha256': sha(dump(state))})
+            before = self.snapshot(f)
+            with self.assertRaisesRegex(ValueError, 'pending'): self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+
+
 class AcquisitionBridgeTests(unittest.TestCase):
     def compose(self, fixture, value=None):
         self.assertTrue(callable(getattr(profiles, 'compose_acquisition_handoffs', None)),

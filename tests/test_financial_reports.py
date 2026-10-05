@@ -396,6 +396,24 @@ class FinancialReportsTests(unittest.TestCase):
 
 
 class FinancialReportsCSVTests(unittest.TestCase):
+    def test_materialized_csv_reuses_repeated_text_with_bounded_memory(self):
+        from bank_quality.financial_reports import _csv_bytes
+        fields = ('code', 'name', 'value')
+        name = 'Native label ' + 'x' * 512
+        line = ('001,' + name + ',-0.00\n').encode('utf-8')
+        body = b'code,name,value\n' + line * 4096
+        tracemalloc.start()
+        try:
+            rows = _csv_bytes(body, fields)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(len(rows), 4096)
+        self.assertTrue(all(row == {'code': '001', 'name': name, 'value': '-0.00'} for row in rows))
+        rows[0]['name'] = 'changed by caller'
+        self.assertEqual(rows[1]['name'], name)
+        self.assertLess(peak, 2 * 1024 * 1024, f'Materialized repeated CSV allocated {peak} bytes')
+
     def test_csv_iteration_preserves_tokens_with_bounded_extra_memory(self):
         from bank_quality.financial_reports import _iter_csv_bytes
         fields = ('código', 'name', 'value')
