@@ -539,6 +539,338 @@ def legacy_bundle():
         fixture.doCleanups()
 
 
+@contextmanager
+def acquisition_bridge(*, limits=None):
+    """Only fixture roots/trust anchors change; physical validators stay real."""
+    from bank_quality import financial_acquisition as api
+    from bank_quality import financial_acquisition_batch as batch
+    from tests.test_financial_acquisition import AcquisitionTests, CATALOG_URLS
+    fixture = AcquisitionTests('test_catalog_hash_changed')
+    fixture.api = api
+    fixture.setUp()
+    try:
+        # Native authoring also consumes names/fid, absent from acquisition-only
+        # fixtures. Add them to original fixture bodies before preparing the job.
+        def columns(nodes):
+            for node in nodes:
+                node['fid'] = 8
+                columns(node['sc'])
+        for name, entries in fixture.catalogs.items():
+            for entry in entries:
+                for item in entry['files']:
+                    if 'trel' in item:
+                        columns(item['trel']['c'])
+            ref = fixture.catalog_source(name, entries)
+            path = fixture.root / ref['manifest_path']
+            manifest = json.loads(path.read_bytes())
+            manifest.update(context={'purpose': 'official source discovery'},
+                            response_headers={'Content-Length': str(manifest['bytes'])})
+            path.write_bytes(dump(manifest))
+            ref.update(manifest_sha256=sha(path.read_bytes()), provenance_sha256=sha(dump(manifest)))
+            fixture.document['catalogs'][name] = ref
+            api._FROZEN[name] = (ref['manifest_sha256'], ref['body_sha256'], CATALOG_URLS[name])
+        fixture.job = fixture.prepare(limits=limits or dict(api._POLICIES))
+        fixture.pkg = fixture.root / 'bank_quality'
+        fixture.pkg.mkdir()
+        for module, name, value in ((profiles, 'CHECKOUT_ROOT', fixture.root),
+                                    (profiles, 'PACKAGE_ROOT', fixture.pkg),
+                                    (batch, '_ROOT', fixture.root)):
+            injection = patch.object(module, name, value)
+            injection.start()
+            fixture.addCleanup(injection.stop)
+        def write(name, value):
+            path = fixture.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(dump(value))
+            return {'path': name, 'sha256': sha(path.read_bytes())}
+        fixture.write = write
+        fixture.descriptor = copy.deepcopy(fixture.job['descriptors'][0])
+        fixture.registry = {'contract': profiles.REGISTRY_CONTRACT, 'members': [fixture.descriptor]}
+        acquisition_source = fixture.source
+        def source(target, body):
+            ref = acquisition_source(target, body)
+            path = fixture.root / ref['manifest_path']
+            manifest = json.loads(path.read_bytes())
+            manifest['response_headers'] = dict(manifest['response_headers_raw'])
+            sidecar = {k: manifest[k] for k in ('url', 'method', 'context', 'http_status', 'final_url', 'response_headers_raw')}
+            sidecar_path = path.parent / manifest['response_metadata_path']
+            sidecar_path.write_bytes(dump(sidecar))
+            manifest['response_metadata_sha256'] = sha(sidecar_path.read_bytes())
+            path.write_bytes(dump(manifest))
+            ref.update(manifest_sha256=sha(path.read_bytes()), provenance_sha256=sha(dump(manifest)))
+            return ref
+        fixture.source = source
+        metadata = fixture.metadata(fixture.job)
+        dictionary = next(ref for ref in metadata.values() if ref['role'] == 'dictionary')
+        path = fixture.root / dictionary['manifest_path']
+        manifest = json.loads(path.read_bytes())
+        definitions = json.loads((path.parent / manifest['body_path']).read_bytes())
+        for definition in definitions:
+            definition['n'] = 'Synthetic native definition'
+            if definition['id'] == 80002:
+                definition['a'] = 3
+        target = next(t for t in fixture.job['targets'] if t['role'] == 'dictionary')
+        metadata[target['target_key']] = fixture.source(target, definitions)
+        fixture.resolved = api.resolve_sources(fixture.job, metadata)
+        sources = dict(metadata)
+        for target in fixture.resolved['numeric_targets']:
+            sources[target['target_key']] = fixture.source(target, {'id': target['area'], 'values': [
+                {'e': 1, 'v': [{'i': 80001, 'v': '1e-27'}, {'i': 80002, 'v': 0}]}]})
+        fixture.bootstrap = api.initialize_authority(fixture.job)
+        with api.open_authority(fixture.job, bootstrap_sha256=fixture.bootstrap) as authority:
+            for key, ref in sources.items():
+                reservation = api.reserve_attempt(authority, authority.targets[key], session_id='synthetic')
+                authority.commit('finish', attempt_id=reservation['attempt_id'], target_key=key,
+                                 session_id='synthetic', status='source_complete', retryable=False,
+                                 source_ref=ref, observed_bytes=json.loads((fixture.root / ref['manifest_path']).read_bytes())['bytes'],
+                                 observed_attempt_seconds=1, tree_extinct=True)
+                if ref['role'] == 'dictionary':
+                    metadata_receipt = api._receipt(authority, 'metadata')
+            authority.commit('recovery')
+            receipt = api._receipt(authority, 'values')
+            authority.commit('recovery')
+        a = fixture.resolved['checkpoints'][0]
+        apin = write('data/runs/bridge-original/a.json', a)
+        projection = ('source_id', 'role', 'area', 'native_file', 'catalog_pointer', 'manifest_path',
+                      'manifest_sha256', 'body_sha256', 'provenance_sha256')
+        b = {**a, 'phase': 'complete', 'checkpoint_a_sha256': apin['sha256'],
+             'sources': sorted([{k: ref[k] for k in projection} for ref in sources.values()], key=lambda s: s['source_id'])}
+        bpin = write('data/runs/bridge-original/b.json', b)
+        fixture.entry = {'period': 202403, 'kind': 'accepted_sources',
+                         'manifest_path': 'data/runs/bridge-original/job.json',
+                         'manifest_sha256': write('data/runs/bridge-original/job.json', fixture.job)['sha256'],
+                         'evidence': {'job_sha256': fixture.job['job_sha256'], 'bootstrap_sha256': fixture.bootstrap,
+                                      'checkpoint_a': apin, 'checkpoint_b': bpin,
+                                      'resolution': write('data/runs/bridge-original/resolution.json', fixture.resolved),
+                                      'receipt': write('data/runs/bridge-original/receipt.json', receipt),
+                                      'metadata_receipt': write('data/runs/bridge-original/metadata-receipt.json', metadata_receipt)}}
+        injection = patch.object(batch, '_TRUSTED_REUSE', {202403: {'entry': copy.deepcopy(fixture.entry)}})
+        injection.start()
+        fixture.addCleanup(injection.stop)
+        portal_body = b'synthetic formatter'
+        portal_dir = fixture.root / 'data/raw/portal'
+        portal_dir.mkdir()
+        (portal_dir / 'portal.bin').write_bytes(portal_body)
+        portal_manifest = {'method': 'GET', 'http_status': 200, 'outcome': 'ok', 'truncated': False,
+                           'diagnostics': [], 'bytes': len(portal_body), 'sha256': sha(portal_body), 'body_path': 'portal.bin',
+                           'url': 'https://www3.bcb.gov.br/ifdata/index.html',
+                           'final_url': 'https://www3.bcb.gov.br/ifdata/index.html',
+                           'retrieved_at_utc': '2026-10-01T12:00:00Z',
+                           'response_headers': {'Content-Length': str(len(portal_body))},
+                           'context': {'purpose': 'official source discovery'}}
+        pp = write('data/raw/portal/portal.json', portal_manifest)
+        fixture.portal = {'source_id': 'portal', 'role': 'portal', 'area': None,
+                          'native_file': None, 'catalog_pointer': None, 'manifest_path': pp['path'],
+                          'manifest_sha256': pp['sha256'], 'body_sha256': sha(portal_body),
+                          'provenance_sha256': sha(dump(portal_manifest))}
+        fixture.registry['legacy_202312_sources'] = {'portal': fixture.portal}
+        fixture.install_registry = lambda: write('bank_quality/financial-reports-registry.json', fixture.registry)
+        fixture.install_registry()
+        fixture.input = {'contract': 'ifdata-financial-acquisition-bridge-input-v1', 'entry': fixture.entry}
+        fixture.input_pin = write('data/runs/bridge-input.json', fixture.input)
+        yield fixture
+    finally:
+        fixture.doCleanups()
+
+
+class AcquisitionBridgeTests(unittest.TestCase):
+    def compose(self, fixture, value=None):
+        self.assertTrue(callable(getattr(profiles, 'compose_acquisition_handoffs', None)),
+                        'Offline acquisition handoff composer is absent')
+        pin = fixture.write('data/runs/bridge-input.json', value or fixture.input)
+        return profiles.compose_acquisition_handoffs(fixture.root / pin['path'], source_entry_sha256=pin['sha256'])
+
+    def snapshot(self, fixture):
+        return {p.relative_to(fixture.root).as_posix(): sha(p.read_bytes())
+                for p in fixture.root.rglob('*') if p.is_file()}
+
+    def test_native_positive_preserves_sources_counters_and_separate_links(self):
+        with acquisition_bridge() as f:
+            before = self.snapshot(f)
+            result = self.compose(f)
+            self.assertEqual(before, self.snapshot(f))
+            expected_selection = {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]}
+            self.assertEqual(result['selection'], expected_selection)
+            self.assertEqual(result['trusted_entry'], f.entry)
+            self.assertEqual(result['authority']['receipt_sequence'], 9)
+            self.assertEqual(result['authority']['sequence'], 10)
+            self.assertTrue(result['authority']['receipt_is_historical'])
+            self.assertEqual(result['authority']['attempts'], 4)
+            a, b = result['metadata_handoff'], result['final_handoff']
+            catalog = {k: f.descriptor['catalog'][k] for k in
+                       ('manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')}
+            catalog.update(source_id='catalog', role='catalog', area=None, native_file=None, catalog_pointer=None)
+            original_a = json.loads((f.root / f.entry['evidence']['checkpoint_a']['path']).read_bytes())
+            original_b = json.loads((f.root / f.entry['evidence']['checkpoint_b']['path']).read_bytes())
+            self.assertEqual(a['sources'], sorted(original_a['sources'] + [catalog, f.portal], key=lambda s: s['source_id']))
+            self.assertEqual(b['sources'], sorted(original_b['sources'] + [catalog, f.portal], key=lambda s: s['source_id']))
+            self.assertEqual(b['checkpoint_a_sha256'], sha(dump(a)))
+            self.assertNotEqual(b['checkpoint_a_sha256'], original_b['checkpoint_a_sha256'])
+            self.assertEqual(result['metadata_handoff_sha256'], sha(dump(a)))
+            self.assertEqual(result['final_handoff_sha256'], sha(dump(b)))
+            portal_manifest = json.loads((f.root / f.portal['manifest_path']).read_bytes())
+            self.assertEqual(portal_manifest['context'], {'purpose': 'official source discovery'})
+            self.assertNotIn('period', portal_manifest['context'])
+            ap = f.write('data/runs/projected/a.json', a)
+            bp = f.write('data/runs/projected/b.json', b)
+            candidate = profiles.compile_metadata_candidate(f.root / ap['path'], handoff_sha256=ap['sha256'])
+            cp = f.write('data/runs/projected/candidate.json', candidate)
+            frozen = profiles.freeze_profile(f.root / cp['path'], f.root / bp['path'],
+                                             candidate_sha256=cp['sha256'], final_handoff_sha256=bp['sha256'])
+            self.assertEqual(frozen['metadata_handoff_sha256'], result['metadata_handoff_sha256'])
+            self.assertEqual(frozen['final_handoff_sha256'], result['final_handoff_sha256'])
+            self.assertNotIn('trusted_entry', frozen)
+            self.assertNotIn('authority', frozen)
+            self.assertIsNone(profiles.descriptor_for_selection(expected_selection).get('profile_path'))
+
+    def test_closed_input_and_anchor_reject_before_helper(self):
+        from bank_quality import financial_acquisition as api
+        from bank_quality import financial_acquisition_batch as batch
+        with acquisition_bridge() as f:
+            for mutation in ('contract', 'extra', 'alternative', 'selection'):
+                value = copy.deepcopy(f.input)
+                if mutation == 'contract': value['contract'] += '-unknown'
+                elif mutation == 'extra': value['root'] = str(f.root)
+                elif mutation == 'selection': value['entry']['period'] = 202412
+                else:
+                    # Coherent physical alternative retains valid job and proofs,
+                    # but a caller-supplied reference cannot become an anchor.
+                    alt = f.write('data/runs/alternative/job.json', f.job)
+                    value['entry'].update(manifest_path=alt['path'], manifest_sha256=alt['sha256'])
+                with self.subTest(mutation=mutation), patch.object(batch, '_sources403') as helper:
+                    with self.assertRaises(ValueError): self.compose(f, value)
+                    helper.assert_not_called()
+            installed_entry = copy.deepcopy(f.entry)
+            with acquisition_bridge(limits={**api._POLICIES, 'max_backoffs': 6}) as alternate:
+                # Prove a different job/bootstrap/receipts is internally valid
+                # while it still owns its injected fixture authority.
+                self.assertEqual(batch._sources403(alternate.entry)['authority']['status'], 'verified')
+                self.assertNotEqual(alternate.bootstrap, f.bootstrap)
+                batch._TRUSTED_REUSE[202403]['entry'] = installed_entry
+                with patch.object(batch, '_sources403') as helper:
+                    with self.assertRaisesRegex(ValueError, 'trusted202403'): self.compose(alternate)
+                    helper.assert_not_called()
+
+    def test_confined_input_requires_external_physical_pin(self):
+        with acquisition_bridge() as f:
+            self.compose(f)
+            with self.assertRaises(ValueError):
+                profiles.compose_acquisition_handoffs(f.root / f.input_pin['path'], source_entry_sha256='0' * 64)
+            with tempfile.TemporaryDirectory() as other:
+                path = Path(other) / 'external.json'
+                path.write_bytes(dump(f.input))
+                with self.assertRaises(ValueError):
+                    profiles.compose_acquisition_handoffs(path, source_entry_sha256=sha(path.read_bytes()))
+
+    def test_original_and_projected_links_are_independently_checked(self):
+        from bank_quality import financial_acquisition_batch as batch
+        with acquisition_bridge() as f:
+            result = self.compose(f)
+            evidence = f.entry['evidence']
+            path = f.root / evidence['checkpoint_b']['path']
+            original = json.loads(path.read_bytes())
+            trusted_entry = copy.deepcopy(f.entry)
+            altered = {**original, 'checkpoint_a_sha256': '0' * 64}
+            evidence['checkpoint_b'] = f.write(evidence['checkpoint_b']['path'], altered)
+            batch._TRUSTED_REUSE[202403]['entry'] = copy.deepcopy(f.entry)
+            with self.assertRaisesRegex(ValueError, 'Checkpoint B'): self.compose(f)
+            f.write(trusted_entry['evidence']['checkpoint_b']['path'], original)
+            f.entry['evidence'] = copy.deepcopy(trusted_entry['evidence'])
+            original_a_pin = f.entry['evidence']['checkpoint_a']
+            original_a = json.loads((f.root / original_a_pin['path']).read_bytes())
+            f.entry['evidence']['checkpoint_a'] = f.write(original_a_pin['path'], {**original_a, 'extra': 'changed'})
+            batch._TRUSTED_REUSE[202403]['entry'] = copy.deepcopy(f.entry)
+            with self.assertRaisesRegex(ValueError, 'Checkpoint A'): self.compose(f)
+            ap = f.write('data/runs/projected/a.json', result['metadata_handoff'])
+            candidate = profiles.compile_metadata_candidate(f.root / ap['path'], handoff_sha256=ap['sha256'])
+            cp = f.write('data/runs/projected/candidate.json', candidate)
+            bad = {**result['final_handoff'], 'checkpoint_a_sha256': evidence['checkpoint_a']['sha256']}
+            bp = f.write('data/runs/projected/b.json', bad)
+            with self.assertRaisesRegex(ValueError, 'anchored'):
+                profiles.freeze_profile(f.root / cp['path'], f.root / bp['path'],
+                                        candidate_sha256=cp['sha256'], final_handoff_sha256=bp['sha256'])
+            bp = f.write('data/runs/projected/b.json', result['final_handoff'])
+            f.write(ap['path'], {**result['metadata_handoff'], 'extra': 'changed physical projected A'})
+            with self.assertRaisesRegex(ValueError, 'SHA-256'):
+                profiles.freeze_profile(f.root / cp['path'], f.root / bp['path'],
+                                        candidate_sha256=cp['sha256'], final_handoff_sha256=bp['sha256'])
+
+    def test_portal_and_installed_origin_guards_remain_native(self):
+        with acquisition_bridge() as f:
+            self.compose(f)
+            path = f.root / f.portal['manifest_path']
+            original = path.read_bytes()
+            for mutation in ('absent', 'incomplete', 'tamper', 'origin', 'source_pin'):
+                with self.subTest(mutation=mutation):
+                    if mutation == 'absent':
+                        f.registry['legacy_202312_sources'].pop('portal')
+                    elif mutation in ('incomplete', 'tamper'):
+                        manifest = json.loads(original)
+                        if mutation == 'incomplete': manifest['truncated'] = True
+                        else: manifest['context'] = {'period': 202403}
+                        path.write_bytes(dump(manifest))
+                        if mutation == 'incomplete':
+                            f.portal.update(manifest_sha256=sha(path.read_bytes()), provenance_sha256=sha(path.read_bytes()))
+                    elif mutation == 'origin':
+                        f.descriptor['source_offers'][0]['native_file'] += '-changed'
+                        f.descriptor.pop('descriptor_sha256', None)
+                    else:
+                        f.descriptor['catalog']['body_sha256'] = '0' * 64
+                        f.descriptor.pop('descriptor_sha256', None)
+                    f.install_registry()
+                    with self.assertRaises(ValueError): self.compose(f)
+                    path.write_bytes(original)
+                    f.portal.update(manifest_sha256=sha(original), provenance_sha256=sha(original))
+                    f.registry['legacy_202312_sources']['portal'] = f.portal
+                    f.descriptor = copy.deepcopy(f.job['descriptors'][0])
+                    f.registry['members'] = [f.descriptor]
+                    f.install_registry()
+
+    def test_receipt_prefix_pending_failed_forged_ahead_and_reset(self):
+        from bank_quality import financial_acquisition as api
+        from bank_quality import financial_acquisition_batch as batch
+        for mutation in ('pending', 'failure', 'forged', 'ahead', 'reset'):
+            with self.subTest(mutation=mutation), acquisition_bridge() as f:
+                self.compose(f)
+                if mutation in ('pending', 'failure'):
+                    # A completed target cannot legally reserve again. Build a
+                    # genuinely earlier journal prefix, then use real commits
+                    # to leave the last numeric target pending/failed.
+                    folder = api._authority_paths(f.job)[0]
+                    records = [json.loads(line) for line in (folder / 'journal.jsonl').read_bytes().splitlines()][:6]
+                    state = api._initial_state()
+                    targets = api._execution_job(f.job)
+                    for record in records:
+                        api._apply_record(state, record, targets, api._limits(f.job))
+                    (folder / 'journal.jsonl').write_bytes(b''.join(dump(r) + b'\n' for r in records))
+                    api._replace_head(folder, {'sequence': 6, 'record_sha256': records[-1]['record_sha256'],
+                                               'state_sha256': sha(dump(state))})
+                    with api.open_authority(f.job, bootstrap_sha256=f.bootstrap) as authority:
+                        target = next(t for t in authority.targets.values() if t['source_id'] == 'numeric:3')
+                        reservation = api.reserve_attempt(authority, target, session_id='negative')
+                        if mutation == 'failure':
+                            authority.commit('finish', attempt_id=reservation['attempt_id'], target_key=target['target_key'],
+                                             session_id='negative', status='failed', retryable=False,
+                                             observed_bytes=0, observed_attempt_seconds=1, tree_extinct=True)
+                        f.entry['evidence']['receipt'] = f.write(f.entry['evidence']['receipt']['path'],
+                                                               api._receipt(authority, 'negative'))
+                    batch._TRUSTED_REUSE[202403]['entry'] = copy.deepcopy(f.entry)
+                elif mutation == 'reset':
+                    folder = api._authority_paths(f.job)[0]
+                    (folder / 'journal.jsonl').write_bytes(b'')
+                else:
+                    pin = f.entry['evidence']['receipt']
+                    receipt = json.loads((f.root / pin['path']).read_bytes())
+                    if mutation == 'ahead': receipt['sequence'] = 11
+                    else: receipt['state']['body_bytes'] = 0
+                    f.entry['evidence']['receipt'] = f.write(pin['path'], receipt)
+                    batch._TRUSTED_REUSE[202403]['entry'] = copy.deepcopy(f.entry)
+                f.write('data/runs/bridge-input.json', f.input)
+                before = self.snapshot(f)
+                with self.assertRaises(ValueError): self.compose(f)
+                self.assertEqual(before, self.snapshot(f))
+
+
 class InstalledRegistryTests(unittest.TestCase):
     def test_registry_catalog_hashes_and_all_literal_members(self):
         self.assertIsNotNone(profiles, 'Task1 profile authoring implementation is absent')

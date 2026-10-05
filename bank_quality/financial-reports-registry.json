@@ -113917,8 +113917,8 @@
         }
       ],
       "descriptor_sha256": "346ad8010e4d97bc4e1c46280abe74cf8a6bedf458eeaabf1c0e42f866a544b2",
-      "profile_path": null,
-      "profile_sha256": null
+      "profile_path": "financial-reports-profiles/202403.json",
+      "profile_sha256": "8b7dfde1084b86d8b0cff29a011cf3e2432e0f0dd486f14454f41da4fb427076"
     },
     {
       "selection": {
