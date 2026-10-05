@@ -964,3 +964,280 @@ class BatchAuthorityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BatchSchedulerTests(unittest.TestCase):
+    setUpClass = BatchAuthorityTests.__dict__['setUpClass']
+    setUp = BatchAuthorityTests.setUp
+    inject = BatchAuthorityTests.inject
+    write = BatchAuthorityTests.write
+    parquet_fixture = BatchAuthorityTests.parquet_fixture
+    bounded_source = BatchAuthorityTests.bounded_source
+    source_fixture = BatchAuthorityTests.source_fixture
+    prepare = BatchAuthorityTests.prepare
+    initialize = BatchAuthorityTests.initialize
+    terminal = BatchAuthorityTests.terminal
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Native Windows member claims required')
+    def test_parallel_scheduler_barrier_and_member_isolation(self):
+        import threading
+        refs = self.initialize()
+        barrier = threading.Barrier(2)
+        lock = threading.Lock()
+        active = {'metadata': 0, 'values': 0}
+        peak = dict(active)
+        completed = []
+        def phase(member, start, context):
+            kind = start['phase']
+            with lock:
+                active[kind] += 1
+                peak[kind] = max(peak[kind], active[kind])
+                if kind == 'values':
+                    self.assertEqual(len([p for p in completed if p == 'metadata']), 7)
+                    self.assertEqual(active['metadata'], 0)
+            if kind == 'metadata' and member['period'] in self.batch._ACQUIRE[:2]:
+                barrier.wait(10)
+            result = self.terminal(member, start, context)
+            with lock:
+                completed.append(kind)
+                active[kind] -= 1
+            return result
+        self.assertTrue(callable(getattr(self.batch, '_run_scheduler', None)), 'Parallel scheduler missing')
+        from bank_quality.windows_acquisition import exclusive_claim
+        with patch.object(self.acquisition, '_claim', exclusive_claim):
+            result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2, phase_callable=phase)
+        self.assertEqual(result['status'], 'complete', result)
+        self.assertEqual(result['missing_periods'], [])
+        self.assertEqual(peak, {'metadata': 2, 'values': 1})
+
+    def test_run_workers_are_strict_and_head_checked_before_dispatch(self):
+        self.assertTrue(callable(getattr(self.batch, '_run_batch', None)), 'Batch run missing')
+        refs = self.initialize()
+        for workers in (True, 0, 3, 1.0):
+            with self.assertRaises(ValueError):
+                self.batch._run_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                    bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=workers)
+        self.identity['reviewed_commit'] = 'c' * 40
+        with self.assertRaisesRegex(ValueError, 'HEAD'):
+            self.batch._run_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'])
+
+
+    def test_v2_worker_uses_start_prefix_and_current_member_reservation(self):
+        refs = self.initialize()
+        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            context = self.batch._MemberContext(batch, member)
+            context.start = start
+            worker_context = self.batch._transport_context(context)
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context) as authority:
+                target = member['job']['targets'][0]
+                reserve = self.acquisition.reserve_attempt(authority, target, session_id=Path(start['session']).name)
+                authority.commit('identity', attempt_id=reserve['attempt_id'], target_key=target['target_key'],
+                    session_id=Path(start['session']).name, identity={'pid': 123, 'creation_time': 1, 'contained': True},
+                    spec_path='data/runs/spec.json', spec_sha256='a' * 64)
+                spec = {'contract': 'financial-acquisition-worker-v2', 'batch_context': worker_context,
+                    'job_path': member['job_path'], 'job_sha256': member['job_sha256'],
+                    'bootstrap_sha256': member['bootstrap_sha256'], 'attempt_id': reserve['attempt_id'],
+                    'target_key': target['target_key'], 'body_budget_bytes': reserve['reserved_bytes'],
+                    'parent_identity': {'pid': 456, 'creation_time': 2},
+                    'output_path': start['session'] + '/attempt-' + reserve['attempt_id']}
+                # A second phase and a partial new tail cannot race the pinned prefix.
+                self.batch._start_phase(batch, batch.bundle['members'][1], 'metadata')
+                with (batch.folder / 'journal.jsonl').open('ab') as stream:
+                    stream.write(b'{"partial":')
+                with patch.object(self.acquisition, 'verify_worker_ancestry'):
+                    authorized, _ = self.acquisition._worker_authorization(spec)
+                    self.assertEqual(authorized, member['job'])
+                    bad = copy.deepcopy(spec)
+                    bad['output_path'] = 'data/runs/wrong/attempt-' + reserve['attempt_id']
+                    with self.assertRaises(ValueError):
+                        self.acquisition._worker_authorization(bad)
+                    (self.root / member['job_path']).write_bytes(b'{}')
+                    with self.assertRaises(ValueError):
+                        self.acquisition._worker_authorization(spec)
+
+
+    failing_terminal = BatchAuthorityTests.failing_terminal
+
+    def test_parallel_halt_allows_one_inflight_finish_but_no_new_start(self):
+        import threading
+        refs = self.initialize()
+        first, second = self.batch._ACQUIRE[:2]
+        ready = threading.Event()
+        concluded = threading.Event()
+        dispatched = []
+        original = self.batch._Batch.append
+        def append(batch, kind, **details):
+            result = original(batch, kind, **details)
+            if kind == 'phase_finish' and batch.halted:
+                concluded.set()
+            return result
+        def phase(member, start, context):
+            dispatched.append(member['period'])
+            if member['period'] == first:
+                self.assertTrue(ready.wait(5))
+                return self.failing_terminal(member, start, context, 'containment')
+            ready.set()
+            self.assertTrue(concluded.wait(5))
+            return self.terminal(member, start, context)
+        with patch.object(self.batch._Batch, 'append', append):
+            result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2, phase_callable=phase)
+        self.assertEqual(sorted(dispatched), [first, second])
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['halt'], 'critical_containment')
+        self.assertEqual(result['pending_phases'], [])
+        self.assertEqual(len(result['finished_phases']), 2)
+        self.assertEqual(len(result['missing_periods']), 7)
+
+    def test_run_revalidates_all_finished_proofs_before_new_dispatch(self):
+        refs = self.initialize()
+        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            result = self.terminal(member, start, self.batch._MemberContext(batch, member))
+            self.batch._proof(batch, start, result)
+            batch.append('phase_finish', phase_id=start['phase_id'], result=result, recovered=False)
+        damaged = self.root / result['checkpoint']['path']
+        damaged.write_bytes(b'{}')
+        result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2,
+            phase_callable=lambda *args: self.fail('Dispatch crossed corrupted historical proof'))
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(damaged.read_bytes(), b'{}')
+
+    def test_v2_thin_context_rejects_all_code_pins_without_rehashing_reuse(self):
+        refs = self.initialize()
+        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as batch:
+            member = batch.bundle['members'][0]
+            context = self.batch._MemberContext(batch, member)
+            context.start = self.batch._start_phase(batch, member, 'metadata')
+            worker = self.batch._transport_context(context)
+            with patch.object(self.batch, '_verify_draft', side_effect=AssertionError('Repeated full reuse authentication')):
+                self.batch._worker_context(member['job'], worker)
+                for name in self.identity['files']:
+                    original = self.identity['files'][name]
+                    self.identity['files'][name] = 'c' * 64
+                    with self.assertRaisesRegex(ValueError, 'code/runtime'):
+                        self.batch._worker_context(member['job'], worker)
+                    self.identity['files'][name] = original
+                self.identity['runtime']['sha256'] = 'c' * 64
+                with self.assertRaisesRegex(ValueError, 'code/runtime'):
+                    self.batch._worker_context(member['job'], worker)
+
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Native Windows coordinator claims required')
+    def test_live_batch_coordinator_excludes_second_owner(self):
+        from bank_quality.windows_acquisition import exclusive_claim
+        refs = self.initialize()
+        with patch.object(self.acquisition, '_claim', exclusive_claim):
+            with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']):
+                with self.assertRaises(OSError):
+                    with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']):
+                        self.fail('Second batch coordinator acquired live claim')
+
+    def test_production_run_and_v2_worker_protocol_with_synthetic_transport(self):
+        import shutil
+        refs = self.initialize()
+        specs = []
+        def fetch(url, output, label, context, *, body_budget_bytes, timeout_seconds):
+            spec = next(s for s in specs if s['attempt_id'] == label)
+            job, target = self.acquisition._worker_authorization(spec)
+            reports = job['descriptors'][0]['selection']['reports']
+            payload = ([{'c0': '1', 'c1': str(context['period'])}] if target['role'] == 'cadaster'
+                       else [{'id': rid, 'td': 3, 'a': 1, 'lid': rid} for rid in reports]
+                       if target['role'] == 'dictionary' else {'id': target['area'], 'values': [{'e': 1, 'v': [{'i': rid, 'v': 0} for rid in reports]}]})
+            source = self.bounded_source(target, payload)
+            original = self.root / source['manifest_path']
+            manifest = json.loads(original.read_bytes())
+            manifest['body_budget_bytes'] = body_budget_bytes
+            manifest['manifest_path'] = original.name
+            for name in (manifest['body_path'], manifest['response_metadata_path']):
+                shutil.copyfile(original.parent / name, output / name)
+            (output / original.name).write_bytes(canonical(manifest))
+            return manifest
+        def launch(path, pin, *, deadline_seconds, before_resume, cancel_event):
+            spec = json.loads(path.read_bytes())
+            self.assertEqual(spec['contract'], 'financial-acquisition-worker-v2')
+            self.assertFalse(cancel_event.is_set())
+            specs.append(spec)
+            before_resume({'pid': 123, 'creation_time': 456, 'contained': True})
+            self.acquisition._worker_main(path, pin)
+            return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
+                    'exit_code': 0, 'elapsed_seconds': 1.0}
+        with patch.object(self.acquisition, 'run_contained_attempt', side_effect=launch), \
+                patch.object(self.acquisition, 'verify_worker_ancestry'), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=fetch):
+            result = self.batch._run_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2)
+        self.assertEqual(result['status'], 'complete', result)
+        self.assertEqual(len(specs), 21)
+        self.assertEqual(result['totals']['attempts'], 21)
+        self.assertEqual(result['pending_phases'], [])
+        self.assertEqual(result['missing_periods'], [])
+
+        with self.assertRaisesRegex(ValueError, 'reservation'):
+            self.acquisition._worker_authorization(specs[0])
+
+    def test_scheduler_three_failed_members_and_guard_streak(self):
+        refs = self.initialize()
+        guards = iter(('schema', 'deadline', 'schema'))
+        dispatched = []
+        def phase(member, start, context):
+            dispatched.append(member['period'])
+            return self.failing_terminal(member, start, context, next(guards))
+        result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=1, phase_callable=phase)
+        self.assertEqual(len(dispatched), 3)
+        self.assertEqual(result['halt'], 'three_failed_members')
+
+    def test_scheduler_two_identical_guards_stop_dispatch(self):
+        refs = self.initialize()
+        dispatched = []
+        def phase(member, start, context):
+            dispatched.append(member['period'])
+            return self.failing_terminal(member, start, context, 'schema')
+        result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=1, phase_callable=phase)
+        self.assertEqual(len(dispatched), 2)
+        self.assertEqual(result['halt'], 'consecutive_guard')
+
+    def test_partial_metadata_barrier_runs_only_authenticated_values_and_reports_missing(self):
+        refs = self.initialize()
+        seen = []
+        def phase(member, start, context):
+            seen.append((member['period'], start['phase']))
+            if member['period'] == self.batch._ACQUIRE[0]:
+                return self.failing_terminal(member, start, context, 'schema')
+            return self.terminal(member, start, context)
+        result = self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2, phase_callable=phase)
+        self.assertEqual(result['status'], 'incomplete')
+        self.assertEqual(result['missing_periods'], [self.batch._ACQUIRE[0]])
+        self.assertEqual([phase for _, phase in seen[:7]], ['metadata'] * 7)
+        self.assertEqual(len(seen), 13)
+        self.assertEqual(result['halt'], '')
+
+
+    def test_dispatch_persistence_failure_cancels_inflight_and_persists_halt(self):
+        refs = self.initialize()
+        original = self.batch._Batch.append
+        stopped = __import__('threading').Event()
+        def phase(member, start, context):
+            self.assertTrue(context.cancel_event.wait(5))
+            stopped.set()
+            raise RuntimeError('cancelled fixture phase')
+        def fail(batch, kind, **details):
+            record = original(batch, kind, **details)
+            if kind == 'phase_start' and len(batch.inflight) == 1:
+                raise OSError('fixture second dispatch persistence failed')
+            return record
+        with patch.object(self.batch._Batch, 'append', fail):
+            with self.assertRaisesRegex(OSError, 'dispatch persistence'):
+                self.batch._run_scheduler(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                    bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2, phase_callable=phase)
+        self.assertTrue(stopped.is_set())
+        self.assertTrue((self.root / 'data/runs/batch-fixture/halt.json').is_file(),
+                        'Coordinator persistence failure must persist halt before return')

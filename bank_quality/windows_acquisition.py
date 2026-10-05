@@ -213,7 +213,7 @@ def _terminate_and_wait(kernel, job):
         time.sleep(.005)
 
 
-def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds: float, before_resume) -> dict:
+def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds: float, before_resume, cancel_event=None) -> dict:
     """Create suspended with JOB_LIST, commit identity, resume, wait entire job.
 
     The .venv launcher and descendants inherit association. Timing includes native
@@ -229,10 +229,12 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
     spec = json.loads(raw)
     application = Path(sys.executable).resolve()
     worker = Path(importlib.util.find_spec(_WORKER_MODULE).origin)
-    if (spec.get('contract') != 'financial-acquisition-worker-v1'
+    if (spec.get('contract') not in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2')
             or spec.get('application_sha256') != hashlib.sha256(application.read_bytes()).hexdigest()
             or spec.get('worker_sha256') != hashlib.sha256(worker.read_bytes()).hexdigest()):
         raise ValueError('Fixed worker/application pin mismatch')
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError('Contained attempt cancelled before creation')
     kernel = _kernel()
     job, attributes, initialized = None, None, False
     process = _PROCESS_INFORMATION()
@@ -269,6 +271,8 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
             raise RuntimeError('Worker was not contained at creation')
         identity = {**_identity(kernel, process.hProcess, process.dwProcessId), 'contained': True}
         before_resume(identity)
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError('Contained attempt cancelled before resume')
         if time.monotonic() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
             timed_out = True
             _terminate_and_wait(kernel, job)
@@ -276,6 +280,9 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
             if kernel.ResumeThread(process.hThread) == 0xFFFFFFFF:
                 raise OSError(C.get_last_error(), 'ResumeThread failed')
             while _active(kernel, job):
+                if cancel_event is not None and cancel_event.is_set():
+                    _terminate_and_wait(kernel, job)
+                    break
                 if time.monotonic() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
                     timed_out = True
                     _terminate_and_wait(kernel, job)

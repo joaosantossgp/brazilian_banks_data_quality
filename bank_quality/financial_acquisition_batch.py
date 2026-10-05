@@ -869,3 +869,144 @@ def _run_serial(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str,
                 if batch.halted:
                     return _totals(batch)
         return _totals(batch)
+
+
+
+def _worker_context(job, context):
+    """Read only immutable pins and the committed start prefix, never live batch head."""
+    _require(type(context) is dict and set(context) == {'contract', 'bundle_path', 'bundle_sha256',
+             'bootstrap_sha256', 'period', 'start_sequence', 'start_sha256'}
+             and context['contract'] == 'financial-acquisition-worker-context-v2', 'Invalid worker batch context')
+    for key in ('bundle_sha256', 'bootstrap_sha256', 'start_sha256'):
+        acquisition._digest(context[key])
+    _require(type(context['period']) is int and context['period'] in _ACQUIRE
+             and type(context['start_sequence']) is int and context['start_sequence'] > 0, 'Invalid worker start identity')
+    path = _path(context['bundle_path'])
+    raw = path.read_bytes()
+    _require(_sha(raw) == context['bundle_sha256'], 'Worker bundle physical pin mismatch')
+    bundle = _json(raw)
+    batch = _Batch(bundle, context['bundle_sha256'], context['bootstrap_sha256'], [], _ledger_state())
+    _require(context['bundle_path'] == batch.binding['bundle_path'], 'Worker bundle path differs')
+    _bound_bytes(batch)
+    _code_identity(bundle['code_pins'], current_head=True)
+    member = next(m for m in bundle['members'] if m['period'] == context['period'])
+    _authorize_member(job, _MemberContext(batch, member))
+    previous, state, start = acquisition._EMPTY_HASH, _ledger_state(), None
+    with _path(bundle['destination'] + '/journal.jsonl').open('rb') as stream:
+        for sequence in range(1, context['start_sequence'] + 1):
+            line = stream.readline()
+            _require(line.endswith(b'\n'), 'Worker start prefix missing or partial')
+            record = _json(line)
+            pin = record.pop('record_sha256')
+            _require(pin == _sha(_canonical(record)) and record['sequence'] == sequence
+                     and record['previous_record_sha256'] == previous and record['bundle_sha256'] == batch.pin
+                     and record['bootstrap_sha256'] == batch.bootstrap_pin, 'Worker start prefix integrity failure')
+            _apply_phase(state, record, bundle)
+            previous, start = pin, record
+    _require(previous == context['start_sha256'] and start['kind'] == 'phase_start'
+             and start['period'] == member['period'] and start['job_sha256'] == job['job_sha256'],
+             'Worker phase start pin/member mismatch')
+    return member, start
+
+
+def _transport_context(context):
+    _authorize_member(context.member['job'], context)
+    start = context.start
+    return {'contract': 'financial-acquisition-worker-context-v2',
+            'bundle_path': context.batch.binding['bundle_path'], 'bundle_sha256': context.batch.pin,
+            'bootstrap_sha256': context.batch.bootstrap_pin, 'period': context.member['period'],
+            'start_sequence': start['sequence'], 'start_sha256': start['record_sha256']}
+
+
+def _run_phase(member, start, context):
+    metadata = None if start['phase'] == 'metadata' else next(
+        p for p in context.batch.state['finished'].values()
+        if p['period'] == member['period'] and p['phase'] == 'metadata')
+    kwargs = {} if start['phase'] == 'metadata' else {
+        'resume_from': _path(metadata['result']['receipt']['path']),
+        'resume_sha256': metadata['result']['receipt']['sha256'],
+        'checkpoint_sha256': metadata['result']['checkpoint']['sha256']}
+    error = ''
+    try:
+        acquisition._run_acquisition(_path(member['job_path']), member['job_sha256'], _ROOT / start['session'],
+            phase=start['phase'], bootstrap_sha256=member['bootstrap_sha256'], coordinator=context, **kwargs)
+    except (ValueError, OSError, RuntimeError) as failure:
+        error = type(failure).__name__ + ': ' + str(failure)
+    receipt_path = _path(start['session'] + '/receipt.json')
+    receipt = _json(receipt_path.read_bytes())
+    def ref(path):
+        return {'path': path.relative_to(_ROOT).as_posix(), 'sha256': _sha(path.read_bytes())}
+    checkpoint = _ROOT / start['session'] / ('checkpoint-a.json' if start['phase'] == 'metadata' else 'checkpoint-b.json')
+    return {'contract': 'financial-acquisition-phase-result-v1', 'status': 'failed' if error else 'complete',
+            'guard': receipt['state']['guard'] if error else '', 'error': error, 'receipt': ref(receipt_path),
+            'checkpoint': None if error else ref(checkpoint)}
+
+
+def _run_summary(batch):
+    result = _totals(batch)
+    complete = {p['period'] for p in batch.state['finished'].values()
+                if p['phase'] == 'values' and p['result']['status'] == 'complete'}
+    missing = sorted(set(_ACQUIRE) - complete)
+    return {**result, 'contract': 'financial-acquisition-batch-run-v1',
+            'status': 'halted' if batch.halted else 'incomplete' if missing else 'complete',
+            'missing_periods': missing, 'complete_periods': sorted(complete)}
+
+
+def _run_scheduler(bundle_path, bundle_sha256, *, bootstrap_sha256, metadata_workers, phase_callable):
+    from concurrent.futures import ThreadPoolExecutor
+    from queue import Queue
+    from threading import Event
+    _require(type(metadata_workers) is int and metadata_workers in (1, 2), 'Metadata workers must be 1 or 2')
+    with _open_batch(bundle_path, bundle_sha256, bootstrap_sha256, recover=True) as batch:
+        _reconcile(batch)
+        if batch.halted:
+            return _run_summary(batch)
+        _code_identity(batch.bundle['code_pins'], current_head=True)
+        cancelled, completed = Event(), Queue()
+        pool = ThreadPoolExecutor(max_workers=metadata_workers)
+        try:
+            for phase in ('metadata', 'values'):
+                candidates = [m for m in batch.bundle['members']
+                    if not any(p['period'] == m['period'] and p['phase'] == phase for p in batch.state['finished'].values())
+                    and (phase == 'metadata' or any(p['period'] == m['period'] and p['phase'] == 'metadata'
+                        and p['result']['status'] == 'complete' for p in batch.state['finished'].values()))]
+                active = {}
+                while active or candidates and not batch.halted:
+                    while candidates and not batch.halted and len(active) < (metadata_workers if phase == 'metadata' else 1):
+                        member = candidates.pop(0)
+                        start = _start_phase(batch, member, phase)
+                        context = _MemberContext(batch, member)
+                        context.start, context.cancel_event = copy.deepcopy(start), cancelled
+                        future = pool.submit(phase_callable, copy.deepcopy(member), copy.deepcopy(start), context)
+                        active[future] = start
+                        future.add_done_callback(completed.put)
+                    if not active:
+                        break
+                    future = completed.get()
+                    start = active.pop(future)
+                    try:
+                        result = future.result()
+                        _proof(batch, start, result)
+                        acquisition._write_exclusive(_ROOT / start['session'] / 'terminal.json', result)
+                        batch.append('phase_finish', phase_id=start['phase_id'], result=result, recovered=False)
+                    except (ValueError, OSError, RuntimeError) as error:
+                        batch.halt('phase_outcome_unproven: ' + str(error))
+                        cancelled.set()
+                if batch.halted:
+                    break
+            # Reauthenticate outer immutable inputs/reuse and all native completed proofs.
+            _immutable_batch(bundle_path, bundle_sha256, bootstrap_sha256)
+            _finished_proofs(batch)
+            return _run_summary(batch)
+        except (ValueError, OSError, RuntimeError) as error:
+            cancelled.set()
+            batch.halt('coordinator_failure: ' + str(error))
+            raise
+        finally:
+            cancelled.set()
+            pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _run_batch(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str, metadata_workers: int = 1) -> dict:
+    return _run_scheduler(bundle_path, bundle_sha256, bootstrap_sha256=bootstrap_sha256,
+                          metadata_workers=metadata_workers, phase_callable=_run_phase)

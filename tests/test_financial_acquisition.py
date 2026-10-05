@@ -946,6 +946,25 @@ class AcquisitionCliTests(unittest.TestCase):
             self.assertIn('unrecognized arguments', err)
 
 
+    def test_batch_cli_commands_and_strict_external_arguments(self):
+        for name in ('batch-prepare', 'batch-initialize', 'batch-run', 'batch-recover', 'batch-verify'):
+            code, out, err = self.invoke(name, '--help')
+            self.assertEqual(code, 0, err)
+            self.assertIn(name, out)
+            self.assertEqual(self.invoke(name)[0], 2)
+        from bank_quality import financial_acquisition_batch as batch
+        args = ['--bundle', str(self.job_path), '--bundle-sha256', 'a' * 64, '--bootstrap-sha256', 'b' * 64]
+        with patch.object(batch, '_run_batch', return_value={'contract': 'financial-acquisition-batch-run-v1',
+                'status': 'incomplete', 'missing_periods': [202406], 'private': 'never print'}) as run:
+            code, out, err = self.invoke('batch-run', *args, '--metadata-workers', '2')
+            self.assertEqual((code, err), (0, ''))
+            self.assertEqual(run.call_args.kwargs['metadata_workers'], 2)
+            self.assertNotIn('private', out)
+            self.assertEqual(json.loads(out)['missing_periods'], [202406])
+            self.assertEqual(self.invoke('batch-run', *args, '--metadata-workers', '3')[0], 2)
+            self.assertEqual(self.invoke('batch-run', *args, '--metadata-work', '1')[0], 2)
+
+
 class AuthorityTests(unittest.TestCase):
     """Pure authority model uses synthetic catalogs and a fake OS claim."""
     catalog_source = AcquisitionTests.catalog_source

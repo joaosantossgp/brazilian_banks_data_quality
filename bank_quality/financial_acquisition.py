@@ -975,7 +975,15 @@ def _worker_authorization(spec):
     """Read-only current authority proof while its sole writer holds the claim."""
     job = _load_job(_ROOT / spec['job_path'], spec['job_sha256'])
     targets = _execution_job(job)
-    _coordinator_gate(job, None)  # v1 workers cannot execute a batch member.
+    start = None
+    if spec.get('contract') == 'financial-acquisition-worker-v2':
+        from .financial_acquisition_batch import _worker_context
+        member, start = _worker_context(job, spec['batch_context'])
+        _require(spec['job_path'] == member['job_path'] and spec['bootstrap_sha256'] == member['bootstrap_sha256']
+                 and spec['output_path'] == start['session'] + '/attempt-' + spec['attempt_id'],
+                 'Worker selected job/bootstrap/session differs')
+    else:
+        _coordinator_gate(job, None)  # v1 workers cannot execute a batch member.
     folder, binding_path, _ = _authority_paths(job)
     binding = _json(_local(binding_path.relative_to(_ROOT).as_posix()).read_bytes())
     _require(binding == {'acquisition_scope': job['acquisition_scope'], 'job_sha256': job['job_sha256'],
@@ -998,6 +1006,13 @@ def _worker_authorization(spec):
     pending = state['pending'].get(spec['attempt_id'])
     _require(pending and pending['kind'] == 'reserve' and pending['target_key'] == spec['target_key']
              and pending['reserved_bytes'] == spec['body_budget_bytes'] and 'identity' in pending, 'Worker lacks current durable reservation/identity')
+    if start is not None:
+        _require(pending['session_id'] == Path(start['session']).name and sequence > start['member_sequence'],
+                 'Worker reservation outside committed phase')
+        prefix = _EMPTY_HASH
+        if start['member_sequence']:
+            prefix = _json(raw.splitlines()[start['member_sequence'] - 1])['record_sha256']
+        _require(prefix == start['member_record_sha256'], 'Worker member start prefix differs')
     verify_worker_ancestry(pending['identity'], spec['parent_identity'])
     return job, targets[spec['target_key']]
 
@@ -1009,9 +1024,10 @@ def _worker_main(spec_path, spec_sha256):
     raw = path.read_bytes()
     _require(_sha(raw) == _digest(spec_sha256), 'Worker spec hash mismatch')
     spec = _json(raw)
-    _require(set(spec) == {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
+    version2 = spec.get('contract') == 'financial-acquisition-worker-v2'
+    _require(set(spec) == ({'batch_context'} if version2 else set()) | {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
                           'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
-             and spec['contract'] == 'financial-acquisition-worker-v1'
+             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2')
              and spec['worker_sha256'] == _sha(Path(__file__).read_bytes())
              and spec['application_sha256'] == _sha(Path(sys.executable).read_bytes()), 'Worker contract/runtime pin mismatch')
     job, target = _worker_authorization(spec)
@@ -1052,6 +1068,8 @@ def _retryable(manifest):
 
 
 def _attempt(authority, job_path, session, target):
+    coordinator = getattr(authority, 'coordinator', None)
+    _require(coordinator is None or not coordinator.cancel_event.is_set(), 'Batch transport cancelled')
     reservation = reserve_attempt(authority, target, session_id=session.name)
     attempt = reservation['attempt_id']
     spec_path = session / ('worker-' + attempt + '.json')
@@ -1061,12 +1079,19 @@ def _attempt(authority, job_path, session, target):
             'attempt_id': attempt, 'target_key': target['target_key'], 'body_budget_bytes': reservation['reserved_bytes'],
             'parent_identity': _current_identity(), 'worker_sha256': _sha(Path(__file__).read_bytes()),
             'application_sha256': _sha(Path(sys.executable).read_bytes()), 'output_path': output.relative_to(_ROOT).as_posix()}
+    coordinator = getattr(authority, 'coordinator', None)
+    if coordinator is not None:
+        from .financial_acquisition_batch import _transport_context, _code_identity
+        _code_identity(coordinator.batch.bundle['code_pins'], current_head=True)
+        spec.update(contract='financial-acquisition-worker-v2', batch_context=_transport_context(coordinator))
     _write_exclusive(spec_path, spec)
     spec_pin = _sha(spec_path.read_bytes())
     def before_resume(identity):
         authority.commit('identity', attempt_id=attempt, target_key=target['target_key'], session_id=session.name, identity=identity,
                          spec_path=spec_path.relative_to(_ROOT).as_posix(), spec_sha256=spec_pin)
-    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'], before_resume=before_resume)
+    options = {} if coordinator is None else {'cancel_event': coordinator.cancel_event}
+    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'],
+                                   before_resume=before_resume, **options)
     _require(result['tree_extinct'], 'Worker tree extinction not verified')
     observed, status, retryable, source, guard = reservation['reserved_bytes'], 'worker_failed', False, None, 'containment'
     evidence = {}
@@ -1153,6 +1178,7 @@ def _run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: s
     _require(re.fullmatch('[A-Za-z0-9_-]{1,80}', session.name) and not session.exists(), 'Session destination must be new with safe ID')
     _coordinator_gate(job, coordinator)
     with _open_authority(job, bootstrap_sha256, coordinator=coordinator) as authority:
+        authority.coordinator = coordinator
         _require(not authority.state['pending'], 'Pending attempt requires offline recovery before any new launch')
         if resume_from is not None:
             raw = _local(Path(resume_from).absolute().relative_to(_ROOT.absolute()).as_posix()).read_bytes()

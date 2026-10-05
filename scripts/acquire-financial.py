@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bank_quality import financial_acquisition as acquisition
+from bank_quality import financial_acquisition_batch as batch
 
 
 def _job_arguments(parser, *, bootstrap=False):
@@ -51,13 +52,53 @@ def main(argv=None):
     _job_arguments(verify, bootstrap=True)
     verify.add_argument('--receipt', type=Path)
     verify.add_argument('--receipt-sha256')
+    batch_prepare = commands.add_parser('batch-prepare', help='Prepare the fixed eleven-reference draft offline', allow_abbrev=False)
+    for prefix in ('catalog-index', 'reuse-index'):
+        batch_prepare.add_argument('--' + prefix, type=Path, required=True)
+        batch_prepare.add_argument('--' + prefix + '-sha256', required=True)
+    batch_prepare.add_argument('--output', type=Path, required=True)
+    batch_initialize = commands.add_parser('batch-initialize', help='Initialize seven authorities offline with reviewed pins', allow_abbrev=False)
+    batch_initialize.add_argument('--draft', type=Path, required=True)
+    batch_initialize.add_argument('--draft-sha256', required=True)
+    batch_initialize.add_argument('--destination', type=Path, required=True)
+    batch_initialize.add_argument('--code-pins', type=Path, required=True)
+    batch_initialize.add_argument('--code-pins-sha256', required=True)
+    for name in ('batch-run', 'batch-recover', 'batch-verify'):
+        command = commands.add_parser(name, allow_abbrev=False)
+        command.add_argument('--bundle', type=Path, required=True)
+        command.add_argument('--bundle-sha256', required=True)
+        command.add_argument('--bootstrap-sha256', required=True)
+        if name == 'batch-run':
+            command.add_argument('--metadata-workers', type=int, choices=(1, 2), default=1)
+        elif name == 'batch-recover':
+            command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(argv)
     for path_name, hash_name in (('reuse_index', 'reuse_index_sha256'), ('resume_from', 'resume_sha256'),
                                  ('receipt', 'receipt_sha256')):
         if (getattr(args, path_name, None) is None) != (getattr(args, hash_name, None) is None):
             parser.error(path_name.replace('_', '-') + ' requires its external SHA-256')
     try:
-        if args.command == 'prepare':
+        if args.command == 'batch-prepare':
+            result = batch._prepare_batch(args.catalog_index, args.catalog_index_sha256,
+                                           args.reuse_index, args.reuse_index_sha256)
+            destination = acquisition._safe_destination(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            acquisition._write_exclusive(destination, result)
+            result = {'status': 'draft', 'executable': False, 'draft_sha256': acquisition._sha(destination.read_bytes()),
+                      'acquire_periods': result['acquire_periods'], 'reuse_periods': result['reuse_periods']}
+        elif args.command == 'batch-initialize':
+            pins_path = acquisition._local(args.code_pins.absolute().relative_to(acquisition._ROOT.absolute()).as_posix())
+            raw = pins_path.read_bytes()
+            acquisition._require(acquisition._sha(raw) == acquisition._digest(args.code_pins_sha256), 'Code pins file hash mismatch')
+            result = batch._initialize_batch(args.draft, args.draft_sha256, args.destination,
+                                              code_pins=acquisition._json(raw))
+        elif args.command in ('batch-run', 'batch-recover', 'batch-verify'):
+            options = {'metadata_workers': args.metadata_workers} if args.command == 'batch-run' else (
+                      {'output': args.output} if args.command == 'batch-recover' else {})
+            function = {'batch-run': batch._run_batch, 'batch-recover': batch._recover_batch,
+                        'batch-verify': batch._verify_batch}[args.command]
+            result = function(args.bundle, args.bundle_sha256, bootstrap_sha256=args.bootstrap_sha256, **options)
+        elif args.command == 'prepare':
             destination = acquisition._safe_destination(args.output)
             acquisition._require(not destination.exists(), 'Candidate destination must be new')
             job = acquisition.prepare_job(args.catalog_index, args.catalog_index_sha256, (202403,),
@@ -85,6 +126,11 @@ def main(argv=None):
             result = _receipt_summary(receipt, args.command + '_complete')
     except (ValueError, OSError, RuntimeError) as error:
         parser.exit(2, 'Financial acquisition failed: ' + str(error) + '\n')
+    if args.command.startswith('batch-'):
+        result = {key: value for key, value in result.items() if key in {
+            'contract', 'status', 'scope', 'bundle_path', 'bundle_sha256', 'bootstrap_sha256', 'draft_sha256',
+            'executable', 'acquire_periods', 'reuse_periods', 'sequence', 'members', 'totals',
+            'missing_periods', 'complete_periods', 'pending_phases', 'finished_phases'}}
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False))
     return 0
 
