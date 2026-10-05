@@ -596,6 +596,25 @@ class AcquisitionTests(unittest.TestCase):
             self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
 
 
+    def test_new_batch_scope_prepare_is_exact_singleton_without_execution_permission(self):
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        job = self.prepare((202406,))
+        self.assertFalse(job['executable'])
+        with self.assertRaisesRegex(ValueError, 'singleton'):
+            self.prepare((202406, 202409))
+        with self.assertRaisesRegex(ValueError, 'singleton'):
+            self.prepare((202409,))
+
+    def test_unknown_batch_scope_is_not_a_candidate(self):
+        for scope in ('financial-recent-202312-202606-v1/202403',
+                      'financial-recent-202312-202606-v1/202609',
+                      'financial-recent-202312-202606-v1/202406/nonce'):
+            with self.subTest(scope=scope):
+                self.document['acquisition_scope'] = scope
+                with self.assertRaises(ValueError):
+                    self.prepare((202406,))
+
+
 class AcquisitionCliTests(unittest.TestCase):
     """Actual CLI/package flow; only trust anchors/root and OS claim are fixtures."""
     catalog_source = AcquisitionTests.catalog_source
@@ -925,6 +944,25 @@ class AcquisitionCliTests(unittest.TestCase):
             code, out, err = self.invoke('verify', *self.bound_args('0' * 64), knob, 'unsafe')
             self.assertEqual((code, out), (2, ''))
             self.assertIn('unrecognized arguments', err)
+
+
+    def test_batch_cli_commands_and_strict_external_arguments(self):
+        for name in ('batch-prepare', 'batch-initialize', 'batch-run', 'batch-recover', 'batch-verify'):
+            code, out, err = self.invoke(name, '--help')
+            self.assertEqual(code, 0, err)
+            self.assertIn(name, out)
+            self.assertEqual(self.invoke(name)[0], 2)
+        from bank_quality import financial_acquisition_batch as batch
+        args = ['--bundle', str(self.job_path), '--bundle-sha256', 'a' * 64, '--bootstrap-sha256', 'b' * 64]
+        with patch.object(batch, '_run_batch', return_value={'contract': 'financial-acquisition-batch-run-v1',
+                'status': 'incomplete', 'missing_periods': [202406], 'private': 'never print'}) as run:
+            code, out, err = self.invoke('batch-run', *args, '--metadata-workers', '2')
+            self.assertEqual((code, err), (0, ''))
+            self.assertEqual(run.call_args.kwargs['metadata_workers'], 2)
+            self.assertNotIn('private', out)
+            self.assertEqual(json.loads(out)['missing_periods'], [202406])
+            self.assertEqual(self.invoke('batch-run', *args, '--metadata-workers', '3')[0], 2)
+            self.assertEqual(self.invoke('batch-run', *args, '--metadata-work', '1')[0], 2)
 
 
 class AuthorityTests(unittest.TestCase):

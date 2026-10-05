@@ -152,6 +152,29 @@ class WindowsAcquisitionTests(unittest.TestCase):
             self.assert_extinct(captured[0])
 
     @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
+    def test_cancellation_extinguishes_two_active_trees(self):
+        from concurrent.futures import ThreadPoolExecutor
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with tempfile.TemporaryDirectory() as temp:
+            roots = [Path(temp) / str(i) for i in range(2)]
+            for root in roots:
+                root.mkdir()
+            specs = [self.spec(root, spawn_child=True, sleep_seconds=20) for root in roots]
+            cancel = threading.Event()
+            with patch.object(api, '_WORKER_MODULE', 'tests.test_windows_acquisition'), ThreadPoolExecutor(2) as pool:
+                futures = [pool.submit(api.run_contained_attempt, spec, pin, deadline_seconds=5,
+                    before_resume=lambda identity: None, cancel_event=cancel) for spec, pin in specs]
+                try:
+                    markers = [self.wait_file(root / 'worker.json') for root in roots]
+                finally:
+                    cancel.set()
+                for future in futures:
+                    self.assertTrue(future.result()['tree_extinct'])
+            for marker in markers:
+                self.assert_extinct(marker['worker'])
+                self.assert_extinct(marker['child'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
     def test_deadline_kills_owned_tree(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         with tempfile.TemporaryDirectory() as temp:
@@ -175,6 +198,51 @@ class WindowsAcquisitionTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
     def test_parent_crash_after_resume_kills_launcher_and_grandchild(self):
         self.crash_case('after')
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
+    def test_parent_crash_extinguishes_two_active_worker_trees(self):
+        with tempfile.TemporaryDirectory() as temp:
+            roots = [Path(temp) / str(i) for i in range(2)]
+            for root in roots:
+                root.mkdir()
+                self.spec(root, spawn_child=True, sleep_seconds=20)
+            supervisor = subprocess.Popen([sys.executable, '-B', '-m', 'tests.test_windows_acquisition',
+                'supervisor2', temp], creationflags=subprocess.CREATE_NO_WINDOW)
+            self.addCleanup(lambda: supervisor.kill() if supervisor.poll() is None else None)
+            markers = [self.wait_file(root / 'worker.json') for root in roots]
+            self.assertEqual(supervisor.wait(timeout=10), 73)
+            for root, marker in zip(roots, markers):
+                self.assert_extinct(self.wait_file(root / 'identity.json'))
+                self.assert_extinct(marker['worker'])
+                self.assert_extinct(marker['child'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
+    def test_callback_failure_cancels_other_active_tree(self):
+        from concurrent.futures import ThreadPoolExecutor
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with tempfile.TemporaryDirectory() as temp:
+            roots = [Path(temp) / str(i) for i in range(2)]
+            for root in roots:
+                root.mkdir()
+            specs = [self.spec(root, spawn_child=True, sleep_seconds=20) for root in roots]
+            cancel, identities = threading.Event(), []
+            def fail(identity):
+                identities.append(identity)
+                raise OSError('fixture persistence failure')
+            with patch.object(api, '_WORKER_MODULE', 'tests.test_windows_acquisition'), ThreadPoolExecutor(1) as pool:
+                future = pool.submit(api.run_contained_attempt, *specs[0], deadline_seconds=5,
+                    before_resume=lambda identity: None, cancel_event=cancel)
+                marker = self.wait_file(roots[0] / 'worker.json')
+                try:
+                    with self.assertRaisesRegex(OSError, 'persistence'):
+                        api.run_contained_attempt(*specs[1], deadline_seconds=5, before_resume=fail, cancel_event=cancel)
+                finally:
+                    cancel.set()
+                self.assertTrue(future.result()['tree_extinct'])
+            self.assertFalse((roots[1] / 'worker.json').exists())
+            self.assert_extinct(identities[0])
+            self.assert_extinct(marker['worker'])
+            self.assert_extinct(marker['child'])
 
     def crash_case(self, phase):
         with tempfile.TemporaryDirectory() as temp:
@@ -273,7 +341,132 @@ def _fixture_worker():
     else:
         marker = {'worker': api._current_identity()}
     _publish_json(Path(spec['marker']), marker)
+    if spec.get('local_http'):
+        from bank_quality.archive import fetch_bounded
+        import urllib.parse
+        url = spec['local_http']
+        if urllib.parse.urlsplit(url).hostname != '127.0.0.1':
+            raise ValueError('Diagnostic fixture only permits loopback')
+        output = Path(spec['marker']).parent / 'http'
+        output.mkdir()
+        result = fetch_bounded(url, output, 'fixture', {'diagnostic': True},
+                               body_budget_bytes=5 * 1024 * 1024, timeout_seconds=3)
+        if not result.get('source_complete'):
+            raise RuntimeError('Local HTTP fixture failed')
     time.sleep(spec.get('sleep_seconds', 0))
+
+
+def _resource_diagnostic(workers):
+    """Measured synthetic loopback load; not an acceptance benchmark for BCB bodies."""
+    from concurrent.futures import ThreadPoolExecutor
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import ctypes as C
+    from ctypes import wintypes as W
+    import shutil
+    from bank_quality import windows_acquisition as api
+    class Memory(C.Structure):
+        _fields_ = [('length', W.DWORD), ('load', W.DWORD)] + [(n, C.c_uint64) for n in (
+            'physical_total', 'physical_free', 'page_total', 'page_free', 'virtual_total', 'virtual_free', 'extended')]
+    class ProcessMemory(C.Structure):
+        _fields_ = [('cb', W.DWORD), ('faults', W.DWORD)] + [(n, C.c_size_t) for n in (
+            'peak_ws', 'ws', 'peak_paged', 'paged', 'peak_nonpaged', 'nonpaged', 'page', 'peak_page', 'private')]
+    psapi = C.WinDLL('psapi', use_last_error=True)
+    psapi.GetProcessMemoryInfo.argtypes = [W.HANDLE, C.c_void_p, W.DWORD]
+    kernel = api._kernel()
+    def system():
+        value = Memory()
+        value.length = C.sizeof(value)
+        api._checked(kernel.GlobalMemoryStatusEx(C.byref(value)), 'GlobalMemoryStatusEx')
+        return {n: getattr(value, n) for n in ('physical_total', 'physical_free', 'page_total', 'page_free')}
+    def sample():
+        handle = kernel.CreateToolhelp32Snapshot(2, 0)
+        entries = {}
+        try:
+            row = api._PROCESSENTRY()
+            row.dwSize = C.sizeof(row)
+            found = kernel.Process32FirstW(handle, C.byref(row))
+            while found:
+                entries[row.th32ProcessID] = row.th32ParentProcessID
+                found = kernel.Process32NextW(handle, C.byref(row))
+        finally:
+            kernel.CloseHandle(handle)
+        tree = {os.getpid()}
+        while True:
+            more = {pid for pid, parent in entries.items() if parent in tree}
+            if more <= tree:
+                break
+            tree |= more
+        ws = private = 0
+        for pid in tree:
+            handle = kernel.OpenProcess(0x1000 | 0x10, False, pid)
+            if not handle:
+                continue  # process may already have exited; stable samples include marked active trees
+            try:
+                value = ProcessMemory()
+                value.cb = C.sizeof(value)
+                if psapi.GetProcessMemoryInfo(handle, C.byref(value), C.sizeof(value)):
+                    ws += value.ws
+                    private += value.private
+            finally:
+                kernel.CloseHandle(handle)
+        return {'ws_bytes': ws, 'private_commit_bytes': private, 'processes': len(tree), **system()}
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'x' * (1024 * 1024)
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            for offset in range(0, len(body), 65536):
+                self.wfile.write(body[offset:offset + 65536])
+                self.wfile.flush()
+                time.sleep(.015)
+        def log_message(self, *args):
+            pass
+    case = WindowsAcquisitionTests()
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        baseline = sample()
+        disk_before = shutil.disk_usage(root).free
+        roots = [root / str(i) for i in range(workers)]
+        for path in roots:
+            path.mkdir()
+        specs = [case.spec(path, spawn_child=True, sleep_seconds=.5,
+                  local_http='http://127.0.0.1:' + str(server.server_port) + '/fixture') for path in roots]
+        cancelled = threading.Event()
+        samples, results = [], []
+        began = time.monotonic()
+        try:
+            with patch.object(api, '_WORKER_MODULE', 'tests.test_windows_acquisition'), ThreadPoolExecutor(workers) as pool:
+                futures = [pool.submit(api.run_contained_attempt, spec, pin, deadline_seconds=3,
+                    before_resume=lambda identity: None, cancel_event=cancelled) for spec, pin in specs]
+                # Fixture grandchildren deliberately remain alive: prove the full-tree deadline.
+                while not all(f.done() for f in futures):
+                    samples.append(sample())
+                    time.sleep(.02)
+                results = [f.result() for f in futures]
+        finally:
+            cancelled.set()
+            server.shutdown()
+            server.server_close()
+        elapsed = time.monotonic() - began
+        for path in roots:
+            marker = case.wait_file(path / 'worker.json')
+            case.assert_extinct(marker['worker'])
+            case.assert_extinct(marker['child'])
+        size = sum(path.stat().st_size for path in root.rglob('*') if path.is_file())
+        return {'workers': workers, 'baseline': baseline, 'samples': len(samples),
+            'peak_tree_ws_bytes': max(s['ws_bytes'] for s in samples),
+            'peak_tree_private_commit_bytes': max(s['private_commit_bytes'] for s in samples),
+            'peak_tree_processes': max(s['processes'] for s in samples),
+            'minimum_physical_free_bytes': min(s['physical_free'] for s in samples),
+            'minimum_commit_available_bytes': min(s['page_free'] for s in samples),
+            'disk_free_before_bytes': disk_before, 'artifact_bytes': size,
+            'payload_bytes': workers * 1024 * 1024, 'artifact_overhead_bytes': size - workers * 1024 * 1024,
+            'elapsed_seconds_including_shutdown': elapsed, 'results': results,
+            'all_worker_and_descendant_identities_extinct': True,
+            'scope': 'loopback 1 MiB response per worker; whole coordinator and descendant tree sampled; not BCB acceptance'}
 
 
 if __name__ == '__main__':
@@ -289,6 +482,22 @@ if __name__ == '__main__':
             _publish_json(root / 'claim.json', _current_identity())
             stop = time.monotonic() + 20
             while not (root / 'crash').exists() and time.monotonic() < stop:
+                time.sleep(.005)
+            os._exit(73)
+    elif sys.argv[1] == 'supervisor2':
+        from concurrent.futures import ThreadPoolExecutor
+        from bank_quality import windows_acquisition as api
+        api._WORKER_MODULE = 'tests.test_windows_acquisition'
+        roots = [Path(sys.argv[2]) / str(i) for i in range(2)]
+        with ThreadPoolExecutor(2) as pool:
+            for root in roots:
+                spec = root / 'spec.json'
+                pool.submit(api.run_contained_attempt, spec, hashlib.sha256(spec.read_bytes()).hexdigest(),
+                    deadline_seconds=10, before_resume=lambda identity, root=root: _publish_json(root / 'identity.json', identity))
+            stop = time.monotonic() + 8
+            while not all((root / 'worker.json').exists() for root in roots):
+                if time.monotonic() >= stop:
+                    raise RuntimeError('Two active tree markers missing')
                 time.sleep(.005)
             os._exit(73)
     elif sys.argv[1] == 'supervisor':

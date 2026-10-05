@@ -345,10 +345,15 @@ def prepare_job(catalog_index: Path, catalog_index_sha256: str, periods: tuple[i
     _require(isinstance(index, dict) and set(index) == {'contract', 'acquisition_scope', 'selection', 'catalogs'}
              and index['contract'] == INDEX_CONTRACT, 'Invalid catalog index schema')
     _require(index['selection'] == {'perspective': 1005, 'reports': 'native-four'}, 'Wrong closed financial selection')
-    _require(type(index['acquisition_scope']) is str and index['acquisition_scope'].startswith('issue50/')
+    from . import financial_acquisition_batch as batch
+    scopes = {batch._SCOPE + '/' + str(p): p for p in batch._ACQUIRE}
+    _require(type(index['acquisition_scope']) is str and (index['acquisition_scope'].startswith('issue50/')
+                  or index['acquisition_scope'] in scopes)
              and len(index['acquisition_scope']) > 8, 'Invalid acquisition_scope')
     _require(isinstance(periods, tuple) and periods and all(type(p) is int and p in _MEMBERS for p in periods)
              and len(set(periods)) == len(periods), 'Select an explicit unique subset of the frozen 66 periods')
+    if index['acquisition_scope'] in scopes:
+        _require(periods == (scopes[index['acquisition_scope']],), 'New scope requires exact matching singleton period')
     _require(isinstance(limits, dict), 'Limits must be an object')
     # Execution logistics never alter the identity of a candidate's finite budget.
     policies = {key: _native(value) for key, value in limits.items()
@@ -547,8 +552,8 @@ def validate_numeric_source(body: bytes, *, area: int, required_origins: list[di
             'entities': entities, 'origins': origins, 'missing': missing}
 
 
-# Execution is intentionally closed to the first real scope. Candidate preparation
-# remains multiperiod; neither candidate changes nor session receipts grant budget.
+# The legacy scope remains public; seven exact recent singletons require the
+# active batch coordinator. Candidates and session receipts never grant budget.
 _SCOPE = 'issue50/financial-202403-1005-native-four'
 _POLICIES = {'attempts': 2, 'metadata_body_bytes': 5 * 1024 * 1024,
              'numeric_body_bytes': 64 * 1024 * 1024, 'timeout_seconds': 30,
@@ -561,19 +566,36 @@ _EMPTY_HASH = '0' * 64
 def _execution_job(job):
     _require(isinstance(job, dict) and job.get('contract') == JOB_CONTRACT
              and job.get('job_sha256') == _job_hash(job), 'Job hash/schema mismatch')
-    _require(job.get('acquisition_scope') == _SCOPE and len(job.get('descriptors', [])) == 1
-             and job['descriptors'][0]['selection'] == {'period': 202403, 'perspective': 1005,
-                                                        'reports': [92, 96, 101, 98]}, 'Execution outside fixed 202403 scope')
+    scope = job.get('acquisition_scope')
+    from . import financial_acquisition_batch as batch
+    scopes = {batch._SCOPE + '/' + str(p): p for p in batch._ACQUIRE}
+    period = 202403 if scope == _SCOPE else scopes.get(scope)
+    _require(period is not None and len(job.get('descriptors', [])) == 1, 'Execution outside fixed acquisition scopes')
     _require(isinstance(job.get('policies'), dict) and all(key in _POLICIES and type(value) is int
              and 0 < value <= _POLICIES[key] for key, value in job['policies'].items()), 'Execution policies exceed fixed caps')
+    if scope != _SCOPE:
+        _require(set(job) == {'contract', 'version', 'acquisition_scope', 'catalogs', 'descriptors',
+                             'policies', 'targets', 'job_sha256', 'executable'}
+                 and type(job['version']) is int and job['version'] == 1 and job['executable'] is False,
+                 'Closed batch member job schema required')
+        _require(_canonical(job['policies']) == _canonical(batch._POLICIES), 'Closed batch policies differ')
     catalogs = _catalogs(job['catalogs'])
-    descriptor = _descriptor(catalogs['old'], job['catalogs']['old'], 202403)
-    _require(job['descriptors'][0] == descriptor, 'Execution descriptor differs from frozen catalog')
-    expected = sorted((_target(o, 202403) for o in descriptor['source_offers'] if o['role'] != 'numeric'),
+    name = 'new' if period >= 202503 else 'old'
+    descriptor = _descriptor(catalogs[name], job['catalogs'][name], period)
+    _require(_canonical(job['descriptors'][0]) == _canonical(descriptor), 'Execution descriptor differs from frozen catalog')
+    expected = sorted((_target(o, period) for o in descriptor['source_offers'] if o['role'] != 'numeric'),
                       key=lambda t: t['target_key'])
-    _require(job['targets'] == expected, 'Execution target set differs from descriptor')
-    _require(len(descriptor['source_offers']) <= 7, 'Execution exceeds seven-file bound')
-    return {t['target_key']: t for t in (_target(o, 202403) for o in descriptor['source_offers'])}
+    _require(_canonical(job['targets']) == _canonical(expected), 'Execution target set differs from descriptor')
+    _require(len(descriptor['source_offers']) <= 7 and (scope == _SCOPE or len(descriptor['source_offers']) == 7),
+             'Execution exceeds seven-file bound')
+    return {t['target_key']: t for t in (_target(o, period) for o in descriptor['source_offers'])}
+
+
+def _coordinator_gate(job, context):
+    _require(type(job) is dict, 'Job must be an object')
+    if job.get('acquisition_scope') != _SCOPE:
+        from .financial_acquisition_batch import _authorize_member
+        _authorize_member(job, context)
 
 
 def _safe_destination(path):
@@ -775,8 +797,14 @@ class _Authority:
 
 
 def initialize_authority(job: dict) -> str:
+    _coordinator_gate(job, None)
+    return _initialize_authority(job)
+
+
+def _initialize_authority(job: dict, *, coordinator=None) -> str:
     """Explicit offline, exclusive bootstrap; never resets/rebinds an existing scope."""
     targets = _execution_job(job)
+    _coordinator_gate(job, coordinator)
     folder, binding_path, lock = _authority_paths(job)
     lock.parent.mkdir(parents=True, exist_ok=True)
     with _claim(lock):
@@ -795,8 +823,9 @@ def initialize_authority(job: dict) -> str:
 
 
 @contextmanager
-def _open_authority(job, bootstrap_sha256, *, recover=False):
+def _open_authority(job, bootstrap_sha256, *, recover=False, coordinator=None):
     targets = _execution_job(job)
+    _coordinator_gate(job, coordinator)
     folder, binding_path, lock = _authority_paths(job)
     _require(binding_path.is_file() and folder.is_dir(), 'Acquisition authority missing; explicit initialization required')
     for path in (folder, binding_path, lock, folder / 'bootstrap.json', folder / 'journal.jsonl', folder / 'head.json'):
@@ -946,9 +975,18 @@ def _worker_authorization(spec):
     """Read-only current authority proof while its sole writer holds the claim."""
     job = _load_job(_ROOT / spec['job_path'], spec['job_sha256'])
     targets = _execution_job(job)
+    start = None
+    if spec.get('contract') == 'financial-acquisition-worker-v2':
+        from .financial_acquisition_batch import _worker_context
+        member, start = _worker_context(job, spec['batch_context'])
+        _require(spec['job_path'] == member['job_path'] and spec['bootstrap_sha256'] == member['bootstrap_sha256']
+                 and spec['output_path'] == start['session'] + '/attempt-' + spec['attempt_id'],
+                 'Worker selected job/bootstrap/session differs')
+    else:
+        _coordinator_gate(job, None)  # v1 workers cannot execute a batch member.
     folder, binding_path, _ = _authority_paths(job)
     binding = _json(_local(binding_path.relative_to(_ROOT).as_posix()).read_bytes())
-    _require(binding == {'acquisition_scope': _SCOPE, 'job_sha256': job['job_sha256'],
+    _require(binding == {'acquisition_scope': job['acquisition_scope'], 'job_sha256': job['job_sha256'],
                          'bootstrap_sha256': spec['bootstrap_sha256']}, 'Worker scope/bootstrap binding mismatch')
     _require(_sha(_local((folder / 'bootstrap.json').relative_to(_ROOT).as_posix()).read_bytes()) == spec['bootstrap_sha256'],
              'Worker bootstrap hash mismatch')
@@ -968,6 +1006,13 @@ def _worker_authorization(spec):
     pending = state['pending'].get(spec['attempt_id'])
     _require(pending and pending['kind'] == 'reserve' and pending['target_key'] == spec['target_key']
              and pending['reserved_bytes'] == spec['body_budget_bytes'] and 'identity' in pending, 'Worker lacks current durable reservation/identity')
+    if start is not None:
+        _require(pending['session_id'] == Path(start['session']).name and sequence > start['member_sequence'],
+                 'Worker reservation outside committed phase')
+        prefix = _EMPTY_HASH
+        if start['member_sequence']:
+            prefix = _json(raw.splitlines()[start['member_sequence'] - 1])['record_sha256']
+        _require(prefix == start['member_record_sha256'], 'Worker member start prefix differs')
     verify_worker_ancestry(pending['identity'], spec['parent_identity'])
     return job, targets[spec['target_key']]
 
@@ -979,9 +1024,10 @@ def _worker_main(spec_path, spec_sha256):
     raw = path.read_bytes()
     _require(_sha(raw) == _digest(spec_sha256), 'Worker spec hash mismatch')
     spec = _json(raw)
-    _require(set(spec) == {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
+    version2 = spec.get('contract') == 'financial-acquisition-worker-v2'
+    _require(set(spec) == ({'batch_context'} if version2 else set()) | {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
                           'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
-             and spec['contract'] == 'financial-acquisition-worker-v1'
+             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2')
              and spec['worker_sha256'] == _sha(Path(__file__).read_bytes())
              and spec['application_sha256'] == _sha(Path(sys.executable).read_bytes()), 'Worker contract/runtime pin mismatch')
     job, target = _worker_authorization(spec)
@@ -1022,6 +1068,8 @@ def _retryable(manifest):
 
 
 def _attempt(authority, job_path, session, target):
+    coordinator = getattr(authority, 'coordinator', None)
+    _require(coordinator is None or not coordinator.cancel_event.is_set(), 'Batch transport cancelled')
     reservation = reserve_attempt(authority, target, session_id=session.name)
     attempt = reservation['attempt_id']
     spec_path = session / ('worker-' + attempt + '.json')
@@ -1031,12 +1079,19 @@ def _attempt(authority, job_path, session, target):
             'attempt_id': attempt, 'target_key': target['target_key'], 'body_budget_bytes': reservation['reserved_bytes'],
             'parent_identity': _current_identity(), 'worker_sha256': _sha(Path(__file__).read_bytes()),
             'application_sha256': _sha(Path(sys.executable).read_bytes()), 'output_path': output.relative_to(_ROOT).as_posix()}
+    coordinator = getattr(authority, 'coordinator', None)
+    if coordinator is not None:
+        from .financial_acquisition_batch import _transport_context, _code_identity
+        _code_identity(coordinator.batch.bundle['code_pins'], current_head=True)
+        spec.update(contract='financial-acquisition-worker-v2', batch_context=_transport_context(coordinator))
     _write_exclusive(spec_path, spec)
     spec_pin = _sha(spec_path.read_bytes())
     def before_resume(identity):
         authority.commit('identity', attempt_id=attempt, target_key=target['target_key'], session_id=session.name, identity=identity,
                          spec_path=spec_path.relative_to(_ROOT).as_posix(), spec_sha256=spec_pin)
-    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'], before_resume=before_resume)
+    options = {} if coordinator is None else {'cancel_event': coordinator.cancel_event}
+    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'],
+                                   before_resume=before_resume, **options)
     _require(result['tree_extinct'], 'Worker tree extinction not verified')
     observed, status, retryable, source, guard = reservation['reserved_bytes'], 'worker_failed', False, None, 'containment'
     evidence = {}
@@ -1110,7 +1165,8 @@ def _obtain(authority, job_path, session, target):
                          actual_elapsed_microseconds=math.ceil(elapsed * 1000000))
 
 
-def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: str, bootstrap_sha256: str,
+def _run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: str, bootstrap_sha256: str,
+                     coordinator=None,
                     checkpoint_sha256: str | None = None, resume_from: Path | None = None,
                     resume_sha256: str | None = None) -> dict:
     require_supported()
@@ -1120,7 +1176,9 @@ def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: st
     _require(phase != 'values' or checkpoint_sha256 is not None, 'Values require physical checkpoint A pin')
     session = _safe_destination(session)
     _require(re.fullmatch('[A-Za-z0-9_-]{1,80}', session.name) and not session.exists(), 'Session destination must be new with safe ID')
-    with open_authority(job, bootstrap_sha256=bootstrap_sha256) as authority:
+    _coordinator_gate(job, coordinator)
+    with _open_authority(job, bootstrap_sha256, coordinator=coordinator) as authority:
+        authority.coordinator = coordinator
         _require(not authority.state['pending'], 'Pending attempt requires offline recovery before any new launch')
         if resume_from is not None:
             raw = _local(Path(resume_from).absolute().relative_to(_ROOT.absolute()).as_posix()).read_bytes()
@@ -1148,7 +1206,7 @@ def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: st
                 failed_key = next(t['target_key'] for t in job['targets'] if t['role'] == 'cadaster')
                 try:
                     body, _ = _authenticated(refs[failed_key], expected=authority.targets[failed_key])
-                    _cadaster(body, 202403)
+                    _cadaster(body, job['descriptors'][0]['selection']['period'])
                     failed_key = next(t['target_key'] for t in job['targets'] if t['role'] == 'dictionary')
                     resolved = resolve_sources(job, refs)
                 except ValueError as error:
@@ -1181,6 +1239,15 @@ def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: st
         finally:
             _write_exclusive(session / 'receipt.json', _receipt(authority, session.name))
         return _receipt(authority, session.name)
+
+
+def run_acquisition(job_path: Path, job_sha256: str, session: Path, *, phase: str, bootstrap_sha256: str,
+                    checkpoint_sha256: str | None = None, resume_from: Path | None = None,
+                    resume_sha256: str | None = None) -> dict:
+    job = _load_job(job_path, job_sha256)
+    _coordinator_gate(job, None)
+    return _run_acquisition(job_path, job_sha256, session, phase=phase, bootstrap_sha256=bootstrap_sha256,
+                            checkpoint_sha256=checkpoint_sha256, resume_from=resume_from, resume_sha256=resume_sha256)
 
 
 if __name__ == '__main__':
