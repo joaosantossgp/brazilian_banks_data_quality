@@ -7,12 +7,77 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
+import uuid
 from unittest.mock import patch
 
 
 class WindowsAcquisitionTests(unittest.TestCase):
+    def test_worker_marker_is_unobservable_during_partial_write(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            marker = root / 'worker.json'
+            spec = root / 'spec.json'
+            spec.write_text(json.dumps({'marker': str(marker)}))
+            partial = threading.Event()
+            release = threading.Event()
+            errors = []
+            original_open = Path.open
+
+            class SlowWriter:
+                def __init__(self, stream):
+                    self.stream = stream
+
+                def __enter__(self):
+                    self.stream.__enter__()
+                    return self
+
+                def __exit__(self, *args):
+                    return self.stream.__exit__(*args)
+
+                def write(self, payload):
+                    split = len(payload) // 2
+                    self.stream.write(payload[:split])
+                    self.stream.flush()
+                    partial.set()
+                    if not release.wait(5):
+                        raise RuntimeError('Partial-write fixture was not released')
+                    self.stream.write(payload[split:])
+                    return len(payload)
+
+                def flush(self):
+                    self.stream.flush()
+
+            def slow_open(path, mode='r', *args, **kwargs):
+                stream = original_open(path, mode, *args, **kwargs)
+                if path.parent == root and any(flag in mode for flag in ('w', 'x')):
+                    return SlowWriter(stream)
+                return stream
+
+            def publish():
+                try:
+                    _fixture_worker()
+                except Exception as error:
+                    errors.append(error)
+
+            with patch.object(Path, 'open', slow_open), \
+                    patch.object(sys, 'argv', [__file__, str(spec)]), \
+                    patch.object(api, '_current_identity', return_value={'pid': 123, 'creation_time': 456}):
+                writer = threading.Thread(target=publish)
+                writer.start()
+                try:
+                    self.assertTrue(partial.wait(5), 'Writer did not reach its partial-write boundary')
+                    self.assertFalse(marker.exists(), 'Partial JSON was published as a complete marker')
+                finally:
+                    release.set()
+                    writer.join(timeout=5)
+            self.assertFalse(writer.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(self.wait_file(marker), {'worker': {'pid': 123, 'creation_time': 456}})
+
     def spec(self, root, **changes):
         spec = root / 'spec.json'
         spec.write_text(json.dumps({'contract': 'financial-acquisition-worker-v1', 'marker': str(root / 'worker.json'),
@@ -176,6 +241,16 @@ class WindowsAcquisitionTests(unittest.TestCase):
             self.assert_extinct(identities[0])
 
 
+def _publish_json(path, value):
+    """Publish a complete handshake marker before readers can observe its path."""
+    payload = json.dumps(value)
+    temporary = path.with_name('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
+    with temporary.open('x', encoding='utf-8') as stream:
+        stream.write(payload)
+        stream.flush()
+    os.replace(temporary, path)
+
+
 def _fixture_worker():
     from bank_quality import windows_acquisition as api
     spec = json.loads(Path(sys.argv[1]).read_bytes())
@@ -184,7 +259,7 @@ def _fixture_worker():
         financial._ROOT = Path(spec['fixture_root'])
         financial._FROZEN = {key: tuple(value) for key, value in spec['fixture_frozen'].items()}
         _, target = financial._worker_authorization(spec)
-        Path(spec['marker']).write_text(json.dumps({'authorized_target': target['target_key']}))
+        _publish_json(Path(spec['marker']), {'authorized_target': target['target_key']})
         return
     if spec.get('spawn_child'):
         child = subprocess.Popen([sys.executable, '-B', '-m', 'tests.test_windows_acquisition', 'child', spec['marker'] + '.child'],
@@ -197,21 +272,21 @@ def _fixture_worker():
         marker = {'worker': api._current_identity(), 'child': json.loads(Path(spec['marker'] + '.child').read_bytes())}
     else:
         marker = {'worker': api._current_identity()}
-    Path(spec['marker']).write_text(json.dumps(marker))
+    _publish_json(Path(spec['marker']), marker)
     time.sleep(spec.get('sleep_seconds', 0))
 
 
 if __name__ == '__main__':
     if sys.argv[1] == 'child':
         from bank_quality.windows_acquisition import _current_identity
-        Path(sys.argv[2]).write_text(json.dumps(_current_identity()))
+        _publish_json(Path(sys.argv[2]), _current_identity())
         time.sleep(20)
     elif sys.argv[1] == 'claim':
         from bank_quality.windows_acquisition import exclusive_claim, _current_identity
         root = Path(sys.argv[2])
         with exclusive_claim(root / 'scope.lock'):
             (root / 'reserve.json').write_text('durable original reserve')
-            (root / 'claim.json').write_text(json.dumps(_current_identity()))
+            _publish_json(root / 'claim.json', _current_identity())
             stop = time.monotonic() + 20
             while not (root / 'crash').exists() and time.monotonic() < stop:
                 time.sleep(.005)
@@ -227,7 +302,7 @@ if __name__ == '__main__':
                 time.sleep(.005)
             os._exit(73)
         def commit(identity):
-            (spec.parent / 'identity.json').write_text(json.dumps(identity))
+            _publish_json(spec.parent / 'identity.json', identity)
             if phase == 'before':
                 os._exit(73)
             threading.Thread(target=crash_after_marker, daemon=True).start()
