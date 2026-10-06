@@ -615,6 +615,106 @@ class AcquisitionTests(unittest.TestCase):
                     self.prepare((202406,))
 
 
+class MemberReplayDataTests(unittest.TestCase):
+    catalog_source = AcquisitionTests.catalog_source
+    prepare = AcquisitionTests.prepare
+    metadata = AcquisitionTests.metadata
+    source = AcquisitionTests.source
+    bounded_source = AcquisitionTests.bounded_source
+
+    def setUp(self):
+        AuthorityTests.setUp(self)
+
+    def fixture(self):
+        pin = self.api.initialize_authority(self.job)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            target = self.job['targets'][0]
+            first = self.api.reserve_attempt(authority, target, session_id='fixture')
+            authority.commit('identity', attempt_id=first['attempt_id'], identity={
+                'pid': 123, 'creation_time': 456, 'contained': True})
+            authority.commit('orphan', attempt_id=first['attempt_id'], status='orphan',
+                             retryable=True, source_ref=None)
+            authority.commit('backoff', attempt_id='backoff', reserved_backoff_seconds=5)
+            authority.commit('backoff_orphan', attempt_id='backoff')
+            second = self.api.reserve_attempt(authority, self.job['targets'][1], session_id='fixture')
+            authority.commit('finish', attempt_id=second['attempt_id'], status='failed',
+                             retryable=False, source_ref=None, observed_bytes=3,
+                             observed_attempt_seconds=2, tree_extinct=True)
+            records, receipt = copy.deepcopy(authority.records), self.api._receipt(authority, 'fixture')
+        return records, receipt, pin
+
+    def test_replay_and_receipt_are_closed_data_without_authority_or_mutation(self):
+        records, receipt, pin = self.fixture()
+        self.assertTrue(callable(getattr(self.api, '_replay_member_records', None)), 'Pure replay missing')
+        original = copy.deepcopy(records)
+        identity = {'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': pin,
+                    'targets': self.api._execution_job(self.job), 'policy': self.api._limits(self.job)}
+        with patch.object(self.api, '_Authority', side_effect=AssertionError('active capability')):
+            replay = self.api._replay_member_records(records, job_identity=self.job['job_sha256'],
+                                                     targets=identity['targets'], policy=identity['policy'])
+            prefix = self.api._prove_receipt_prefix(receipt, records, identity=identity)
+        self.assertEqual(replay['state'], receipt['state'])
+        self.assertEqual(prefix['head'], replay['head'])
+        self.assertEqual(replay['state']['body_bytes'], 5 * 1024 * 1024 + 3)
+        self.assertEqual(replay['state']['backoff_seconds'], 5)
+        self.assertEqual(records, original)
+        self.assertEqual(json.loads(canonical(replay)), replay)
+        self.assertEqual(json.loads(canonical(prefix)), prefix)
+
+    def test_replay_rejects_chain_identity_counter_and_receipt_changes(self):
+        records, receipt, pin = self.fixture()
+        self.assertTrue(callable(getattr(self.api, '_replay_member_records', None)), 'Pure replay missing')
+        identity = {'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': pin,
+                    'targets': self.api._execution_job(self.job), 'policy': self.api._limits(self.job)}
+        for key, value in (('job_sha256', 'f' * 64), ('sequence', True), ('reserved_bytes', 1)):
+            bad = copy.deepcopy(records)
+            bad[0][key] = value
+            bad[0]['record_sha256'] = sha(canonical({k: v for k, v in bad[0].items() if k != 'record_sha256'}))
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.api._replay_member_records(bad, job_identity=self.job['job_sha256'],
+                                                targets=identity['targets'], policy=identity['policy'])
+        for key, value in (('state_sha256', 'f' * 64), ('sequence', True), ('bootstrap_sha256', 'f' * 64)):
+            bad = {**receipt, key: value}
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.api._prove_receipt_prefix(bad, records, identity=identity)
+
+    def test_plain_replay_data_cannot_reserve_an_attempt(self):
+        try:
+            self.api.reserve_attempt({'contract': 'financial-acquisition-legacy54-proof-v1'},
+                                     self.job['targets'][0], session_id='fixture')
+        except Exception as error:
+            self.assertIsInstance(error, ValueError)
+            self.assertIn('active authority', str(error))
+        else:
+            self.fail('Plain proof data accepted for reserve')
+
+    def test_replay_rejects_boolean_failure_counters_even_when_equal_to_zero(self):
+        records, _, _ = self.fixture()
+        self.assertTrue(callable(getattr(self.api, '_replay_member_records', None)), 'Pure replay missing')
+        record = copy.deepcopy(records[0])
+        record['failure_count'] = False
+        record['record_sha256'] = sha(canonical({key: value for key, value in record.items() if key != 'record_sha256'}))
+        with self.assertRaises(ValueError):
+            self.api._replay_member_records([record], job_identity=self.job['job_sha256'],
+                                            targets=self.api._execution_job(self.job), policy=self.api._limits(self.job))
+
+    def test_receipt_own_state_must_match_digest_without_boolean_integer_aliasing(self):
+        state = self.api._initial_state()
+        receipt = {'contract': 'financial-acquisition-receipt-v1', 'job_sha256': self.job['job_sha256'],
+                   'bootstrap_sha256': 'a' * 64, 'sequence': 0, 'record_sha256': '0' * 64,
+                   'state_sha256': sha(canonical(state)), 'state': copy.deepcopy(state), 'session_id': 'fixture'}
+        identity = {'job_sha256': self.job['job_sha256'], 'bootstrap_sha256': 'a' * 64,
+                    'targets': {}, 'policy': self.api._limits(self.job)}
+        valid = self.api._prove_receipt_prefix(receipt, [], identity=identity)
+        self.assertEqual(valid['state'], state)
+        self.assertIs(type(valid['state']['failure_streak']), int)
+        receipt['state']['failure_streak'] = False
+        self.assertEqual(receipt['state'], state)  # Python equality aliases False and zero.
+        self.assertNotEqual(sha(canonical(receipt['state'])), receipt['state_sha256'])
+        with self.assertRaisesRegex(ValueError, 'prefix'):
+            self.api._prove_receipt_prefix(receipt, [], identity=identity)
+
+
 class AcquisitionCliTests(unittest.TestCase):
     """Actual CLI/package flow; only trust anchors/root and OS claim are fixtures."""
     catalog_source = AcquisitionTests.catalog_source
@@ -965,6 +1065,262 @@ class AcquisitionCliTests(unittest.TestCase):
             self.assertEqual(self.invoke('batch-run', *args, '--metadata-work', '1')[0], 2)
 
 
+class HeadReplacementTests(unittest.TestCase):
+    """Exercise the durable image; syscall faults do not rewrite that image."""
+    def setUp(self):
+        self.api = importlib.import_module('bank_quality.financial_acquisition')
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        root = patch.object(self.api, '_ROOT', self.root)
+        root.start()
+        self.addCleanup(root.stop)
+        self.folder = self.root / 'data/runs/head-fixture'
+        self.folder.mkdir(parents=True)
+        self.head = {'sequence': 1, 'record_sha256': 'a' * 64, 'state_sha256': 'b' * 64}
+        self.old_head = canonical(dict(self.head, sequence=0))
+        (self.folder / 'head.json').write_bytes(self.old_head)
+        with (self.folder / 'journal.jsonl').open('xb') as stream:
+            stream.write(b'{"sequence":1}\n')
+            stream.flush()
+            self.api.os.fsync(stream.fileno())
+
+    @staticmethod
+    def blocked(code):
+        error = PermissionError('synthetic Windows replace denied')
+        error.winerror = code
+        return error
+
+    def test_transient_windows_denials_publish_the_same_single_durable_image(self):
+        original, calls, sleeps = self.api.os.replace, [], []
+        original_open, creations = Path.open, []
+        def opened(path, mode='r', *args, **kwargs):
+            if mode == 'xb' and path.suffix == '.tmp':
+                creations.append(path)
+            return original_open(path, mode, *args, **kwargs)
+        def replace(source, destination):
+            calls.append((source, destination, source.read_bytes()))
+            if len(calls) <= 2:
+                raise self.blocked((5, 32)[len(calls) - 1])
+            return original(source, destination)
+        with patch.object(self.api.sys, 'platform', 'win32'), \
+                patch.object(self.api.os, 'replace', replace), \
+                patch.object(self.api.time, 'sleep', sleeps.append), \
+                patch.object(self.api.time, 'monotonic', return_value=0), patch.object(Path, 'open', opened):
+            try:
+                self.api._replace_head(self.folder, self.head)
+            except OSError as error:
+                self.fail('Transient replace denial prevented durable publication: ' + str(error))
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [0.01, 0.02])
+        self.assertTrue(all(call == calls[0] for call in calls))
+        self.assertEqual(creations, [calls[0][0]])
+        self.assertEqual(calls[0][2], canonical(self.head))
+        self.assertEqual((self.folder / 'head.json').read_bytes(), canonical(self.head))
+        self.assertEqual(list(self.folder.glob('head-*.tmp')), [])
+
+    def test_permanent_windows_denial_is_bounded_and_preserves_journal_head_and_image(self):
+        calls, sleeps = [], []
+        journal = (self.folder / 'journal.jsonl').read_bytes()
+        error = self.blocked(5)
+        def replace(source, destination):
+            calls.append((source, destination, source.read_bytes()))
+            raise error
+        with patch.object(self.api.sys, 'platform', 'win32'), patch.object(self.api.os, 'replace', replace), \
+                patch.object(self.api.time, 'sleep', sleeps.append), patch.object(self.api.time, 'monotonic', return_value=0):
+            with self.assertRaises(PermissionError) as failure:
+                self.api._replace_head(self.folder, self.head)
+        self.assertIs(failure.exception, error)
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(sleeps, [0.01, 0.02, 0.04, 0.08])
+        self.assertTrue(all(call == calls[0] for call in calls))
+        self.assertEqual((self.folder / 'journal.jsonl').read_bytes(), journal)
+        self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+        images = list(self.folder.glob('head-*.tmp'))
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].read_bytes(), canonical(self.head))
+
+    def test_other_platforms_and_other_or_missing_windows_codes_propagate_without_retry(self):
+        for platform, code in (('linux', 5), ('win32', 2), ('win32', None)):
+            calls = []
+            error = OSError('ordinary IO failure') if code is None else self.blocked(code)
+            def replace(*args):
+                calls.append(args)
+                raise error
+            with self.subTest(platform=platform, code=code), patch.object(self.api.sys, 'platform', platform), \
+                    patch.object(self.api.os, 'replace', replace), \
+                    patch.object(self.api.time, 'sleep', side_effect=AssertionError('Unexpected retry delay')):
+                with self.assertRaises(OSError) as failure:
+                    self.api._replace_head(self.folder, self.head)
+                self.assertIs(failure.exception, error)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+
+    def test_expired_scheduling_window_blocks_retry_before_or_after_sleep_or_validation(self):
+        for times, expected_sleeps in (([0, 0.3], []), ([0, 0, 0.3], [0.01]), ([0, 0, 0, 0.3], [0.01])):
+            calls, sleeps = [], []
+            def replace(*args):
+                calls.append(args)
+                raise self.blocked(32)
+            with self.subTest(times=times), patch.object(self.api.sys, 'platform', 'win32'), \
+                    patch.object(self.api.os, 'replace', replace), patch.object(self.api.time, 'sleep', sleeps.append), \
+                    patch.object(self.api.time, 'monotonic', side_effect=times):
+                with self.assertRaises(PermissionError):
+                    self.api._replace_head(self.folder, self.head)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(sleeps, expected_sleeps)
+            self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+
+    def test_retry_rejects_changed_removed_image_and_reparse_source_or_destination(self):
+        from types import SimpleNamespace
+        original_lstat = Path.lstat
+        for mutation in ('changed', 'removed', 'source_parent_reparse', 'destination_reparse'):
+            calls, armed = [], False
+            def replace(source, destination):
+                calls.append((source, destination))
+                raise self.blocked(5)
+            def sleep(delay):
+                nonlocal armed
+                armed = True
+                if mutation == 'changed':
+                    calls[0][0].write_bytes(b'{}')
+                elif mutation == 'removed':
+                    calls[0][0].unlink()
+            def lstat(path, *args, **kwargs):
+                info = original_lstat(path, *args, **kwargs)
+                selected = self.folder if mutation == 'source_parent_reparse' else self.folder / 'head.json'
+                return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400) if armed and path == selected else info
+            with self.subTest(mutation=mutation), patch.object(self.api.sys, 'platform', 'win32'), \
+                    patch.object(self.api.os, 'replace', replace), patch.object(self.api.time, 'sleep', sleep), \
+                    patch.object(self.api.time, 'monotonic', return_value=0), patch.object(Path, 'lstat', lstat):
+                with self.assertRaises((ValueError, OSError)):
+                    self.api._replace_head(self.folder, self.head)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+
+    def test_creation_initial_fsync_and_initial_image_validation_failures_do_not_replace(self):
+        from contextlib import ExitStack
+        original_open, original_read, original_fsync = Path.open, Path.read_bytes, self.api.os.fsync
+        for stage in ('creation', 'initial_write', 'initial_fsync', 'initial_validation'):
+            def opened(path, mode='r', *args, **kwargs):
+                if stage == 'creation' and mode == 'xb':
+                    raise self.blocked(5)
+                stream = original_open(path, mode, *args, **kwargs)
+                if stage != 'initial_write' or mode != 'xb':
+                    return stream
+                error = self.blocked(5)
+                class FailingWrite:
+                    def __enter__(self):
+                        stream.__enter__()
+                        return self
+                    def __exit__(self, *args):
+                        return stream.__exit__(*args)
+                    def write(self, value):
+                        raise error
+                return FailingWrite()
+            def read(path):
+                if stage == 'initial_validation' and path.suffix == '.tmp':
+                    return b'corrupt readback'
+                return original_read(path)
+            def sync(fd):
+                if stage == 'initial_fsync':
+                    raise self.blocked(5)
+                return original_fsync(fd)
+            with self.subTest(stage=stage), ExitStack() as stack:
+                stack.enter_context(patch.object(Path, 'open', opened))
+                stack.enter_context(patch.object(Path, 'read_bytes', read))
+                stack.enter_context(patch.object(self.api.os, 'fsync', sync))
+                stack.enter_context(patch.object(self.api.os, 'replace', side_effect=AssertionError('Replace before durable image')))
+                stack.enter_context(patch.object(self.api.time, 'sleep', side_effect=AssertionError('Retry outside replace')))
+                with self.assertRaises((OSError, ValueError)):
+                    self.api._replace_head(self.folder, self.head)
+            self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+
+    def test_postpublication_fsync_or_read_failure_does_not_republish(self):
+        original_replace, original_sync, original_read = self.api.os.replace, self.api.os.fsync, Path.read_bytes
+        for stage in ('fsync', 'read'):
+            calls, syncs = [], []
+            def replace(*args):
+                calls.append(args)
+                return original_replace(*args)
+            def sync(fd):
+                syncs.append(fd)
+                if stage == 'fsync' and len(syncs) == 2:
+                    raise self.blocked(5)
+                return original_sync(fd)
+            def read(path):
+                if stage == 'read' and path == self.folder / 'head.json':
+                    raise self.blocked(32)
+                return original_read(path)
+            with self.subTest(stage=stage), patch.object(self.api.os, 'replace', replace), \
+                    patch.object(self.api.os, 'fsync', sync), patch.object(Path, 'read_bytes', read), \
+                    patch.object(self.api.time, 'sleep', side_effect=AssertionError('Retry after publication')):
+                with self.assertRaises(OSError):
+                    self.api._replace_head(self.folder, self.head)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual((self.folder / 'head.json').read_bytes(), canonical(self.head))
+
+    def held_head(self):
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.CreateFileW(str(self.folder / 'head.json'), 0x80000000, 1, None, 3, 128, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        return kernel, handle
+
+    @unittest.skipUnless(__import__('sys').platform == 'win32', 'Real Windows sharing control required')
+    def test_native_own_handle_closes_between_retries_and_same_image_is_published(self):
+        kernel, handle = self.held_head()
+        original_replace, original_sleep = self.api.os.replace, self.api.time.sleep
+        calls, closed = [], False
+        def replace(source, destination):
+            calls.append((source, destination, source.read_bytes()))
+            return original_replace(source, destination)
+        def sleep(delay):
+            nonlocal closed
+            if not closed:
+                self.assertTrue(kernel.CloseHandle(handle))
+                closed = True
+            original_sleep(delay)
+        try:
+            with patch.object(self.api.os, 'replace', replace), patch.object(self.api.time, 'sleep', sleep):
+                self.api._replace_head(self.folder, self.head)
+        finally:
+            if not closed:
+                kernel.CloseHandle(handle)
+        self.assertTrue(closed)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertLessEqual(len(calls), 5)
+        self.assertTrue(all(call == calls[0] for call in calls))
+        self.assertEqual((self.folder / 'head.json').read_bytes(), canonical(self.head))
+
+    @unittest.skipUnless(__import__('sys').platform == 'win32', 'Real Windows sharing control required')
+    def test_native_own_handle_kept_open_preserves_evidence_after_bounded_failure(self):
+        kernel, handle = self.held_head()
+        original_replace, calls = self.api.os.replace, []
+        def replace(source, destination):
+            calls.append((source, destination))
+            return original_replace(source, destination)
+        try:
+            with patch.object(self.api.os, 'replace', replace), self.assertRaises(OSError) as failure:
+                self.api._replace_head(self.folder, self.head)
+        finally:
+            kernel.CloseHandle(handle)
+        self.assertIn(failure.exception.winerror, (5, 32))
+        self.assertGreaterEqual(len(calls), 1)
+        self.assertLessEqual(len(calls), 5)
+        self.assertEqual((self.folder / 'head.json').read_bytes(), self.old_head)
+        images = list(self.folder.glob('head-*.tmp'))
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].read_bytes(), canonical(self.head))
+
+
 class AuthorityTests(unittest.TestCase):
     """Pure authority model uses synthetic catalogs and a fake OS claim."""
     catalog_source = AcquisitionTests.catalog_source
@@ -1059,6 +1415,65 @@ class AuthorityTests(unittest.TestCase):
             with patch.object(self.api, '_replace_head', side_effect=OSError('head commit')):
                 with self.assertRaises(OSError):
                     self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+
+    def test_head_replace_transients_charge_and_append_reservation_only_once(self):
+        pin = self.initialize()
+        original, calls = self.api.os.replace, []
+        def replace(source, destination):
+            calls.append((source, destination, source.read_bytes()))
+            if len(calls) <= 2:
+                raise HeadReplacementTests.blocked((5, 32)[len(calls) - 1])
+            return original(source, destination)
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority:
+            with patch.object(self.api.sys, 'platform', 'win32'), patch.object(self.api.os, 'replace', replace), \
+                    patch.object(self.api.time, 'sleep'), patch.object(self.api.time, 'monotonic', return_value=0):
+                self.api.reserve_attempt(authority, self.job['targets'][0], session_id='a')
+            self.assertEqual(authority.state['attempts'], 1)
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+            self.assertEqual(authority.state['attempt_seconds'], 120)
+        folder = self.api._authority_paths(self.job)[0]
+        records = [json.loads(line) for line in (folder / 'journal.jsonl').read_bytes().splitlines()]
+        self.assertEqual([r['kind'] for r in records], ['reserve'])
+        self.assertEqual(json.loads((folder / 'head.json').read_bytes())['sequence'], 1)
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(call == calls[0] for call in calls))
+
+    def test_permanent_head_replace_failure_has_zero_launch_and_recovery_preserves_charge(self):
+        pin = self.initialize()
+        folder = self.api._authority_paths(self.job)[0]
+        old_head = (folder / 'head.json').read_bytes()
+        path = self.root / 'data/runs/job.json'
+        path.write_bytes(canonical(self.job))
+        calls = []
+        def replace(*args):
+            calls.append(args)
+            raise HeadReplacementTests.blocked(5)
+        with patch.object(self.api.sys, 'platform', 'win32'), patch.object(self.api, 'require_supported'), \
+                patch.object(self.api.os, 'replace', replace), patch.object(self.api.time, 'sleep'), \
+                patch.object(self.api.time, 'monotonic', return_value=0), \
+                patch.object(self.api, 'run_contained_attempt', side_effect=AssertionError('Launch before head commit')), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('GET before head commit')):
+            with self.assertRaises(PermissionError):
+                self.api.run_acquisition(path, self.job['job_sha256'], self.root / 'data/runs/session-a',
+                                         phase='metadata', bootstrap_sha256=pin)
+        self.assertEqual(len(calls), 5)
+        self.assertEqual((folder / 'head.json').read_bytes(), old_head)
+        journal = (folder / 'journal.jsonl').read_bytes()
+        self.assertEqual([json.loads(line)['kind'] for line in journal.splitlines()], ['reserve'])
+        images = list(folder.glob('head-*.tmp'))
+        self.assertEqual(len(images), 1)
+        self.assertEqual(json.loads(images[0].read_bytes())['sequence'], 1)
+        with self.assertRaisesRegex(ValueError, 'head conflicts'):
+            with self.api.open_authority(self.job, bootstrap_sha256=pin):
+                pass
+        with self.api._open_authority(self.job, pin, recover=True) as authority:
+            self.api._recover_pending(authority)
+            self.assertEqual(authority.state['attempts'], 1)
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+            self.assertEqual(authority.state['attempt_seconds'], 120)
+            self.assertFalse(authority.state['pending'])
+        self.assertTrue((folder / 'journal.jsonl').read_bytes().startswith(journal))
+        self.assertEqual(json.loads(images[0].read_bytes())['sequence'], 1)
 
     def test_initialize_does_not_reset_budget(self):
         self.initialize()
@@ -1516,3 +1931,50 @@ class AuthorityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HistoricalCliTests(unittest.TestCase):
+    def test_historical_prepare_delegates_exact_window_and_refuses_abbreviation(self):
+        import importlib.util
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        path = Path(__file__).resolve().parents[1] / 'scripts/acquire-financial.py'
+        spec = importlib.util.spec_from_file_location('historical_cli_test', path)
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / 'data/runs/draft.json'
+            result = {'contract': 'financial-acquisition-batch-draft-v2', 'executable': False,
+                      'window_id': 'F1-01', 'acquire_periods': [201003]}
+            with patch.object(cli.acquisition, '_ROOT', root), redirect_stdout(io.StringIO()), \
+                    patch.object(cli.batch, 'prepare_historical_batch', return_value=result) as prepare:
+                code = cli.main(['historical-prepare', '--catalog-index', str(root / 'catalog.json'),
+                    '--catalog-index-sha256', 'a' * 64, '--window-id', 'F1-01', '--output', str(output)])
+                self.assertEqual(code, 0)
+                prepare.assert_called_once_with(root / 'catalog.json', 'a' * 64, window_id='F1-01')
+                self.assertEqual(json.loads(output.read_bytes()), result)
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                cli.main(['historical-prepare', '--catalog-i', 'x'])
+            self.assertEqual(error.exception.code, 2)
+
+    def test_historical_run_cli_delegates_closed_default_and_remaining_modes(self):
+        import importlib.util
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        path = Path(__file__).resolve().parents[1] / 'scripts/acquire-financial.py'
+        spec = importlib.util.spec_from_file_location('historical_cli_modes', path)
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        arguments = ['historical-run', '--bundle', 'bundle.json', '--bundle-sha256', 'a' * 64,
+                     '--bootstrap-sha256', 'b' * 64, '--resource-profile', 'resource.json',
+                     '--resource-profile-sha256', 'c' * 64]
+        for mode in ('representative', 'remaining'):
+            extra = [] if mode == 'representative' else ['--stage-mode', mode]
+            with patch.object(cli.batch, 'run_historical_batch', return_value={'status': 'fixture'}) as run, \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(cli.main(arguments + extra), 0)
+                self.assertEqual(run.call_args.kwargs['stage_mode'], mode)
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            cli.main(arguments + ['--stage-mode', 'all'])
+        self.assertEqual(error.exception.code, 2)

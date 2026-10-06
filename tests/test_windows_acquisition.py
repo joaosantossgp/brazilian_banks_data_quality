@@ -15,6 +15,65 @@ from unittest.mock import patch
 
 
 class WindowsAcquisitionTests(unittest.TestCase):
+    def test_resource_profile_is_closed_serial_and_machine_specific(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        profile = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        with patch.object(api, '_machine_id', return_value='fixture'):
+            self.assertEqual(api._resource_profile(profile), profile)
+            for key, value in [('machine_id', 'other'), ('metadata_workers', 2),
+                               ('values_workers', True), ('sampling_interval_ms', 0)]:
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    api._resource_profile(dict(profile, **{key: value}))
+
+
+    def test_monitor_keeps_bounded_samples_and_sets_cancel_on_measurement_failure(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        profile = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        sample = {'free_physical_bytes': 100, 'free_commit_bytes': 100, 'free_disk_bytes': 100,
+                  'processes': [], 'tree_working_set_bytes': 2, 'tree_private_bytes': 3, 'elapsed_clock': 1.0}
+        cancelled = threading.Event()
+        with patch.object(api, '_machine_id', return_value='fixture'), \
+                patch.object(api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch.object(api, '_resource_sample', return_value=sample):
+            monitor = api._ResourceMonitor(profile, Path('.'), cancelled)
+            for _ in range(130):
+                monitor.sample()
+            self.assertLessEqual(len(monitor.samples), 128)
+            self.assertEqual(monitor.sample_count, 130)
+            self.assertEqual(monitor.peaks['tree_private_bytes'], 3)
+            with patch.object(api, '_resource_sample', side_effect=OSError('measurement fixture')):
+                monitor.thread.start()
+                self.assertTrue(cancelled.wait(2))
+                monitor.stop.set()
+                monitor.thread.join(2)
+                self.assertIn('measurement fixture', monitor.error)
+
+    def test_monitor_accounts_reserved_body_before_launch_without_refund(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        profile = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        sample = {'free_physical_bytes': 100, 'free_commit_bytes': 100, 'free_disk_bytes': 10,
+                  'processes': [], 'tree_working_set_bytes': 2, 'tree_private_bytes': 3, 'elapsed_clock': 1.0}
+        with patch.object(api, '_machine_id', return_value='fixture'), \
+                patch.object(api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch.object(api, '_resource_sample', return_value=sample):
+            monitor = api._ResourceMonitor(profile, Path('.'), threading.Event())
+            monitor.reserve({'attempt_id': 'a' * 32, 'reserved_bytes': 10, 'reserved_attempt_seconds': 120})
+            with self.assertRaisesRegex(RuntimeError, 'disk'):
+                monitor.sample()
+            self.assertEqual(monitor.reservations['a' * 32]['reserved_bytes'], 10)
+            monitor.finish('a' * 32)
+            monitor.sample()
+            self.assertEqual(monitor.samples[-1]['inflight_reserved_bytes'], 0)
+
     def test_worker_marker_is_unobservable_during_partial_write(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         with tempfile.TemporaryDirectory() as temp:

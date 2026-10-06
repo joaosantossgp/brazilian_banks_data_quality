@@ -433,7 +433,7 @@ def _walk(columns, base, parent=None):
 
 def resolve_sources(job: dict, metadata_sources: dict) -> dict:
     """Authenticate checkpoint A and resolve only actually announced numeric areas."""
-    _require(isinstance(job, dict) and job.get('contract') == JOB_CONTRACT
+    _require(isinstance(job, dict) and job.get('contract') in (JOB_CONTRACT, 'financial-acquisition-job-v2')
              and job.get('job_sha256') == _job_hash(job), 'Changed candidate job hash/schema')
     catalogs = _catalogs(job['catalogs'])
     _require(isinstance(metadata_sources, dict) and set(metadata_sources) == {t['target_key'] for t in job['targets']},
@@ -564,7 +564,10 @@ _EMPTY_HASH = '0' * 64
 
 
 def _execution_job(job):
-    _require(isinstance(job, dict) and job.get('contract') == JOB_CONTRACT
+    if type(job) is dict and job.get('contract') == 'financial-acquisition-job-v2':
+        from .financial_acquisition_batch import _verify_historical_job
+        return _verify_historical_job(job)
+    _require(isinstance(job, dict) and job.get('contract') in (JOB_CONTRACT, 'financial-acquisition-job-v2')
              and job.get('job_sha256') == _job_hash(job), 'Job hash/schema mismatch')
     scope = job.get('acquisition_scope')
     from . import financial_acquisition_batch as batch
@@ -634,7 +637,27 @@ def _replace_head(folder, head):
     _safe_destination(folder / 'head.json')
     temporary = folder / ('head-' + uuid.uuid4().hex + '.tmp')
     _write_exclusive(temporary, head)
-    os.replace(temporary, folder / 'head.json')
+    image = _canonical(head)
+    # Bound scheduling, not syscall duration. Never rewrite the durable image.
+    deadline, retries = time.monotonic() + 0.25, 0
+    delays = (0.01, 0.02, 0.04, 0.08)
+    while True:
+        try:
+            os.replace(temporary, folder / 'head.json')
+            break
+        except OSError as error:
+            if (sys.platform != 'win32' or getattr(error, 'winerror', None) not in (5, 32)
+                    or retries == len(delays) or time.monotonic() >= deadline):
+                raise
+            time.sleep(delays[retries])
+            retries += 1
+            if time.monotonic() >= deadline:
+                raise
+            _safe_destination(temporary)
+            _safe_destination(folder / 'head.json')
+            _require(temporary.read_bytes() == image, 'Head retry image changed')
+            if time.monotonic() >= deadline:
+                raise
     with (folder / 'head.json').open('r+b') as output:
         os.fsync(output.fileno())
     _require((folder / 'head.json').read_bytes() == _canonical(head), 'Head durability verification failed')
@@ -655,11 +678,21 @@ def _body_cap(target, policies=None):
     return policies['numeric_body_bytes'] if target['role'] == 'numeric' else policies['metadata_body_bytes']
 
 
-def _apply_record(state, record, targets, policies=None):
+def _next_guard_streak(state, guard, *, job_contract=JOB_CONTRACT):
+    _require(job_contract in (JOB_CONTRACT, 'financial-acquisition-job-v2'), 'Unknown guard semantics contract')
+    if not guard:
+        return 0
+    return state['guard_streak'] + 1 if job_contract == 'financial-acquisition-job-v2' or state['guard'] == guard else 1
+
+
+def _apply_record(state, record, targets, policies=None, *, job_contract=JOB_CONTRACT):
     """Recompute transitions, never trust persisted cumulative counter fields."""
+    _require(type(job_contract) is str and job_contract in (JOB_CONTRACT, 'financial-acquisition-job-v2'),
+             'Unknown member semantics contract')
     policies = policies or _POLICIES
     kind, attempt = record['kind'], record['attempt_id']
-    for key in ('attempt_delta', 'reserved_bytes', 'reserved_attempt_seconds', 'reserved_backoff_seconds'):
+    for key in ('attempt_delta', 'reserved_bytes', 'reserved_attempt_seconds', 'reserved_backoff_seconds',
+                'failure_count', 'failure_streak'):
         _require(type(record[key]) is int and record[key] >= 0, 'Counter underflow/type invalid')
     if kind != 'reserve':
         _require(record['attempt_delta'] == record['reserved_bytes'] == record['reserved_attempt_seconds'] == 0,
@@ -676,10 +709,10 @@ def _apply_record(state, record, targets, policies=None):
         budget = _body_cap(targets[key], policies) - target['body_bytes']
         _require(budget > 0 and record['reserved_bytes'] == budget and record['reserved_attempt_seconds'] == policies['deadline_seconds']
                  and record['reserved_backoff_seconds'] == 0, 'Reservation counter reduced or inflated')
-        _require(state['attempts'] < 14 and state['attempt_seconds'] + policies['deadline_seconds'] <= policies['attempt_seconds']
+        _require(state['attempts'] < min(14, len(targets) * policies['attempts']) and state['attempt_seconds'] + policies['deadline_seconds'] <= policies['attempt_seconds']
                  and state['attempt_seconds'] + state['backoff_seconds'] + policies['deadline_seconds'] <= policies['scheduling_seconds'],
                  'Scheduling/attempt budget exhausted')
-        _require(state['body_bytes'] + budget <= 2 * policies['metadata_body_bytes'] + 5 * policies['numeric_body_bytes'],
+        _require(state['body_bytes'] + budget <= sum(_body_cap(t, policies) for t in targets.values()),
                  'Aggregate body budget exhausted')
         target['attempts'] += 1
         target['body_bytes'] += budget
@@ -721,7 +754,7 @@ def _apply_record(state, record, targets, policies=None):
                 state['failed_targets'].append(key)
         guard = record.get('guard', '')
         _require(type(guard) is str, 'Invalid guard classification')
-        state['guard_streak'] = (state['guard_streak'] + 1 if state['guard'] == guard else 1) if guard else 0
+        state['guard_streak'] = _next_guard_streak(state, guard, job_contract=job_contract)
         state['guard'] = guard
     elif kind == 'backoff':
         _require(not state['pending'] and attempt not in state['pending'] and record['reserved_backoff_seconds'] == policies['max_backoff_seconds']
@@ -752,12 +785,82 @@ def _apply_record(state, record, targets, policies=None):
         state['failure_streak'] += 1
         if key not in state['failed_targets']:
             state['failed_targets'].append(key)
-        state['guard_streak'] = state['guard_streak'] + 1 if state['guard'] == guard else 1
+        state['guard_streak'] = _next_guard_streak(state, guard, job_contract=job_contract)
         state['guard'] = guard
     elif kind != 'recovery':
         raise ValueError('Unknown authority journal transition')
     _require(record['failure_count'] == state['failures'] and record['failure_streak'] == state['failure_streak'],
              'Failure counters disagree with transitions')
+
+
+def _closed_data(value):
+    """Reject capabilities and subclasses before copying a replay data tree."""
+    if type(value) is dict:
+        _require(all(type(key) is str for key in value), 'Replay object keys must be strings')
+        for item in value.values():
+            _closed_data(item)
+    elif type(value) is list:
+        for item in value:
+            _closed_data(item)
+    else:
+        _require(type(value) in (str, int, bool, type(None)), 'Replay requires closed native data')
+
+
+def _replay_member_records(records, *, job_identity, targets, policy, job_contract=JOB_CONTRACT):
+    """Replay memory only; this result never owns a claim or writer."""
+    _require(type(job_contract) is str and job_contract in (JOB_CONTRACT, 'financial-acquisition-job-v2'),
+             'Unknown member replay semantics contract')
+    _closed_data(records)
+    _closed_data(targets)
+    _closed_data(policy)
+    _require(type(records) is list and type(targets) is dict and type(policy) is dict,
+             'Invalid member replay data')
+    _digest(job_identity)
+    state, checked, states = _initial_state(), [], [_initial_state()]
+    for raw in records:
+        _require(type(raw) is dict and 'record_sha256' in raw, 'Invalid member journal record')
+        record = copy.deepcopy(raw)
+        pin = record.pop('record_sha256')
+        _require(pin == _sha(_canonical(record)) and type(record.get('sequence')) is int
+                 and record['sequence'] == len(checked) + 1 and record.get('job_sha256') == job_identity
+                 and record.get('previous_record_sha256') ==
+                 (checked[-1]['record_sha256'] if checked else _EMPTY_HASH), 'Journal chain integrity failure')
+        _apply_record(state, record, targets, policy, job_contract=job_contract)
+        record['record_sha256'] = pin
+        checked.append(record)
+        states.append(copy.deepcopy(state))
+    return {'records': checked, 'state': state, 'states': states,
+            'head': {'sequence': len(checked),
+                     'record_sha256': checked[-1]['record_sha256'] if checked else _EMPTY_HASH,
+                     'state_sha256': _sha(_canonical(state))}}
+
+
+def _prove_receipt_prefix(receipt_data, records, *, identity, job_contract=JOB_CONTRACT):
+    """Prove a historical receipt against a rederived prefix, without IO."""
+    _closed_data(receipt_data)
+    _closed_data(identity)
+    _require(type(receipt_data) is dict and set(receipt_data) == {
+        'contract', 'job_sha256', 'bootstrap_sha256', 'sequence', 'record_sha256',
+        'state_sha256', 'state', 'session_id'}, 'Invalid closed receipt data')
+    _require(type(identity) is dict and set(identity) == {'job_sha256', 'bootstrap_sha256', 'targets', 'policy'},
+             'Invalid receipt replay identity')
+    _digest(identity['bootstrap_sha256'])
+    _require(receipt_data['contract'] == 'financial-acquisition-receipt-v1'
+             and receipt_data['job_sha256'] == identity['job_sha256']
+             and receipt_data['bootstrap_sha256'] == identity['bootstrap_sha256']
+             and type(receipt_data['session_id']) is str, 'Receipt authority mismatch')
+    replay = _replay_member_records(records, job_identity=identity['job_sha256'],
+                                     targets=identity['targets'], policy=identity['policy'], job_contract=job_contract)
+    sequence = receipt_data['sequence']
+    _require(type(sequence) is int and 0 <= sequence <= len(records), 'Receipt is ahead of current authority')
+    state = replay['states'][sequence]
+    head = {'sequence': sequence, 'record_sha256': records[sequence - 1]['record_sha256'] if sequence else _EMPTY_HASH,
+            'state_sha256': _sha(_canonical(state))}
+    _require(all(receipt_data[key] == value for key, value in head.items()) and receipt_data['state'] == state,
+             'Receipt does not match journal prefix')
+    _require(_sha(_canonical(receipt_data['state'])) == receipt_data['state_sha256'],
+             'Receipt state does not match journal prefix digest')
+    return {'head': head, 'state': copy.deepcopy(state), 'session_id': receipt_data['session_id']}
 
 
 class _Authority:
@@ -780,7 +883,7 @@ class _Authority:
         if kind in ('finish', 'orphan', 'guard_failure'):
             record['failure_count'] += record['status'] != 'source_complete'
             record['failure_streak'] = 0 if record['status'] == 'source_complete' else record['failure_streak'] + 1
-        _apply_record(candidate, record, self.targets, self.policies)
+        _apply_record(candidate, record, self.targets, self.policies, job_contract=self.job['contract'])
         record['record_sha256'] = _sha(_canonical(record))
         with _safe_destination(self.folder / 'journal.jsonl').open('ab') as output:
             output.write(_canonical(record) + b'\n')
@@ -841,17 +944,9 @@ def _open_authority(job, bootstrap_sha256, *, recover=False, coordinator=None):
                               'job_sha256': job['job_sha256'], 'policies': _limits(job), 'targets': targets}, 'Bootstrap contract mismatch')
         journal = (folder / 'journal.jsonl').read_bytes()
         _require(not journal or journal.endswith(b'\n'), 'Partial journal tail blocks; never truncate')
-        state, records, states = _initial_state(), [], [_initial_state()]
-        for line in journal.splitlines():
-            record = _json(line)
-            pin = record.pop('record_sha256')
-            _require(pin == _sha(_canonical(record)) and record['sequence'] == len(records) + 1
-                     and record['job_sha256'] == job['job_sha256'] and record['previous_record_sha256'] ==
-                     (records[-1]['record_sha256'] if records else _EMPTY_HASH), 'Journal chain integrity failure')
-            _apply_record(state, record, targets, _limits(job))
-            record['record_sha256'] = pin
-            records.append(record)
-            states.append(copy.deepcopy(state))
+        replay = _replay_member_records([_json(line) for line in journal.splitlines()],
+                                         job_identity=job['job_sha256'], targets=targets, policy=_limits(job), job_contract=job['contract'])
+        state, records, states = replay['state'], replay['records'], replay['states']
         head = _json((folder / 'head.json').read_bytes())
         sequence = head.get('sequence')
         _require(type(sequence) is int and 0 <= sequence <= len(records), 'Authority head ahead/invalid')
@@ -880,6 +975,7 @@ def open_authority(job: dict, *, bootstrap_sha256: str):
 
 
 def reserve_attempt(authority, target: dict, *, session_id: str) -> dict:
+    _require(type(authority) is _Authority and authority.active, 'Authenticated active authority required')
     _require(type(session_id) is str and re.fullmatch('[A-Za-z0-9_-]{1,80}', session_id), 'Invalid session ID')
     key = target.get('target_key')
     _require(key in authority.targets and target == authority.targets[key], 'Attempt target outside fixed job')
@@ -898,15 +994,9 @@ def _receipt(authority, session_id):
 
 def _verify_receipt(receipt, authority):
     _require(type(receipt) is dict, 'Receipt must be a JSON object')
-    _require(receipt.get('contract') == 'financial-acquisition-receipt-v1' and receipt.get('job_sha256') == authority.job['job_sha256']
-             and receipt.get('bootstrap_sha256') == authority.bootstrap_sha256, 'Receipt authority mismatch')
-    sequence = receipt.get('sequence')
-    _require(type(sequence) is int and 0 <= sequence <= len(authority.records), 'Receipt is ahead of current authority')
-    state = _initial_state()
-    for record in authority.records[:sequence]:
-        _apply_record(state, record, authority.targets, authority.policies)
-    _require(receipt.get('record_sha256') == (authority.records[sequence - 1]['record_sha256'] if sequence else _EMPTY_HASH)
-             and receipt.get('state_sha256') == _sha(_canonical(state)) and receipt.get('state') == state, 'Receipt does not match journal prefix')
+    _prove_receipt_prefix(receipt, authority.records, identity={
+        'job_sha256': authority.job['job_sha256'], 'bootstrap_sha256': authority.bootstrap_sha256,
+        'targets': authority.targets, 'policy': authority.policies}, job_contract=authority.job['contract'])
 
 
 def _recover_pending(authority):
@@ -973,10 +1063,13 @@ def verify_authority(job_path: Path, job_sha256: str, *, bootstrap_sha256: str,
 
 def _worker_authorization(spec):
     """Read-only current authority proof while its sole writer holds the claim."""
+    _require(type(spec) is dict and spec.get('contract') in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3'),
+             'Current executable coordinator worker specification required; legacy proof is read-only')
     job = _load_job(_ROOT / spec['job_path'], spec['job_sha256'])
     targets = _execution_job(job)
+    _require((job['contract'] == 'financial-acquisition-job-v2') == (spec['contract'] == 'financial-acquisition-worker-v3'), 'Worker version differs from job')
     start = None
-    if spec.get('contract') == 'financial-acquisition-worker-v2':
+    if spec.get('contract') in ('financial-acquisition-worker-v2', 'financial-acquisition-worker-v3'):
         from .financial_acquisition_batch import _worker_context
         member, start = _worker_context(job, spec['batch_context'])
         _require(spec['job_path'] == member['job_path'] and spec['bootstrap_sha256'] == member['bootstrap_sha256']
@@ -999,13 +1092,18 @@ def _worker_authorization(spec):
         sequence += 1
         _require(pin == _sha(_canonical(record)) and record['sequence'] == sequence
                  and record['previous_record_sha256'] == previous and record['job_sha256'] == job['job_sha256'], 'Worker journal integrity failure')
-        _apply_record(state, record, targets, _limits(job))
+        _apply_record(state, record, targets, _limits(job), job_contract=job['contract'])
         previous = pin
     head = _json(_local((folder / 'head.json').relative_to(_ROOT).as_posix()).read_bytes())
     _require(head == {'sequence': sequence, 'record_sha256': previous, 'state_sha256': _sha(_canonical(state))}, 'Worker authority head mismatch')
     pending = state['pending'].get(spec['attempt_id'])
     _require(pending and pending['kind'] == 'reserve' and pending['target_key'] == spec['target_key']
              and pending['reserved_bytes'] == spec['body_budget_bytes'] and 'identity' in pending, 'Worker lacks current durable reservation/identity')
+    if spec['contract'] == 'financial-acquisition-worker-v3':
+        identities = [_json(line) for line in raw.splitlines() if _json(line).get('kind') == 'identity'
+                      and _json(line).get('attempt_id') == spec['attempt_id']]
+        _require(len(identities) == 1 and identities[0].get('spec_sha256') == _sha(_canonical(spec)),
+                 'Worker spec differs from durably recorded reservation identity')
     if start is not None:
         _require(pending['session_id'] == Path(start['session']).name and sequence > start['member_sequence'],
                  'Worker reservation outside committed phase')
@@ -1024,10 +1122,10 @@ def _worker_main(spec_path, spec_sha256):
     raw = path.read_bytes()
     _require(_sha(raw) == _digest(spec_sha256), 'Worker spec hash mismatch')
     spec = _json(raw)
-    version2 = spec.get('contract') == 'financial-acquisition-worker-v2'
+    version2 = spec.get('contract') in ('financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
     _require(set(spec) == ({'batch_context'} if version2 else set()) | {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
                           'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
-             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2')
+             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
              and spec['worker_sha256'] == _sha(Path(__file__).read_bytes())
              and spec['application_sha256'] == _sha(Path(sys.executable).read_bytes()), 'Worker contract/runtime pin mismatch')
     job, target = _worker_authorization(spec)
@@ -1071,6 +1169,15 @@ def _attempt(authority, job_path, session, target):
     coordinator = getattr(authority, 'coordinator', None)
     _require(coordinator is None or not coordinator.cancel_event.is_set(), 'Batch transport cancelled')
     reservation = reserve_attempt(authority, target, session_id=session.name)
+    monitor = getattr(coordinator, 'monitor', None)
+    if monitor is not None:
+        monitor.reserve(reservation)
+        try:
+            monitor.sample()
+        except (ValueError, OSError, RuntimeError) as error:
+            monitor.error = type(error).__name__ + ': ' + str(error)
+            coordinator.cancel_event.set()
+            raise
     attempt = reservation['attempt_id']
     spec_path = session / ('worker-' + attempt + '.json')
     output = session / ('attempt-' + attempt)
@@ -1081,9 +1188,10 @@ def _attempt(authority, job_path, session, target):
             'application_sha256': _sha(Path(sys.executable).read_bytes()), 'output_path': output.relative_to(_ROOT).as_posix()}
     coordinator = getattr(authority, 'coordinator', None)
     if coordinator is not None:
-        from .financial_acquisition_batch import _transport_context, _code_identity
-        _code_identity(coordinator.batch.bundle['code_pins'], current_head=True)
-        spec.update(contract='financial-acquisition-worker-v2', batch_context=_transport_context(coordinator))
+        from .financial_acquisition_batch import _transport_context, _bundle_code_identity
+        _bundle_code_identity(coordinator.batch.bundle, current_head=True)
+        version = 'financial-acquisition-worker-v3' if authority.job['contract'] == 'financial-acquisition-job-v2' else 'financial-acquisition-worker-v2'
+        spec.update(contract=version, batch_context=_transport_context(coordinator))
     _write_exclusive(spec_path, spec)
     spec_pin = _sha(spec_path.read_bytes())
     def before_resume(identity):
@@ -1140,6 +1248,8 @@ def _attempt(authority, job_path, session, target):
                      overshoot_microseconds=math.ceil(result['deadline_overshoot_seconds'] * 1000000),
                      status=status, retryable=retryable, source_ref=source, guard=guard, attempt_evidence=evidence,
                      tree_extinct=True, worker_exit_code=result['exit_code'], deadline_reached=result['deadline_reached'])
+    if monitor is not None:
+        monitor.finish(attempt)
     return retryable
 
 
@@ -1157,9 +1267,9 @@ def _obtain(authority, job_path, session, target):
             break
         backoff = authority.commit('backoff', attempt_id=uuid.uuid4().hex, target_key=key,
                                    session_id=session.name, reserved_backoff_seconds=authority.policies['max_backoff_seconds'])
-        began = time.monotonic()
+        began = time.perf_counter()
         time.sleep(max(0, authority.policies['max_backoff_seconds'] - .05))
-        elapsed = time.monotonic() - began
+        elapsed = time.perf_counter() - began
         authority.commit('backoff_finish', attempt_id=backoff['attempt_id'], target_key=key,
                          session_id=session.name, observed_backoff_seconds=math.ceil(elapsed),
                          actual_elapsed_microseconds=math.ceil(elapsed * 1000000))
