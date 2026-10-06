@@ -72,13 +72,51 @@ def main(argv=None):
             command.add_argument('--metadata-workers', type=int, choices=(1, 2), default=1)
         elif name == 'batch-recover':
             command.add_argument('--output', type=Path, required=True)
+    historical_prepare = commands.add_parser('historical-prepare', allow_abbrev=False)
+    historical_prepare.add_argument('--catalog-index', type=Path, required=True)
+    historical_prepare.add_argument('--catalog-index-sha256', required=True)
+    historical_prepare.add_argument('--window-id', required=True)
+    historical_prepare.add_argument('--output', type=Path, required=True)
+    historical_initialize = commands.add_parser('historical-initialize', allow_abbrev=False)
+    for name in ('draft', 'destination', 'code-pins'):
+        historical_initialize.add_argument('--' + name, type=Path, required=True)
+    historical_initialize.add_argument('--draft-sha256', required=True)
+    historical_initialize.add_argument('--code-pins-sha256', required=True)
+    for name in ('historical-run', 'historical-verify', 'historical-export'):
+        command = commands.add_parser(name, allow_abbrev=False)
+        command.add_argument('--bundle', type=Path, required=True)
+        command.add_argument('--bundle-sha256', required=True)
+        command.add_argument('--bootstrap-sha256', required=True)
+        if name == 'historical-run':
+            command.add_argument('--resource-profile', type=Path, required=True)
+            command.add_argument('--resource-profile-sha256', required=True)
+            command.add_argument('--stage-mode', choices=('representative', 'remaining'), default='representative')
+        elif name == 'historical-export':
+            command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(argv)
     for path_name, hash_name in (('reuse_index', 'reuse_index_sha256'), ('resume_from', 'resume_sha256'),
                                  ('receipt', 'receipt_sha256')):
         if (getattr(args, path_name, None) is None) != (getattr(args, hash_name, None) is None):
             parser.error(path_name.replace('_', '-') + ' requires its external SHA-256')
     try:
-        if args.command == 'batch-prepare':
+        if args.command == 'historical-prepare':
+            result = batch.prepare_historical_batch(args.catalog_index, args.catalog_index_sha256, window_id=args.window_id)
+            destination = acquisition._safe_destination(args.output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            acquisition._write_exclusive(destination, result)
+            result = {'status': 'draft', 'executable': False, 'window_id': args.window_id,
+                      'draft_sha256': acquisition._sha(destination.read_bytes()), 'acquire_periods': result['acquire_periods']}
+        elif args.command == 'historical-initialize':
+            pins = batch._verified_current_code_pins(args.code_pins, args.code_pins_sha256)
+            result = batch.initialize_historical_batch(args.draft, args.draft_sha256, args.destination, reviewed_code_pins=pins)
+        elif args.command in ('historical-run', 'historical-verify', 'historical-export'):
+            options = {'resource_profile_path': args.resource_profile,
+                       'resource_profile_sha256': args.resource_profile_sha256, 'stage_mode': args.stage_mode} if args.command == 'historical-run' else (
+                       {'output': args.output} if args.command == 'historical-export' else {})
+            function = {'historical-run': batch.run_historical_batch, 'historical-verify': batch.verify_historical_batch,
+                        'historical-export': batch.export_historical_sources}[args.command]
+            result = function(args.bundle, args.bundle_sha256, bootstrap_sha256=args.bootstrap_sha256, **options)
+        elif args.command == 'batch-prepare':
             result = batch._prepare_batch(args.catalog_index, args.catalog_index_sha256,
                                            args.reuse_index, args.reuse_index_sha256)
             destination = acquisition._safe_destination(args.output)

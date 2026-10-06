@@ -206,9 +206,9 @@ def _active(kernel, job):
 
 def _terminate_and_wait(kernel, job):
     _checked(kernel.TerminateJobObject(job, 2), 'TerminateJobObject')
-    stop = time.monotonic() + 10
+    stop = time.perf_counter() + 10
     while _active(kernel, job):
-        if time.monotonic() >= stop:
+        if time.perf_counter() >= stop:
             raise RuntimeError('Owned process tree extinction not verified')
         time.sleep(.005)
 
@@ -229,7 +229,7 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
     spec = json.loads(raw)
     application = Path(sys.executable).resolve()
     worker = Path(importlib.util.find_spec(_WORKER_MODULE).origin)
-    if (spec.get('contract') not in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2')
+    if (spec.get('contract') not in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
             or spec.get('application_sha256') != hashlib.sha256(application.read_bytes()).hexdigest()
             or spec.get('worker_sha256') != hashlib.sha256(worker.read_bytes()).hexdigest()):
         raise ValueError('Fixed worker/application pin mismatch')
@@ -262,7 +262,7 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
         startup.lpAttributeList = C.cast(attributes, C.c_void_p)
         command = C.create_unicode_buffer(subprocess.list2cmdline([str(application), '-B', '-m', _WORKER_MODULE,
                                                                    str(Path(spec_path).resolve()), spec_sha256]))
-        began = time.monotonic()
+        began = time.perf_counter()
         _checked(kernel.CreateProcessW(str(application), command, None, None, False,
                  0x4 | 0x80000 | 0x08000000, None, str(_ROOT), C.byref(startup), C.byref(process)), 'CreateProcessW contained')
         contained = W.BOOL()
@@ -273,7 +273,7 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
         before_resume(identity)
         if cancel_event is not None and cancel_event.is_set():
             raise RuntimeError('Contained attempt cancelled before resume')
-        if time.monotonic() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
+        if time.perf_counter() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
             timed_out = True
             _terminate_and_wait(kernel, job)
         else:
@@ -283,12 +283,12 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
                 if cancel_event is not None and cancel_event.is_set():
                     _terminate_and_wait(kernel, job)
                     break
-                if time.monotonic() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
+                if time.perf_counter() - began >= deadline_seconds - _EXTINCTION_GUARD_SECONDS:
                     timed_out = True
                     _terminate_and_wait(kernel, job)
                     break
                 time.sleep(.005)
-        elapsed = time.monotonic() - began
+        elapsed = time.perf_counter() - began
         code = W.DWORD()
         _checked(kernel.GetExitCodeProcess(process.hProcess, C.byref(code)), 'GetExitCodeProcess')
         return {'identity': identity, 'exit_code': code.value, 'tree_extinct': _active(kernel, job) == 0,
@@ -306,3 +306,168 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
                     kernel.CloseHandle(handle)
             if initialized:
                 kernel.DeleteProcThreadAttributeList(attributes)
+
+
+def _machine_id():
+    import socket
+    return socket.gethostname()
+
+
+def _resource_profile(profile):
+    fields = {'contract', 'machine_id', 'metadata_workers', 'values_workers', 'active_windows',
+              'min_free_physical_bytes', 'min_free_commit_bytes', 'min_free_disk_bytes', 'sampling_interval_ms'}
+    if (type(profile) is not dict or set(profile) != fields
+            or profile['contract'] != 'financial-acquisition-resource-profile-v1'
+            or profile['machine_id'] != _machine_id()
+            or any(type(profile[k]) is not int or profile[k] != 1
+                   for k in ('metadata_workers', 'values_workers', 'active_windows'))
+            or any(type(profile[k]) is not int or profile[k] <= 0
+                   for k in ('min_free_physical_bytes', 'min_free_commit_bytes', 'min_free_disk_bytes'))
+            or type(profile['sampling_interval_ms']) is not int or profile['sampling_interval_ms'] != 250):
+        raise ValueError('Closed serial resource profile for current machine required')
+    return dict(profile)
+
+
+class _MEMORY_STATUS(C.Structure):
+    _fields_ = [('length', W.DWORD), ('load', W.DWORD)] + [(n, C.c_ulonglong) for n in
+        ('total_physical', 'free_physical', 'total_pagefile', 'free_pagefile',
+         'total_virtual', 'free_virtual', 'free_extended')]
+
+
+class _PROCESS_MEMORY(C.Structure):
+    _fields_ = [('cb', W.DWORD), ('faults', W.DWORD)] + [(n, C.c_size_t) for n in
+        ('peak_working_set', 'working_set', 'peak_paged_pool', 'paged_pool',
+         'peak_nonpaged_pool', 'nonpaged_pool', 'pagefile', 'peak_pagefile', 'private_bytes')]
+
+
+def _resource_sample(destination, coordinator):
+    """Measure current coordinator descendants with PID+creation, fail on uncertainty."""
+    kernel = _kernel()
+    memory = _MEMORY_STATUS()
+    memory.length = C.sizeof(memory)
+    kernel.GlobalMemoryStatusEx.argtypes = [C.POINTER(_MEMORY_STATUS)]
+    kernel.GlobalMemoryStatusEx.restype = W.BOOL
+    _checked(kernel.GlobalMemoryStatusEx(C.byref(memory)), 'GlobalMemoryStatusEx')
+    free, total, available = (C.c_ulonglong() for _ in range(3))
+    kernel.GetDiskFreeSpaceExW.argtypes = [W.LPCWSTR, C.POINTER(C.c_ulonglong),
+                                         C.POINTER(C.c_ulonglong), C.POINTER(C.c_ulonglong)]
+    kernel.GetDiskFreeSpaceExW.restype = W.BOOL
+    _checked(kernel.GetDiskFreeSpaceExW(str(Path(destination).resolve()), C.byref(available),
+                                      C.byref(total), C.byref(free)), 'GetDiskFreeSpaceExW')
+    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)
+    if snapshot == C.c_void_p(-1).value:
+        raise OSError(C.get_last_error(), 'Resource process snapshot failed')
+    parents = {}
+    try:
+        entry = _PROCESSENTRY()
+        entry.dwSize = C.sizeof(entry)
+        found = kernel.Process32FirstW(snapshot, C.byref(entry))
+        if not found:
+            raise OSError(C.get_last_error(), 'Resource process enumeration failed')
+        while found:
+            parents[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            found = kernel.Process32NextW(snapshot, C.byref(entry))
+        if C.get_last_error() != 18:
+            raise OSError(C.get_last_error(), 'Resource process enumeration incomplete')
+    finally:
+        kernel.CloseHandle(snapshot)
+    selected = {coordinator['pid']}
+    while True:
+        added = {pid for pid, parent in parents.items() if parent in selected}
+        if added <= selected:
+            break
+        selected |= added
+    psapi = C.WinDLL('psapi', use_last_error=True)
+    psapi.GetProcessMemoryInfo.argtypes = [W.HANDLE, C.POINTER(_PROCESS_MEMORY), W.DWORD]
+    psapi.GetProcessMemoryInfo.restype = W.BOOL
+    processes = []
+    for pid in sorted(selected):
+        handle = _checked(kernel.OpenProcess(0x1000 | 0x10, False, pid), 'Resource OpenProcess')
+        try:
+            identity = _identity(kernel, handle, pid)
+            if pid == coordinator['pid'] and identity != coordinator:
+                raise RuntimeError('Coordinator PID identity changed')
+            counters = _PROCESS_MEMORY()
+            counters.cb = C.sizeof(counters)
+            _checked(psapi.GetProcessMemoryInfo(handle, C.byref(counters), C.sizeof(counters)), 'GetProcessMemoryInfo')
+            processes.append({**identity, 'working_set_bytes': counters.working_set,
+                              'private_bytes': counters.private_bytes})
+        finally:
+            kernel.CloseHandle(handle)
+    return {'elapsed_clock': time.perf_counter(), 'free_physical_bytes': memory.free_physical,
+            'free_commit_bytes': memory.free_pagefile, 'free_disk_bytes': available.value,
+            'processes': processes, 'tree_working_set_bytes': sum(p['working_set_bytes'] for p in processes),
+            'tree_private_bytes': sum(p['private_bytes'] for p in processes)}
+
+
+class _ResourceMonitor:
+    def __init__(self, profile, destination, cancel_event):
+        import threading
+        self.profile = _resource_profile(profile)
+        self.destination, self.cancel_event = destination, cancel_event
+        self.stop = threading.Event()
+        self.error = ''
+        self.samples = []
+        self.reservations = {}
+        self.lock = threading.Lock()
+        self.sample_count = 0
+        self.peaks = {'tree_working_set_bytes': 0, 'tree_private_bytes': 0}
+        self.minimum_free = {}
+        self.identity = _current_identity()
+        self.thread = threading.Thread(target=self._watch, daemon=True)
+
+    def reserve(self, reservation):
+        with self.lock:
+            if reservation['attempt_id'] in self.reservations:
+                raise ValueError('Duplicate monitor reservation')
+            self.reservations[reservation['attempt_id']] = {key: reservation[key] for key in
+                ('reserved_bytes', 'reserved_attempt_seconds')}
+
+    def finish(self, attempt_id):
+        with self.lock:
+            if attempt_id not in self.reservations:
+                raise ValueError('Unknown monitor reservation')
+            del self.reservations[attempt_id]
+
+    def sample(self):
+        sample = _resource_sample(self.destination, self.identity)
+        with self.lock:
+            sample = {**sample, 'inflight_reserved_bytes': sum(r['reserved_bytes'] for r in self.reservations.values()),
+                      'inflight_reserved_attempt_seconds': sum(r['reserved_attempt_seconds'] for r in self.reservations.values())}
+        for key in ('physical', 'commit', 'disk'):
+            required = self.profile['min_free_' + key + '_bytes'] + (sample['inflight_reserved_bytes'] if key == 'disk' else 0)
+            if sample['free_' + key + '_bytes'] < required:
+                raise RuntimeError('Resource margin exhausted: ' + key)
+        self.sample_count += 1
+        for key in self.peaks:
+            self.peaks[key] = max(self.peaks[key], sample[key])
+        for key in ('free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'):
+            self.minimum_free[key] = min(self.minimum_free.get(key, sample[key]), sample[key])
+        self.samples.append(sample)
+        del self.samples[:-128]
+
+    def _watch(self):
+        while not self.stop.wait(self.profile['sampling_interval_ms'] / 1000):
+            try:
+                self.sample()
+            except (ValueError, OSError, RuntimeError) as error:
+                self.error = type(error).__name__ + ': ' + str(error)
+                self.cancel_event.set()
+                return
+
+    def __enter__(self):
+        try:
+            self.sample()
+        except (ValueError, OSError, RuntimeError) as error:
+            self.error = type(error).__name__ + ': ' + str(error)
+            self.cancel_event.set()
+            raise
+        self.thread.start()
+        return self
+
+    def __exit__(self, *args):
+        self.stop.set()
+        if self.thread.ident is not None:
+            self.thread.join()
+        if self.error:
+            raise RuntimeError('Monitor failure: ' + self.error)

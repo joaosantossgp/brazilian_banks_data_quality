@@ -966,6 +966,85 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class PhaseReplayDataTests(unittest.TestCase):
+    inject = BatchCompositionTests.inject
+    write = BatchCompositionTests.write
+    parquet_fixture = BatchCompositionTests.parquet_fixture
+    source_fixture = BatchCompositionTests.source_fixture
+    prepare = BatchCompositionTests.prepare
+    bounded_source = BatchCompositionTests.bounded_source
+    initialize = BatchAuthorityTests.initialize
+    terminal = BatchAuthorityTests.terminal
+
+    @classmethod
+    def setUpClass(cls):
+        BatchCompositionTests.setUpClass.__func__(cls)
+
+    def setUp(self):
+        BatchAuthorityTests.setUp(self)
+
+    def test_phase_replay_rederives_barrier_in_closed_data(self):
+        refs = self.initialize()
+        self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                               bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=self.terminal)
+        raw = (self.root / 'data/runs/batch-fixture/journal.jsonl').read_bytes()
+        records = [json.loads(line) for line in raw.splitlines()]
+        bundle = json.loads((self.root / refs['bundle_path']).read_bytes())
+        self.assertTrue(callable(getattr(self.batch, '_replay_phase_records', None)), 'Pure phase replay missing')
+        with patch.object(self.batch, '_Batch', side_effect=AssertionError('active batch')), \
+             patch.object(self.batch, '_MemberContext', side_effect=AssertionError('active context')), \
+             patch.object(self.batch, '_path', side_effect=AssertionError('physical IO in pure helper')):
+            replay = self.batch._replay_phase_records(records, anchored_bundle={
+                'bundle': bundle, 'bundle_sha256': refs['bundle_sha256'],
+                'bootstrap_sha256': refs['bootstrap_sha256']})
+        self.assertEqual(len(replay['state']['finished']), 14)
+        self.assertEqual(replay['head'], json.loads((self.root / 'data/runs/batch-fixture/head.json').read_bytes()))
+        self.assertEqual(json.loads(canonical(replay)), replay)
+        before = copy.deepcopy(records)
+        records[0]['bundle_sha256'] = 'f' * 64
+        records[0]['record_sha256'] = sha(canonical({k: v for k, v in records[0].items() if k != 'record_sha256'}))
+        with self.assertRaises(ValueError):
+            self.batch._replay_phase_records(records, anchored_bundle={
+                'bundle': bundle, 'bundle_sha256': refs['bundle_sha256'],
+                'bootstrap_sha256': refs['bootstrap_sha256']})
+        self.assertNotEqual(records, before)
+
+    def test_phase_source_proof_joins_receipt_prefix_and_a_to_b_without_io(self):
+        refs = self.initialize()
+        self.batch._run_serial(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                               bootstrap_sha256=refs['bootstrap_sha256'], phase_callable=self.terminal)
+        self.assertTrue(callable(getattr(self.batch, '_prove_phase_sources', None)), 'Pure phase sources missing')
+        bundle = json.loads((self.root / refs['bundle_path']).read_bytes())
+        phase = self.batch._replay_phase_records([
+            json.loads(line) for line in (self.root / 'data/runs/batch-fixture/journal.jsonl').read_bytes().splitlines()],
+            anchored_bundle={'bundle': bundle, 'bundle_sha256': refs['bundle_sha256'],
+                             'bootstrap_sha256': refs['bootstrap_sha256']})
+        member = bundle['members'][0]
+        targets, policy = self.acquisition._execution_job(member['job']), self.acquisition._limits(member['job'])
+        replay = self.acquisition._replay_member_records([
+            json.loads(line) for line in (self.root / member['authority_path'] / 'journal.jsonl').read_bytes().splitlines()],
+            job_identity=member['job_sha256'], targets=targets, policy=policy)
+        member_data = {**replay, 'targets': targets, 'policy': policy}
+        phases = {s['phase']: s for s in phase['state']['finished'].values() if s['period'] == member['period']}
+        metadata = phases['metadata']['result']['checkpoint']
+        start = phases['values']
+        result = start['result']
+        data = {'start': {k: v for k, v in start.items() if k != 'result'}, 'result': result,
+                'receipt': self.batch._read(result['receipt']), 'checkpoint': self.batch._read(result['checkpoint']),
+                'resolved': self.acquisition.resolve_sources(member['job'], {
+                    t['target_key']: replay['state']['sources'][t['target_key']] for t in member['job']['targets']}),
+                'metadata_checkpoint_ref': metadata, 'metadata_checkpoint': self.batch._read(metadata)}
+        with patch.object(self.batch, '_path', side_effect=AssertionError('IO in pure helper')), \
+             patch.object(self.batch, '_MemberContext', side_effect=AssertionError('active context')):
+            proof = self.batch._prove_phase_sources(data, member_data, anchored_member=member)
+        self.assertEqual(proof['checkpoint'], data['checkpoint'])
+        self.assertEqual(proof['receipt_prefix']['head'], replay['head'])
+        bad = copy.deepcopy(data)
+        bad['checkpoint']['checkpoint_a_sha256'] = 'f' * 64
+        with self.assertRaises(ValueError):
+            self.batch._prove_phase_sources(bad, member_data, anchored_member=member)
+
+
 class BatchSchedulerTests(unittest.TestCase):
     setUpClass = BatchAuthorityTests.__dict__['setUpClass']
     setUp = BatchAuthorityTests.setUp
@@ -1247,3 +1326,566 @@ class BatchSchedulerTests(unittest.TestCase):
         self.assertTrue(stopped.is_set())
         self.assertTrue((self.root / 'data/runs/batch-fixture/halt.json').is_file(),
                         'Coordinator persistence failure must persist halt before return')
+
+
+class HistoricalPreparationTests(unittest.TestCase):
+    def setUp(self):
+        self.batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        self.acquisition = importlib.import_module('bank_quality.financial_acquisition')
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        for module in (self.batch, self.acquisition):
+            patcher = patch.object(module, '_ROOT', self.root)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        refs, frozen = {}, {}
+        members = self.batch._HISTORICAL_POLICY_V1['members']
+        for name in ('old', 'new'):
+            entries = []
+            if name == 'old':
+                for member in members:
+                    entry = catalog_entry(member['period'])
+                    entry['files'] = [f for f in entry['files'] if 'trel' not in f and
+                        ('dados' not in f['f'] or any(f['f'].endswith('_' + str(a) + '.json')
+                            for a in member['announced_numeric_areas']))]
+                    prefix = 'ifdata/' + str(member['period']) + '/'
+                    entry['files'] += [{'f': prefix + f"trel{member['period']}_{rid}.json",
+                        'trel': {'id': rid, 's': [{'id': 1005}],
+                                 'c': [{'id': rid, 'ifd': rid, 'ip': None, 'sc': []}]}}
+                        for rid in member['reports']]
+                    entries.append(entry)
+            body = canonical(entries)
+            folder = self.root / 'data/raw/catalog'
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / (name + '.bin')).write_bytes(body)
+            manifest = {'url': CATALOG_URLS[name], 'final_url': CATALOG_URLS[name], 'method': 'GET',
+                        'http_status': 200, 'outcome': 'ok', 'truncated': False,
+                        'body_path': name + '.bin', 'sha256': sha(body), 'bytes': len(body)}
+            raw = canonical(manifest)
+            (folder / (name + '.json')).write_bytes(raw)
+            refs[name] = {'source_id': 'catalog-' + name, 'role': 'catalog',
+                          'manifest_path': 'data/raw/catalog/' + name + '.json',
+                          'manifest_sha256': sha(raw), 'body_sha256': sha(body), 'provenance_sha256': sha(raw)}
+            frozen[name] = (sha(raw), sha(body), CATALOG_URLS[name])
+        patcher = patch.object(self.acquisition, '_FROZEN', frozen)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.index = self.root / 'data/runs/catalog-index.json'
+        self.index.parent.mkdir(parents=True)
+        self.index.write_bytes(canonical({'contract': self.acquisition.INDEX_CONTRACT,
+            'acquisition_scope': 'issue50/financial-202403-1005-native-four',
+            'selection': {'perspective': 1005, 'reports': 'native-four'}, 'catalogs': refs}))
+
+    def prepare(self, window='F1-01'):
+        return self.batch.prepare_historical_batch(self.index, sha(self.index.read_bytes()), window_id=window)
+
+    def test_prepare_all_windows_binds_exact_policy_without_authority(self):
+        periods = []
+        for window in self.batch._HISTORICAL_POLICY_V1['windows']:
+            draft = self.prepare(window['window_id'])
+            self.assertEqual(draft['contract'], 'financial-acquisition-batch-draft-v2')
+            self.assertFalse(draft['executable'])
+            self.assertEqual(draft['destination'], window['destination'])
+            for member in draft['members']:
+                job = member['job']
+                self.assertEqual(job['contract'], 'financial-acquisition-job-v2')
+                self.acquisition._execution_job(job)
+                periods.append(member['period'])
+        self.assertEqual(periods, [m['period'] for m in self.batch._HISTORICAL_POLICY_V1['members']])
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+    def test_job_mutations_are_rejected_even_after_hash_recomputed(self):
+        job = self.prepare()['members'][0]['job']
+        for field, value in [('acquisition_scope', 'alternate'), ('version', True), ('member', []),
+                             ('member', dict(job['member'], reports=[1, 4, 3, 5])),
+                             ('policies', dict(job['policies'], attempts=3)),
+                             ('targets', job['targets'] + job['targets'][:1])]:
+            changed = copy.deepcopy(job)
+            changed[field] = value
+            changed['job_sha256'] = self.acquisition._job_hash(changed)
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.acquisition._execution_job(changed)
+
+    def initialize(self):
+        draft = self.prepare()
+        path = self.root / 'data/runs/draft.json'
+        path.write_bytes(canonical(draft))
+        @contextmanager
+        def claim(path):
+            path.touch(exist_ok=True)
+            yield
+        patcher = patch.object(self.acquisition, '_claim', claim)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = patch.object(self.batch, '_code_identity_v2', return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return self.batch.initialize_historical_batch(path, sha(path.read_bytes()),
+            self.root / draft['destination'], reviewed_code_pins={})
+
+    def test_initialization_is_exact_new_and_verifiable_without_sources(self):
+        ref = self.initialize()
+        self.assertEqual(ref['scope'], self.batch._historical_window('F1-01')['scope'])
+        bundle_path = self.root / ref['bundle_path']
+        bundle = json.loads(bundle_path.read_bytes())
+        self.assertEqual(bundle['contract'], 'financial-acquisition-batch-v2')
+        result = self.batch.verify_historical_batch(bundle_path, ref['bundle_sha256'],
+            bootstrap_sha256=ref['bootstrap_sha256'])
+        self.assertEqual(result['totals']['attempts'], 0)
+        self.assertEqual(result['missing_periods'], [201003, 201006, 201009, 201012])
+        with self.assertRaises(ValueError):
+            self.initialize()
+
+    def test_initialize_rejects_other_destination_before_any_binding(self):
+        draft = self.prepare()
+        path = self.root / 'data/runs/draft.json'
+        path.write_bytes(canonical(draft))
+        with self.assertRaises(ValueError):
+            self.batch.initialize_historical_batch(path, sha(path.read_bytes()),
+                self.root / 'data/runs/wrong', reviewed_code_pins={})
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+    def test_values_requires_entire_window_metadata_and_member_success(self):
+        ref = self.initialize()
+        bundle = json.loads((self.root / ref['bundle_path']).read_bytes())
+        member = bundle['members'][0]
+        record = {'contract': 'financial-acquisition-batch-ledger-v1', 'sequence': 1,
+            'previous_record_sha256': '0' * 64, 'bundle_sha256': ref['bundle_sha256'],
+            'bootstrap_sha256': ref['bootstrap_sha256'], 'kind': 'phase_start',
+            'phase_id': '1' * 32, 'period': member['period'], 'phase': 'values',
+            'session': member['session_root'] + '/values-' + '1' * 32,
+            'job_sha256': member['job_sha256'], 'member_bootstrap_sha256': member['bootstrap_sha256'],
+            'member_sequence': 0, 'member_record_sha256': self.acquisition._EMPTY_HASH}
+        state = self.batch._ledger_state()
+        with self.assertRaisesRegex(ValueError, 'barrier'):
+            self.batch._apply_phase(state, record, bundle)
+        state['finished'] = {str(m['period']): {'period': m['period'], 'phase': 'metadata',
+            'result': {'status': 'complete'}} for m in bundle['members']}
+        self.batch._apply_phase(state, record, bundle)
+        self.assertIn('1' * 32, state['pending'])
+
+    def test_historical_run_rejects_profile_concurrency_and_export_incomplete(self):
+        ref = self.initialize()
+        path = self.root / ref['bundle_path']
+        profile = self.root / 'data/runs/resource.json'
+        value = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 2, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        profile.write_bytes(canonical(value))
+        with self.assertRaisesRegex(ValueError, 'serial'):
+            self.batch.run_historical_batch(path, ref['bundle_sha256'],
+                bootstrap_sha256=ref['bootstrap_sha256'], resource_profile_path=profile,
+                resource_profile_sha256=sha(profile.read_bytes()))
+        output = self.root / 'data/runs/new-handoff.json'
+        with self.assertRaisesRegex(ValueError, 'complete'):
+            self.batch.export_historical_sources(path, ref['bundle_sha256'],
+                bootstrap_sha256=ref['bootstrap_sha256'], output=output)
+        self.assertFalse(output.exists())
+
+    def test_v3_worker_binds_start_reservation_and_rejects_v2_downgrade(self):
+        ref = self.initialize()
+        with self.batch._open_batch(self.root / ref['bundle_path'], ref['bundle_sha256'], ref['bootstrap_sha256']) as batch:
+            member = batch.bundle['members'][0]
+            start = self.batch._start_phase(batch, member, 'metadata')
+            context = self.batch._MemberContext(batch, member)
+            context.start = start
+            transport = self.batch._transport_context(context)
+            self.assertEqual(transport['contract'], 'financial-acquisition-worker-context-v3')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context) as authority:
+                target = member['job']['targets'][0]
+                reserve = self.acquisition.reserve_attempt(authority, target, session_id=Path(start['session']).name)
+                spec = {'contract': 'financial-acquisition-worker-v3', 'batch_context': transport,
+                    'job_path': member['job_path'], 'job_sha256': member['job_sha256'],
+                    'bootstrap_sha256': member['bootstrap_sha256'], 'attempt_id': reserve['attempt_id'],
+                    'target_key': target['target_key'], 'body_budget_bytes': reserve['reserved_bytes'],
+                    'parent_identity': {'pid': 456, 'creation_time': 2},
+                    'output_path': start['session'] + '/attempt-' + reserve['attempt_id']}
+                with self.assertRaisesRegex(ValueError, 'identity'):
+                    self.acquisition._worker_authorization(spec)
+                authority.commit('identity', attempt_id=reserve['attempt_id'], target_key=target['target_key'],
+                    session_id=Path(start['session']).name, identity={'pid': 123, 'creation_time': 1, 'contained': True},
+                    spec_path='data/runs/spec.json', spec_sha256=sha(canonical(spec)))
+                with patch.object(self.acquisition, 'verify_worker_ancestry'):
+                    bad = dict(spec, parent_identity={'pid': 455, 'creation_time': 2})
+                    with self.assertRaisesRegex(ValueError, 'spec'):
+                        self.acquisition._worker_authorization(bad)
+                    job, selected = self.acquisition._worker_authorization(spec)
+                    self.assertEqual((job, selected), (member['job'], target))
+                    for changed in [dict(spec, contract='financial-acquisition-worker-v2'),
+                                    dict(spec, body_budget_bytes=1)]:
+                        with self.assertRaises(ValueError):
+                            self.acquisition._worker_authorization(changed)
+
+    write = BatchCompositionTests.write
+    bounded_source = BatchCompositionTests.bounded_source
+
+    def test_v3_production_roundtrip_uses_own_dictionary_subset_and_exports_receipts(self):
+        self._v3_roundtrip()
+
+    def test_representative_crash_recovers_original_measurement_without_launch(self):
+        self._v3_roundtrip(crash_checkpoint=True)
+
+    def test_representative_crash_missing_measurement_refuses_without_launch(self):
+        self._v3_roundtrip(crash_checkpoint=True, proof_damage='missing')
+
+    def test_representative_crash_unanchored_measurement_refuses_without_launch(self):
+        self._v3_roundtrip(crash_checkpoint=True, proof_damage='unanchored')
+
+    def test_representative_crash_tampered_measurement_refuses_without_launch(self):
+        self._v3_roundtrip(crash_checkpoint=True, proof_damage='tampered')
+
+    def test_representative_resume_corrupted_metadata_receipt_rejects_before_dispatch(self):
+        self._v3_roundtrip(crash_metadata=True, proof_damage='receipt')
+
+    def test_representative_resume_corrupted_metadata_resolution_rejects_before_dispatch(self):
+        self._v3_roundtrip(crash_metadata=True, proof_damage='resolution')
+
+    def test_representative_resume_intact_completed_metadata_continues_without_renewal(self):
+        self._v3_roundtrip(crash_metadata=True)
+
+    def _v3_roundtrip(self, *, crash_checkpoint=False, crash_metadata=False, proof_damage=None):
+        machine = patch('bank_quality.windows_acquisition._machine_id', return_value='fixture')
+        machine.start()
+        self.addCleanup(machine.stop)
+        import shutil
+        import threading
+        refs = self.initialize()
+        profile = self.root / 'data/runs/resource.json'
+        value = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        profile.write_bytes(canonical(value))
+        specs = []
+        def fetch(url, output, label, context, *, body_budget_bytes, timeout_seconds):
+            spec = next(s for s in specs if s['attempt_id'] == label)
+            job, target = self.acquisition._worker_authorization(spec)
+            reports = job['member']['reports']
+            area = job['member']['announced_numeric_areas'][-1]
+            payload = ([{'c0': '1', 'c1': str(context['period'])}] if target['role'] == 'cadaster'
+                else [{'id': rid, 'td': 3, 'a': area, 'lid': rid} for rid in reports]
+                if target['role'] == 'dictionary' else
+                {'id': area, 'values': [{'e': 1, 'v': [{'i': rid, 'v': 0} for rid in reports]}]})
+            source = self.bounded_source(target, payload)
+            original = self.root / source['manifest_path']
+            manifest = json.loads(original.read_bytes())
+            manifest['body_budget_bytes'] = body_budget_bytes
+            manifest['manifest_path'] = original.name
+            for name in (manifest['body_path'], manifest['response_metadata_path']):
+                shutil.copyfile(original.parent / name, output / name)
+            (output / original.name).write_bytes(canonical(manifest))
+            return manifest
+        def launch(path, pin, *, deadline_seconds, before_resume, cancel_event):
+            spec = json.loads(path.read_bytes())
+            self.assertEqual(spec['contract'], 'financial-acquisition-worker-v3')
+            specs.append(spec)
+            before_resume({'pid': 123, 'creation_time': 456, 'contained': True})
+            self.acquisition._worker_main(path, pin)
+            return {'tree_extinct': True, 'deadline_reached': False, 'deadline_overshoot_seconds': 0,
+                    'exit_code': 0, 'elapsed_seconds': 1.0}
+        sample = {'free_physical_bytes': 100, 'free_commit_bytes': 100, 'free_disk_bytes': 1024 * 1024 * 1024,
+                  'processes': [], 'tree_working_set_bytes': 111, 'tree_private_bytes': 222, 'elapsed_clock': 1.0}
+        with patch('bank_quality.windows_acquisition._machine_id', return_value='fixture'), \
+                patch('bank_quality.windows_acquisition._current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch('bank_quality.windows_acquisition._resource_sample', return_value=sample), \
+                patch.object(self.acquisition, 'require_supported'), \
+                patch.object(self.acquisition, '_current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=launch), \
+                patch.object(self.acquisition, 'verify_worker_ancestry'), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=fetch):
+            with self.assertRaisesRegex(ValueError, 'representative'):
+                self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                    bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                    resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
+            self.assertEqual(specs, [])
+            if crash_metadata:
+                class Crash(BaseException):
+                    pass
+                original_append = self.batch._Batch.append
+                def append(batch, kind, **details):
+                    record = original_append(batch, kind, **details)
+                    if kind == 'phase_finish':
+                        raise Crash('after first durable metadata phase_finish')
+                    return record
+                with patch.object(self.batch._Batch, 'append', append), self.assertRaises(Crash):
+                    self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                        bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                        resource_profile_sha256=sha(profile.read_bytes()))
+                self.assertEqual([s['target_key'] for s in specs], ['201003:cadaster', '201003:dictionary'])
+                with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as opened:
+                    self.assertFalse(opened.state['pending'])
+                    self.assertEqual(len(opened.state['finished']), 1)
+                    metadata = next(iter(opened.state['finished'].values()))
+                    self.assertEqual((metadata['period'], metadata['phase']), (201003, 'metadata'))
+                    before_totals = self.batch._totals(opened)
+                    downstream = opened.bundle['members'][1]
+                    downstream_journal = self.root / downstream['authority_path'] / 'journal.jsonl'
+                    self.assertEqual(downstream_journal.read_bytes(), b'')
+                if proof_damage is not None:
+                    damaged = (self.root / metadata['result']['receipt']['path'] if proof_damage == 'receipt'
+                               else self.root / metadata['session'] / 'resolution.json')
+                    damaged.write_bytes(b'{}')
+                    preserved = {str(p.relative_to(self.root)): sha(p.read_bytes())
+                                 for p in self.root.rglob('*') if p.is_file()}
+                    with patch('bank_quality.windows_acquisition._ResourceMonitor',
+                               side_effect=AssertionError('Monitor started before completed proof validation')), \
+                            patch.object(self.batch, '_start_phase',
+                               side_effect=AssertionError('Phase dispatched before completed proof validation')), \
+                            patch.object(self.acquisition, 'reserve_attempt',
+                               side_effect=AssertionError('Attempt reserved before completed proof validation')), \
+                            patch.object(self.acquisition, 'run_contained_attempt',
+                               side_effect=AssertionError('Worker launched before completed proof validation')):
+                        for stage in ('representative', 'remaining'):
+                            with self.subTest(stage=stage), self.assertRaises((ValueError, OSError)):
+                                options = {} if stage == 'representative' else {'stage_mode': stage}
+                                self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                    bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                                    resource_profile_sha256=sha(profile.read_bytes()), **options)
+                    with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as opened:
+                        after_totals = self.batch._totals(opened)
+                        self.assertEqual(after_totals['totals'], before_totals['totals'])
+                        self.assertEqual(after_totals['finished_phases'], before_totals['finished_phases'])
+                        self.assertFalse(opened.state['pending'])
+                    self.assertEqual(downstream_journal.read_bytes(), b'')
+                    self.assertEqual({str(p.relative_to(self.root)): sha(p.read_bytes())
+                                      for p in self.root.rglob('*') if p.is_file()}, preserved)
+                    return
+            if crash_checkpoint:
+                class Crash(BaseException):
+                    pass
+                original_append = self.batch._Batch.append
+                def append(batch, kind, **details):
+                    if kind == 'representative_measurement' and proof_damage == 'unanchored':
+                        return {}  # simulate old completed candidate without the new durable anchor
+                    if kind == 'representative_checkpoint':
+                        raise Crash('after durable B/phase_finish')
+                    record = original_append(batch, kind, **details)
+                    if kind == 'phase_finish' and proof_damage == 'unanchored' and details['result']['checkpoint']['path'].endswith('/checkpoint-b.json'):
+                        raise Crash('legacy completion without original measurement anchor')
+                    return record
+                with patch.object(self.batch._Batch, 'append', append), self.assertRaises(Crash):
+                    self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                        bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                        resource_profile_sha256=sha(profile.read_bytes()))
+                self.assertEqual(len(specs), 9)
+                with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as opened:
+                    before_totals = self.batch._totals(opened)
+                    representative = next(p for p in opened.state['finished'].values()
+                        if p['phase'] == 'values' and p['period'] == 201003)
+                    self.assertNotIn('representative_checkpoint', opened.state)
+                if proof_damage in ('missing', 'tampered'):
+                    proof = self.root / representative['session'] / 'resource-measurement.json'
+                    if proof_damage == 'missing':
+                        proof.unlink()
+                    else:
+                        proof.write_bytes(b'{}')
+                preserved_files = {str(p.relative_to(self.root)): sha(p.read_bytes()) for p in self.root.rglob('*') if p.is_file()}
+                resumed_sample = dict(sample, tree_working_set_bytes=777, tree_private_bytes=888)
+                with patch('bank_quality.windows_acquisition._resource_sample', return_value=resumed_sample), \
+                        patch.object(self.acquisition, 'run_contained_attempt', side_effect=AssertionError('Unexpected relaunch')):
+                    if proof_damage is not None:
+                        with self.assertRaises((ValueError, OSError)):
+                            self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                                resource_profile_sha256=sha(profile.read_bytes()))
+                        with self.assertRaises((ValueError, OSError)):
+                            self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                                resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
+                        if proof_damage != 'unanchored':
+                            with self.assertRaises((ValueError, OSError)):
+                                self.batch.verify_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                                    bootstrap_sha256=refs['bootstrap_sha256'])
+                        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as opened:
+                            self.assertNotIn('representative_checkpoint', opened.state)
+                            self.assertEqual(self.batch._totals(opened)['totals'], before_totals['totals'])
+                            self.assertEqual(self.batch._totals(opened)['finished_phases'], before_totals['finished_phases'])
+                        self.assertEqual({str(p.relative_to(self.root)): sha(p.read_bytes()) for p in self.root.rglob('*') if p.is_file()}, preserved_files)
+                        return
+                    first = self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                        bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                        resource_profile_sha256=sha(profile.read_bytes()))
+                self.assertEqual(first['representative_checkpoint']['measurements']['peaks'],
+                    {'tree_working_set_bytes': 111, 'tree_private_bytes': 222})
+                self.assertEqual(first['totals'], before_totals['totals'])
+            first = self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                resource_profile_sha256=sha(profile.read_bytes()))
+            self.assertEqual(first['status'], 'representative_checkpoint', first)
+            self.assertEqual(first['totals']['attempts'], 9)
+            self.assertEqual(len(specs), 9)
+            self.assertEqual(first['complete_periods'], [201003])
+            checkpoint = first['representative_checkpoint']
+            self.assertEqual(checkpoint['resource_profile']['sha256'], sha(profile.read_bytes()))
+            self.assertGreater(checkpoint['measurements']['sample_count'], 0)
+            measurement = self.root / checkpoint['resource_measurement']['path']
+            self.assertEqual(sha(measurement.read_bytes()), checkpoint['resource_measurement']['sha256'])
+            measured = json.loads(measurement.read_bytes())
+            self.assertEqual(measured['measurements'], checkpoint['measurements'])
+            self.assertEqual(measured['phase']['period'], 201003)
+            self.assertEqual(measured['resource_profile'], checkpoint['resource_profile'])
+            reserved = [r for r in measured['attempt_records'] if r['kind'] == 'reserve']
+            self.assertEqual(len(reserved), 1)
+            self.assertEqual(reserved[0]['target_key'], '201003:numeric:3')
+            with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as opened:
+                original = opened.state['representative_measurement']
+                finish = next(r for r in opened.records if r['kind'] == 'phase_finish' and r['phase_id'] == original['phase_id'])
+                self.assertLess(original['sequence'], finish['sequence'])
+                self.assertLess(finish['sequence'], checkpoint['sequence'])
+            self.assertEqual(checkpoint['result']['status'], 'complete')
+            self.assertTrue(checkpoint['result']['checkpoint']['path'].endswith('/checkpoint-b.json'))
+            # A repeat of the default mode exposes the same checkpoint, without GET or renewal.
+            repeat = self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                resource_profile_sha256=sha(profile.read_bytes()))
+            self.assertEqual(repeat['representative_checkpoint'], checkpoint)
+            self.assertEqual(len(specs), 9)
+            original_profile = profile.read_bytes()
+            profile.write_bytes(canonical(dict(value, min_free_disk_bytes=2)))
+            with self.assertRaises(ValueError):
+                self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                    bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                    resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
+            self.assertEqual(len(specs), 9)
+            profile.write_bytes(original_profile)
+            result = self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
+        self.assertEqual(result['status'], 'complete', result)
+        self.assertEqual(result['totals']['attempts'], 12)
+        self.assertEqual([s['target_key'] for s in specs if ':numeric:' in s['target_key']],
+            [f'{period}:numeric:3' for period in (201003, 201006, 201009, 201012)])
+        self.assertTrue(all(':numeric:' not in s['target_key'] for s in specs[:8]))
+        bundle = json.loads((self.root / refs['bundle_path']).read_bytes())
+        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as batch:
+            metadata = next(p for p in batch.state['finished'].values() if p['phase'] == 'metadata')
+            resolution = self.root / metadata['session'] / 'resolution.json'
+        prior = resolution.read_bytes()
+        resolution.write_bytes(b'{}')
+        with self.assertRaises(ValueError):
+            self.batch.verify_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'])
+        resolution.write_bytes(prior)
+        output = self.root / 'data/runs/handoff.json'
+        export = self.batch.export_historical_sources(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'], output=output)
+        self.assertEqual(export['sha256'], sha(output.read_bytes()))
+        for member in json.loads(output.read_bytes())['members']:
+            self.assertEqual(len(member['sources']), 3)
+        with self.assertRaises(ValueError):
+            self.batch.export_historical_sources(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], output=output)
+
+    def test_legacy_run_entry_cannot_execute_historical_without_resource_gate(self):
+        refs = self.initialize()
+        with self.assertRaisesRegex(ValueError, 'resource'):
+            self.batch._run_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                bootstrap_sha256=refs['bootstrap_sha256'], metadata_workers=2)
+        result = self.batch.verify_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'])
+        self.assertEqual(result['sequence'], 0)
+        self.assertEqual(result['totals']['attempts'], 0)
+
+    def test_historical_target_budget_caps_derive_from_installed_member(self):
+        for window in self.batch._HISTORICAL_POLICY_V1['windows']:
+            for member in self.prepare(window['window_id'])['members']:
+                job = member['job']
+                targets = self.acquisition._execution_job(job)
+                budget = self.batch._HISTORICAL_POLICY_V1['budgets'][job['member']['budget_id']]
+                self.assertEqual(len(targets) * job['policies']['attempts'], budget['attempts_max'])
+                self.assertEqual(sum(self.acquisition._body_cap(t, job['policies']) for t in targets.values()),
+                                 budget['body_bytes_max'])
+
+    def test_monitor_preflight_failure_halts_before_phase_or_reservation(self):
+        refs = self.initialize()
+        profile = self.root / 'data/runs/resource.json'
+        profile.write_bytes(canonical({'contract': 'financial-acquisition-resource-profile-v1',
+            'machine_id': 'fixture', 'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}))
+        with patch('bank_quality.windows_acquisition._machine_id', return_value='fixture'), \
+                patch('bank_quality.windows_acquisition._current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch('bank_quality.windows_acquisition._resource_sample', side_effect=OSError('preflight measurement')), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=AssertionError('Unexpected launch')):
+            with self.assertRaisesRegex((RuntimeError, OSError), 'preflight measurement'):
+                self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                    bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                    resource_profile_sha256=sha(profile.read_bytes()))
+        state = self.batch.verify_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+            bootstrap_sha256=refs['bootstrap_sha256'])
+        self.assertEqual(state['status'], 'halted')
+        self.assertEqual(state['sequence'], 0)
+        self.assertEqual(state['totals']['attempts'], 0)
+
+    def test_historical_recovery_error_claims_window_before_halt(self):
+        bundle = self.prepare()
+        bundle['contract'] = 'financial-acquisition-batch-v2'
+        seen = []
+        @contextmanager
+        def denied_claim(path):
+            seen.append(path)
+            raise OSError('historical claim unavailable')
+            yield
+        with patch.object(self.batch, '_immutable_batch', return_value=bundle), \
+                patch.object(self.batch, '_open_batch', side_effect=OSError('historical evidence error')), \
+                patch.object(self.acquisition, '_claim', denied_claim), \
+                patch.object(self.batch._Batch, 'halt', side_effect=AssertionError('Halt without claim')):
+            with self.assertRaisesRegex(OSError, 'claim unavailable'):
+                self.batch._recover_batch(self.root / 'data/runs/bundle.json', 'a' * 64,
+                    bootstrap_sha256='b' * 64, output=self.root / 'data/runs/recovery.json')
+        self.assertEqual(seen, [self.batch._batch_paths(bundle['scope'])[1]])
+        self.assertFalse((self.root / 'data/runs/recovery.json').exists())
+
+    def test_historical_two_distinct_guards_halt_and_success_resets(self):
+        bundle = self.prepare()
+        bundle['contract'] = 'financial-acquisition-batch-v2'
+        def finish(state, guard, idx):
+            phase_id = str(idx) * 32
+            state['pending'][phase_id] = {'period': bundle['acquire_periods'][idx], 'phase': 'metadata'}
+            result = {'contract': 'financial-acquisition-phase-result-v1', 'status': 'failed' if guard else 'complete',
+                      'guard': guard, 'error': 'fixture' if guard else '',
+                      'receipt': {'path': 'data/runs/receipt.json', 'sha256': 'a' * 64},
+                      'checkpoint': None if guard else {'path': 'data/runs/a.json', 'sha256': 'b' * 64}}
+            record = {'contract': 'financial-acquisition-batch-ledger-v1', 'sequence': idx + 1,
+                      'previous_record_sha256': '0' * 64, 'bundle_sha256': 'c' * 64,
+                      'bootstrap_sha256': 'd' * 64, 'kind': 'phase_finish', 'phase_id': phase_id,
+                      'result': result, 'recovered': False}
+            self.batch._apply_phase(state, record, bundle)
+        state = self.batch._ledger_state()
+        finish(state, 'schema', 0)
+        finish(state, 'deadline', 1)
+        self.assertEqual((state['guard_streak'], state['halt']), (2, 'consecutive_guard'))
+        state = self.batch._ledger_state()
+        finish(state, 'schema', 0)
+        finish(state, '', 1)
+        finish(state, 'deadline', 2)
+        self.assertEqual((state['guard_streak'], state['halt']), (1, ''))
+
+    def test_historical_member_guard_dispatch_and_receipt_replay_preserve_legacy(self):
+        refs = self.initialize()
+        with self.batch._open_batch(self.root / refs['bundle_path'], refs['bundle_sha256'], refs['bootstrap_sha256']) as batch:
+            member = batch.bundle['members'][0]
+            context = self.batch._MemberContext(batch, member)
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=context) as authority:
+                for target, guard in zip(member['job']['targets'], ('schema', 'deadline')):
+                    authority.commit('guard_failure', target_key=target['target_key'], session_id='fixture',
+                        status='source_schema_failed', guard=guard, diagnostic='fixture')
+                self.assertEqual(authority.state['guard_streak'], 2)
+                receipt = self.acquisition._receipt(authority, 'fixture')
+                self.acquisition._verify_receipt(receipt, authority)
+                records = copy.deepcopy(authority.records)
+                replay = self.acquisition._replay_member_records(records, job_identity=member['job_sha256'],
+                    targets=authority.targets, policy=authority.policies)
+                self.assertEqual(replay['state']['guard_streak'], 1)
+                self.assertEqual(authority.state['guard_streak'], 2)
+
+    def test_installed_budget_adaptation_is_exact(self):
+        for key, budget in self.batch._HISTORICAL_POLICY_V1['budgets'].items():
+            limits = self.batch._historical_limits(key)
+            self.assertEqual(limits['attempts'], budget['attempts_per_target'])
+            self.assertEqual(limits['numeric_body_bytes'], budget['numeric_body_bytes_per_target'])
+            self.assertEqual(limits['scheduling_seconds'], budget['scheduling_seconds_max'])
+        with self.assertRaises(ValueError):
+            self.batch._historical_limits('unknown')
