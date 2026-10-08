@@ -1,9 +1,11 @@
 """Financial catalog metadata boundary and finite snapshot authorities.
 
-Construction and querying are added in subsequent reviewed checkpoints.
-Handoff shape and installed offers alone never authorize a snapshot.
+Construction and discovery freeze authenticated metadata; querying is added in
+a subsequent checkpoint. Handoff shape and offers never authorize a snapshot.
 """
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 import ast
 import hashlib
 import json
@@ -12,6 +14,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import weakref
 
 
 _MAX_METADATA_BYTES = 32 * 1024 * 1024
@@ -106,7 +109,7 @@ def _plain_path(path):
              'Metadata path contains a link or reparse point')
 
 
-def _contained_path(root, relative):
+def _relative_path_shape(relative):
     _require(type(relative) is str and relative, 'Expected a relative metadata path')
     _require(not any(ord(c) < 32 or c in '\\:<>"|?*' for c in relative), 'Noncanonical metadata path')
     p = PurePosixPath(relative)
@@ -114,6 +117,11 @@ def _contained_path(root, relative):
              and all(part not in ('.', '..') for part in p.parts), 'Metadata path escapes its root')
     _require(all(not part.endswith((' ', '.')) and part.split('.')[0].lower() not in _RESERVED
                  for part in p.parts), 'Windows metadata path alias')
+    return p
+
+
+def _contained_path(root, relative):
+    p = _relative_path_shape(relative)
     try:
         anchor = Path(root).absolute()
         # Root itself can be plain while an ancestor redirects it via reparse.
@@ -144,20 +152,38 @@ class _PinnedImage:
         return _json_bytes(self.raw)
 
 
+_CAPTURE_IMAGES = ContextVar('financial_catalog_capture_images', default=None)
+
+
+@contextmanager
+def _capture_scope():
+    token = _CAPTURE_IMAGES.set({})
+    try:
+        yield
+    finally:
+        _CAPTURE_IMAGES.reset(token)
+
+
 def _read_reference(root, reference, *, max_bytes=_MAX_METADATA_BYTES, json_required=True, native_profile=False):
     _fields(reference, ('path', 'sha256'))
     pin = _hash(reference['sha256'])
     _positive_integer(max_bytes)
     path = _contained_path(root, reference['path'])
+    cache = _CAPTURE_IMAGES.get()
+    cached = cache.get(str(path)) if cache is not None else None
     try:
-        with path.open('rb') as stream:
-            opened = os.fstat(stream.fileno())
-            _require(stat.S_ISREG(opened.st_mode), 'Metadata reference is not a regular file')
-            _require(opened.st_size <= max_bytes, 'Metadata reference exceeds its size limit')
-            raw = stream.read(max_bytes + 1)
-            _require(len(raw) <= max_bytes, 'Metadata reference grew beyond its size limit')
-            current = _contained_path(root, reference['path']).stat()
-            _require(os.path.samestat(opened, current), 'Metadata reference changed identity during capture')
+        if cached is not None:
+            raw = cached.raw
+            _require(len(raw) <= max_bytes, 'Captured metadata exceeds its requested size limit')
+        else:
+            with path.open('rb') as stream:
+                opened = os.fstat(stream.fileno())
+                _require(stat.S_ISREG(opened.st_mode), 'Metadata reference is not a regular file')
+                _require(opened.st_size <= max_bytes, 'Metadata reference exceeds its size limit')
+                raw = stream.read(max_bytes + 1)
+                _require(len(raw) <= max_bytes, 'Metadata reference grew beyond its size limit')
+                current = _contained_path(root, reference['path']).stat()
+                _require(os.path.samestat(opened, current), 'Metadata reference changed identity during capture')
     except CatalogError:
         raise
     except OSError as exc:
@@ -171,7 +197,10 @@ def _read_reference(root, reference, *, max_bytes=_MAX_METADATA_BYTES, json_requ
     _require(digest == pin, 'Metadata reference SHA-256 mismatch')
     if json_required:
         _json_bytes(raw)
-    return _PinnedImage(reference['path'], physical, raw)
+    image = cached if cached is not None else _PinnedImage(reference['path'], physical, raw)
+    if cache is not None:
+        cache[str(path)] = image
+    return image
 
 
 _TRUSTED_BASE = 'c7455f06ff2dc52a7958e300b19df01bca9b92c7'
@@ -191,7 +220,7 @@ _PROOF_FIELDS = {
 def _reference_shape(value):
     _fields(value, ('path', 'sha256'))
     _hash(value['sha256'])
-    _require(type(value['path']) is str and value['path'], 'Missing reference path')
+    _relative_path_shape(value['path'])
 
 
 def _selection_shape(selection):
@@ -304,6 +333,9 @@ def _apply_active_revisions(entries, choices):
             verified = [revision for revision in entry['revisions']
                         if revision['revision_id'] == pin and revision['acceptance'] == 'verified']
             _require(len(verified) == 1, 'Active revision is not a unique verified revision')
+        else:
+            _require(sum(r['acceptance'] == 'verified' for r in entry['revisions']) != 1,
+                     'Explicit null choice requires no acceptance or ambiguous revisions')
         updates.append((entry, pin))
     # Invalid choices must not leave partially applied active selections.
     for entry, pin in updates:
@@ -742,3 +774,455 @@ def _validate_pipeline_gate(root, gate):
     return {'acceptance': 'verified', 'historical_stages': {'state': 'available', 'kind': proof['kind']},
             'parquet_metadata': docs['convert'], 'profile_metadata': profile_doc,
             'journal_authority': journal_authority, 'captured_images': tuple(images)}
+
+
+_CHECKOUT_ROOT = Path(__file__).resolve().parents[1]
+_COUNT_FIELDS = ('cells', 'observations', 'cadaster_records', 'presence_counts', 'value_state_counts')
+_CATALOG_CONTEXTS = weakref.WeakKeyDictionary()
+
+
+@dataclass(frozen=True, eq=False)
+class Catalog:
+    path: Path
+    sha256: str
+
+
+@dataclass(frozen=True)
+class _CatalogState:
+    root: Path
+    raw: bytes
+    images: tuple
+
+
+def _context(catalog):
+    _require(type(catalog) is Catalog and catalog in _CATALOG_CONTEXTS,
+             'Expected an authenticated catalog context produced by load_catalog')
+    return _CATALOG_CONTEXTS[catalog]
+
+
+def _checkout_path(root, path):
+    try:
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            candidate = Path(root) / candidate
+        relative = candidate.absolute().relative_to(Path(root).absolute()).as_posix()
+    except (TypeError, ValueError, OSError) as exc:
+        raise CatalogError('integrity', 'Catalog path is outside its fixed checkout') from exc
+    return _contained_path(root, relative), relative
+
+
+def _catalog_destination(root, path):
+    destination, relative = _checkout_path(root, path)
+    parts = PurePosixPath(relative).parts
+    _require(len(parts) == 3 and parts[:2] == ('data', 'runs')
+             and parts[2].startswith('financial-catalog-') and len(parts[2]) > len('financial-catalog-'),
+             'Catalog destination must be a new financial-catalog run')
+    return destination, relative
+
+
+def _coverage(entries):
+    accepted = sum(any(r['acceptance'] == 'verified' for r in e['revisions']) for e in entries)
+    return {'offered': len(entries), 'accepted': accepted, 'unavailable': len(entries) - accepted,
+            'revision_count': sum(len(e['revisions']) for e in entries)}
+
+
+def _counts(document):
+    result = {field: document.get(field) for field in _COUNT_FIELDS}
+    for field in _COUNT_FIELDS[:3]:
+        _require(type(result[field]) is int and result[field] >= 0, 'Invalid financial metadata count')
+    for field in _COUNT_FIELDS[3:]:
+        _require(type(result[field]) is dict and all(type(k) is str and type(v) is int and v >= 0
+                                                   for k, v in result[field].items()), 'Invalid native state counts')
+    return result
+
+
+def _encodings(document):
+    bindings = document.get('numeric_bindings')
+    _require(type(bindings) is list and all(type(b) is dict for b in bindings), 'Invalid binding metadata')
+    values = [b.get('encoding', 'duckdb_decimal') for b in bindings]
+    _require(all(type(e) is str and e in ('duckdb_decimal', 'decimal_text_v1') for e in values),
+             'Unknown native precision encoding')
+    return sorted(set(values))
+
+
+def _put_image(store, name, raw):
+    _require(type(raw) is bytes, 'Companion must use captured bytes')
+    _require(name not in store or store[name] == raw, 'Conflicting frozen companion')
+    store[name] = raw
+    return {'path': name, 'sha256': hashlib.sha256(raw).hexdigest()}
+
+
+def _freeze_revision(gate_image, gate, verified, store):
+    """Only the builder supplies the result of a finite authority parser here."""
+    _require(verified['acceptance'] == 'verified', 'Unverified authority cannot produce a revision')
+    images = {gate_image.path: gate_image}
+    for image in verified['captured_images']:
+        _require(type(image) is _PinnedImage and hashlib.sha256(image.raw).hexdigest() == image.sha256,
+                 'Captured authority bytes differ from their physical pin')
+        _require(image.path not in images or images[image.path] == image, 'Conflicting captured authority path')
+        images[image.path] = image
+    revision = gate['revision']; prefix = 'metadata/revisions/' + revision + '/'
+    gate_ref = _put_image(store, prefix + 'gate.json', _canonical(gate))
+    original_gate_ref = _put_image(store, prefix + 'gate-original.json', gate_image.raw)
+    def freeze_manifest(name):
+        original = gate[name]
+        _require(original['path'] in images, 'Authority did not capture required metadata')
+        image = images[original['path']]
+        if name == 'profile':
+            _require(hashlib.sha256(image.raw.replace(b'\r\n', b'\n')).hexdigest() == original['sha256'],
+                     'Frozen native profile differs')
+        else:
+            _require(image.sha256 == original['sha256'], 'Frozen manifest pin differs')
+        return {'original': original, 'image': _put_image(store, prefix + name + '.json', image.raw)}
+    profile, admission, parquet = (freeze_manifest(name) for name in ('profile', 'admission', 'parquet'))
+    counts = _counts(verified['parquet_metadata']); encodings = _encodings(verified['parquet_metadata'])
+    fragment = {'contract': 'catalog-authority-fragment-v1', 'kind': gate['proof']['kind'],
+                'gate_original': {'path': gate_image.path, 'sha256': gate_image.sha256},
+                'gate': gate_ref, 'gate_image': original_gate_ref,
+                'selection': gate['selection'], 'revision': revision, 'profile': profile,
+                'admission': admission, 'parquet': parquet, 'historical_stages': verified['historical_stages'],
+                'counts': counts, 'precision_encodings': encodings,
+                'dependencies': [{'path': image.path, 'sha256': image.sha256, 'bytes': len(image.raw)}
+                                 for image in sorted(images.values(), key=lambda image: image.path)],
+                'journal': verified.get('journal_authority'), 'limitations': gate['limitations']}
+    proof = _put_image(store, prefix + 'authority.json', _canonical(fragment))
+    return {'revision_id': revision, 'profile': gate['profile'], 'admission': gate['admission'],
+            'parquet': gate['parquet'], 'proof': proof, 'acceptance': 'verified',
+            'historical_stages': verified['historical_stages'], 'counts': counts,
+            'precision_encodings': encodings, 'limitations': gate['limitations']}
+
+
+def _frozen_document(document, store):
+    """Authenticate frozen structure and cross-links, without reopening original authority files."""
+    _fields(document, ('contract', 'inputs', 'registry', 'parent_catalog', 'entries', 'coverage', 'files', 'limitations'))
+    _require(document['contract'] == 'ifdata-financial-catalog-v1', 'Unsupported catalog contract')
+    _require(type(document['limitations']) is list and all(type(v) is str for v in document['limitations']),
+             'Invalid catalog limitations')
+    used = set()
+    def read(ref):
+        _reference_shape(ref)
+        _require(ref['path'] in store and hashlib.sha256(store[ref['path']]).hexdigest() == ref['sha256'],
+                 'Frozen metadata link differs')
+        used.add(ref['path'])
+        return _json_bytes(store[ref['path']])
+    inputs = read(document['inputs']); _catalog_inputs_shape(inputs)
+    _require(document['parent_catalog'] == inputs['parent_catalog'], 'Frozen parent differs from explicit input')
+    _require(document['registry']['sha256'] == inputs['registry']['sha256'], 'Frozen registry differs from pinned input')
+    baseline = _registry_entries(read(document['registry']))
+    incoming = {(ref['path'], ref['sha256']) for ref in inputs['gates']}
+    incoming_seen, inherited_seen, inherited = set(), set(), {}
+    if document['parent_catalog'] is not None:
+        name = 'metadata/parent.json'
+        _require(name in store, 'Parent provenance companion is missing')
+        parent = read({'path': name, 'sha256': hashlib.sha256(store[name]).hexdigest()})
+        _fields(parent, ('contract', 'parent_catalog', 'entries'))
+        _require(parent['contract'] == 'catalog-parent-origins-v1' and parent['parent_catalog'] == document['parent_catalog']
+                 and type(parent['entries']) is list, 'Frozen parent provenance differs')
+        descriptors = {_selection_key(entry['selection']): entry['descriptor_sha256'] for entry in baseline}
+        parent_selections = set()
+        for parent_entry in parent['entries']:
+            _fields(parent_entry, ('selection', 'descriptor_sha256', 'revisions'))
+            key = _selection_key(parent_entry['selection'])
+            _require(key in descriptors and key not in parent_selections
+                     and parent_entry['descriptor_sha256'] == descriptors[key]
+                     and type(parent_entry['revisions']) is list, 'Parent offer provenance differs')
+            parent_selections.add(key)
+            for revision in parent_entry['revisions']:
+                _fields(revision, ('revision_id', 'proof', 'gate_original'))
+                _hash(revision['revision_id']); _reference_shape(revision['proof']); _reference_shape(revision['gate_original'])
+                origin_key = (key, revision['revision_id'])
+                _require(origin_key not in inherited, 'Duplicate inherited revision origin')
+                inherited[origin_key] = revision
+    entries = document['entries']
+    _require(type(entries) is list and len(entries) == len(baseline), 'Catalog offer inventory differs')
+    revision_pins = set()
+    for entry, offer in zip(entries, baseline):
+        _fields(entry, ('selection', 'descriptor_sha256', 'reports', 'revisions', 'active_revision', 'limitations'))
+        for field in ('selection', 'descriptor_sha256', 'reports'):
+            _require(entry[field] == offer[field], 'Frozen offer differs from its native registry')
+        _require(type(entry['limitations']) is list and all(type(v) is str for v in entry['limitations'])
+                 and type(entry['revisions']) is list, 'Invalid entry metadata')
+        local_pins = []
+        for revision in entry['revisions']:
+            _fields(revision, ('revision_id', 'profile', 'admission', 'parquet', 'proof', 'acceptance',
+                              'historical_stages', 'counts', 'precision_encodings', 'limitations'))
+            pin = _hash(revision['revision_id'])
+            _require(pin not in revision_pins and revision['acceptance'] == 'verified', 'Duplicate or unverified revision')
+            revision_pins.add(pin); local_pins.append(pin)
+            fragment = read(revision['proof'])
+            _fields(fragment, ('contract', 'kind', 'gate_original', 'gate', 'gate_image', 'selection', 'revision', 'profile',
+                               'admission', 'parquet', 'historical_stages', 'counts', 'precision_encodings',
+                               'dependencies', 'journal', 'limitations'))
+            _require(fragment['contract'] == 'catalog-authority-fragment-v1', 'Unsupported frozen authority')
+            _reference_shape(fragment['gate_original'])
+            original = (fragment['gate_original']['path'], fragment['gate_original']['sha256'])
+            origin_key = (_selection_key(entry['selection']), pin)
+            if original in incoming:
+                _require(origin_key not in inherited and original not in incoming_seen, 'Duplicate new gate origin')
+                incoming_seen.add(original)
+            else:
+                _require(origin_key in inherited and inherited[origin_key]['proof'] == revision['proof']
+                         and inherited[origin_key]['gate_original'] == fragment['gate_original'],
+                         'Frozen gate origin is neither a pinned input nor an inherited parent revision')
+                inherited_seen.add(origin_key)
+            gate = read(fragment['gate']); _handoff_shape(gate)
+            original_gate = read(fragment['gate_image'])
+            _require(fragment['gate_image']['sha256'] == fragment['gate_original']['sha256']
+                     and original_gate == gate and store[fragment['gate']['path']] == _canonical(original_gate),
+                     'Frozen canonical gate differs from its captured original')
+            _require(fragment['kind'] == gate['proof']['kind'] and fragment['selection'] == entry['selection'] == gate['selection']
+                     and fragment['revision'] == pin == gate['revision'], 'Frozen authority selection/revision differs')
+            kind, period = fragment['kind'], gate['selection']['period']
+            if kind == 'installed_historical_anchor_v1':
+                _require(period in (202312, 202412, 202503) and gate['proof']['trusted_base_sha'] == _TRUSTED_BASE
+                         and gate['proof']['transport']['sha256'] == _TRANSPORT_PIN
+                         and fragment['historical_stages'] == gate['proof']['stage_evidence'],
+                         'Frozen historical authority differs')
+                _require(fragment['journal'] is None, 'Historical authority cannot invent a pipeline journal')
+            elif kind == 'accepted_supplement403_v1':
+                _require(period == 202403 and gate['proof']['supplement'] == _SUPPLEMENT403
+                         and fragment['journal'] is None, 'Frozen supplement authority differs')
+            else:
+                _require(period in (202406, 202409, 202506, 202509, 202512, 202603, 202606)
+                         and all(gate['proof'][k] == ref for k, ref in
+                                 (('plan', _PIPELINE57_PLAN), ('result', _PIPELINE57_RESULT), ('head', _PIPELINE57_HEAD))),
+                         'Frozen pipeline57 authority differs')
+                journal = fragment['journal']
+                _fields(journal, ('journal', 'head', 'member', 'finishes'))
+                _fields(journal['journal'], ('path', 'sha256', 'bytes'))
+                _require({k: journal['journal'][k] for k in ('path', 'sha256')} == _PIPELINE57_JOURNAL
+                         and type(journal['journal']['bytes']) is int and journal['journal']['bytes'] > 0,
+                         'Frozen original journal pin differs')
+                _fields(journal['head'], ('sequence', 'journal_sha256', 'plan_sha256'))
+                _require(type(journal['head']['sequence']) is int and journal['head']['sequence'] == 98
+                         and journal['head']['plan_sha256'] == _PIPELINE57_PLAN['sha256']
+                         and type(journal['member']) is int and journal['member'] == period,
+                         'Frozen journal head/member differs')
+                _hash(journal['head']['journal_sha256'])
+                _require(type(journal['finishes']) is list and len(journal['finishes']) == len(_STAGES),
+                         'Frozen member lacks seven finishes')
+                last = 0
+                for stage, finish in zip(_STAGES, journal['finishes']):
+                    _fields(finish, ('stage', 'sequence', 'record_sha256', 'start_sequence', 'spec', 'receipt'))
+                    _positive_integer(finish['sequence']); _positive_integer(finish['start_sequence'])
+                    _hash(finish['record_sha256']); _reference_shape(finish['spec']); _reference_shape(finish['receipt'])
+                    _require(finish['stage'] == stage and last < finish['start_sequence'] < finish['sequence'] <= 98
+                             and finish['receipt'] == gate['proof']['receipts'][stage], 'Frozen stage links/order differ')
+                    last = finish['sequence']
+            if kind != 'installed_historical_anchor_v1':
+                _require(fragment['historical_stages'] == {'state': 'available', 'kind': kind},
+                         'Frozen stage availability differs')
+            for field in ('profile', 'admission', 'parquet'):
+                _fields(fragment[field], ('original', 'image'))
+                _require(fragment[field]['original'] == gate[field] == revision[field], 'Frozen original reference differs')
+            profile = read(fragment['profile']['image'])
+            _require(profile.get('selection') == gate['selection']
+                     and hashlib.sha256(store[fragment['profile']['image']['path']].replace(b'\r\n', b'\n')).hexdigest()
+                     == gate['profile']['sha256'], 'Frozen profile selection/native pin differs')
+            admission, parquet = (read(fragment[field]['image']) for field in ('admission', 'parquet'))
+            for field in ('admission', 'parquet'):
+                _require(fragment[field]['image']['sha256'] == gate[field]['sha256'], 'Frozen physical manifest differs')
+            _projection_links(admission, parquet, gate['admission'], gate['selection'], gate['profile']['sha256'])
+            _require(gate['parquet']['sha256'] == pin, 'Frozen Parquet revision differs')
+            for field, expected in (('counts', _counts(parquet)), ('precision_encodings', _encodings(parquet)),
+                                    ('historical_stages', fragment['historical_stages']), ('limitations', gate['limitations'])):
+                _require(fragment[field] == revision[field] == expected, 'Frozen revision metadata differs')
+            dependencies = fragment['dependencies']
+            _require(type(dependencies) is list, 'Invalid authority dependency inventory')
+            seen = set()
+            for dep in dependencies:
+                _fields(dep, ('path', 'sha256', 'bytes')); _reference_shape({k: dep[k] for k in ('path', 'sha256')})
+                _require(type(dep['bytes']) is int and dep['bytes'] >= 0 and dep['path'] not in seen,
+                         'Duplicate or invalid authority dependency')
+                seen.add(dep['path'])
+            _require([d['path'] for d in dependencies] == sorted(seen), 'Authority dependencies are not deterministic')
+            by_path = {dep['path']: dep for dep in dependencies}
+            required = [fragment['gate_original'], gate['admission'], gate['parquet'],
+                        {'path': gate['profile']['path'], 'sha256': fragment['profile']['image']['sha256']}]
+            proof = gate['proof']
+            if kind == 'installed_historical_anchor_v1':
+                required.extend(proof[field] for field in ('trusted_code', 'transport', 'ledger', 'replay_admission', 'replay_parquet'))
+                if proof['stage_evidence']['state'] == 'available':
+                    required.extend(proof['stage_evidence'][field] for field in ('query', 'replay_query', 'compare'))
+            elif kind == 'accepted_supplement403_v1':
+                required.append(proof['supplement'])
+            else:
+                required.extend(proof[field] for field in ('plan', 'result', 'head'))
+                required.extend(proof['receipts'].values())
+                required.append(_PIPELINE57_JOURNAL)
+                required.extend(finish['spec'] for finish in fragment['journal']['finishes'])
+            for ref in required:
+                _require(ref['path'] in by_path and by_path[ref['path']]['sha256'] == ref['sha256']
+                         and by_path[ref['path']]['bytes'] > 0, 'Frozen authority dependency link is missing or differs')
+            for field in ('profile', 'admission', 'parquet'):
+                _require(by_path[gate[field]['path']]['bytes'] == len(store[fragment[field]['image']['path']]),
+                         'Frozen physical dependency byte count differs')
+            _require(by_path[fragment['gate_original']['path']]['bytes'] == len(store[fragment['gate_image']['path']]),
+                     'Frozen original gate byte count differs')
+            if kind == 'pipeline57_v1':
+                _require(by_path[_PIPELINE57_JOURNAL['path']]['bytes'] == fragment['journal']['journal']['bytes'],
+                         'Frozen journal dependency byte count differs')
+        _require(local_pins == sorted(local_pins), 'Catalog revisions are not ordered')
+        if entry['active_revision'] is not None:
+            _require(_hash(entry['active_revision']) in local_pins, 'Active catalog revision is absent')
+    choices_checked = _json_bytes(_canonical(entries))
+    _apply_active_revisions(choices_checked, inputs['active_revisions'])
+    _require(all(original['active_revision'] == checked['active_revision']
+                 for original, checked in zip(entries, choices_checked)), 'Catalog active choice differs from explicit input')
+    _fields(document['coverage'], ('offered', 'accepted', 'unavailable', 'revision_count'))
+    _require(all(type(v) is int and v >= 0 for v in document['coverage'].values())
+             and document['coverage'] == _coverage(entries), 'Catalog coverage differs from verified revisions')
+    _require(incoming_seen == incoming and inherited_seen == set(inherited), 'Catalog dropped a new or inherited accepted gate')
+    _require(used == set(store), 'Catalog has unreferenced companions')
+
+
+def _prepare_catalog(inputs_path: Path, destination: Path, *, inputs_sha256: str) -> dict:
+    root = _CHECKOUT_ROOT
+    output, output_name = _catalog_destination(root, destination)
+    _require(not output.exists(), 'Catalog output already exists')
+    _, input_name = _checkout_path(root, inputs_path)
+    image = _read_reference(root, {'path': input_name, 'sha256': inputs_sha256})
+    inputs = image.document(); _catalog_inputs_shape(inputs)
+    registry = _read_reference(root, inputs['registry']); entries = _registry_entries(registry.document())
+    store = {}
+    input_ref = _put_image(store, 'metadata/inputs.json', image.raw)
+    registry_ref = _put_image(store, 'metadata/registry.json', registry.raw)
+    by_selection = {_selection_key(entry['selection']): entry for entry in entries}
+    if inputs['parent_catalog'] is not None:
+        parent_ref = inputs['parent_catalog']
+        parent = load_catalog(_contained_path(root, parent_ref['path']), catalog_sha256=parent_ref['sha256'])
+        state = _context(parent)
+        parent_origins = []
+        parent_images = {companion.path: companion.raw for companion in state.images}
+        for parent_entry in _json_bytes(state.raw)['entries']:
+            key = _selection_key(parent_entry['selection'])
+            _require(key in by_selection and by_selection[key]['descriptor_sha256'] == parent_entry['descriptor_sha256'],
+                     'Parent offer descriptor differs; reconcile context before updating catalog')
+            by_selection[key]['revisions'] = parent_entry['revisions']
+            by_selection[key]['active_revision'] = parent_entry['active_revision']
+            if parent_entry['revisions']:
+                origins = []
+                for revision in parent_entry['revisions']:
+                    fragment = _json_bytes(parent_images[revision['proof']['path']])
+                    origins.append({'revision_id': revision['revision_id'], 'proof': revision['proof'],
+                                    'gate_original': fragment['gate_original']})
+                parent_origins.append({'selection': parent_entry['selection'],
+                                       'descriptor_sha256': parent_entry['descriptor_sha256'], 'revisions': origins})
+        for companion in state.images:
+            if companion.path not in ('metadata/inputs.json', 'metadata/registry.json', 'metadata/parent.json'):
+                _put_image(store, companion.path, companion.raw)
+        _put_image(store, 'metadata/parent.json', _canonical({'contract': 'catalog-parent-origins-v1',
+                   'parent_catalog': parent_ref, 'entries': parent_origins}))
+    validators = {'installed_historical_anchor_v1': _validate_historical_gate,
+                  'accepted_supplement403_v1': _validate_supplement_gate, 'pipeline57_v1': _validate_pipeline_gate}
+    for ref in sorted(inputs['gates'], key=lambda r: (r['path'], r['sha256'])):
+        _require(ref['path'].startswith(('data/runs/', '.scratch/catalog61-',
+                                        '.scratch/migration-snapshot-ifdata-11-20261006/')),
+                 'Catalog gate is outside authorized metadata destinations')
+        gate_image = _read_reference(root, ref); gate = gate_image.document(); _handoff_shape(gate)
+        key = _selection_key(gate['selection']); _require(key in by_selection, 'Gate selection is not offered')
+        entry = by_selection[key]
+        _require(gate['admission']['path'].startswith('data/derived/')
+                 and gate['parquet']['path'].startswith('data/curated/'), 'Gate manifest destination is not native')
+        _require(not any(r['revision_id'] == gate['revision'] for r in entry['revisions']), 'Duplicate accepted revision')
+        verified = validators[gate['proof']['kind']](root, gate)
+        entry['revisions'].append(_freeze_revision(gate_image, gate, verified, store))
+    for entry in entries:
+        entry['revisions'].sort(key=lambda revision: revision['revision_id'])
+    _apply_active_revisions(entries, inputs['active_revisions'])
+    files = [{'path': name, 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+             for name, raw in sorted(store.items())]
+    document = {'contract': 'ifdata-financial-catalog-v1', 'inputs': input_ref, 'registry': registry_ref,
+                'parent_catalog': inputs['parent_catalog'], 'entries': entries, 'coverage': _coverage(entries),
+                'files': files, 'limitations': ['Historical acceptance is distinct from current payload health.',
+                                               'No economic comparability or academic sample is inferred.']}
+    _frozen_document(document, store)
+    raw = _canonical(document)
+    try:
+        output.mkdir(exist_ok=False)
+        for name, content in sorted(store.items()):
+            path = _contained_path(output, name); path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open('xb') as stream:
+                stream.write(content); stream.flush(); os.fsync(stream.fileno())
+        # Completion marker last. Failure preserves an unaccepted directory for diagnosis.
+        with (output / 'catalog.json').open('xb') as stream:
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    except OSError as exc:
+        raise CatalogError('integrity', 'Catalog publication failed; partial destination is not accepted') from exc
+    return {'catalog': {'path': output_name + '/catalog.json', 'sha256': hashlib.sha256(raw).hexdigest()},
+            'coverage': document['coverage']}
+
+
+def prepare_catalog(inputs_path: Path, destination: Path, *, inputs_sha256: str) -> dict:
+    with _capture_scope():
+        return _prepare_catalog(inputs_path, destination, inputs_sha256=inputs_sha256)
+
+
+def load_catalog(path: Path, *, catalog_sha256: str) -> Catalog:
+    root = _CHECKOUT_ROOT
+    target, name = _checkout_path(root, path)
+    _require(target.name == 'catalog.json', 'Expected catalog completion marker')
+    _catalog_destination(root, target.parent)
+    image = _read_reference(root, {'path': name, 'sha256': catalog_sha256})
+    document = image.document()
+    _require(type(document) is dict and type(document.get('files')) is list, 'Invalid catalog companion inventory')
+    store, images = {}, []
+    for ref in document['files']:
+        _fields(ref, ('path', 'bytes', 'sha256'))
+        _reference_shape({k: ref[k] for k in ('path', 'sha256')})
+        _require(type(ref['bytes']) is int and 0 <= ref['bytes'] <= _MAX_METADATA_BYTES,
+                 'Invalid companion byte count')
+        _require(ref['path'] not in store and ref['path'].startswith('metadata/'), 'Duplicate or foreign companion path')
+        companion = _read_reference(target.parent, {k: ref[k] for k in ('path', 'sha256')})
+        _require(len(companion.raw) == ref['bytes'], 'Companion byte count differs')
+        store[companion.path] = companion.raw; images.append(companion)
+    _require([r['path'] for r in document['files']] == sorted(store), 'Companion inventory is not ordered')
+    expected_files = set(store) | {'catalog.json'}
+    expected_dirs = {parent.as_posix() for name in store for parent in PurePosixPath(name).parents
+                     if parent.as_posix() != '.'}
+    actual_files = set(); pending = [target.parent]
+    try:
+        while pending:
+            directory = pending.pop()
+            for candidate in directory.iterdir():
+                relative = candidate.relative_to(target.parent).as_posix()
+                checked = _contained_path(target.parent, relative)
+                if checked.is_dir():
+                    _require(relative in expected_dirs, 'Unexpected catalog directory')
+                    pending.append(checked)
+                else:
+                    _require(checked.is_file(), 'Nonregular catalog artifact')
+                    actual_files.add(relative)
+    except OSError as exc:
+        raise CatalogError('integrity', 'Catalog inventory cannot be checked') from exc
+    _require(actual_files == expected_files, 'Catalog physical inventory differs')
+    _frozen_document(document, store)
+    context = Catalog(target, image.sha256)
+    _CATALOG_CONTEXTS[context] = _CatalogState(root, image.raw, tuple(images))
+    return context
+
+
+def discover(catalog: Catalog, *, period=None, perspective=None, report_id=None) -> list[dict]:
+    state = _context(catalog)
+    for value in (period, perspective, report_id):
+        if value is not None:
+            _positive_integer(value)
+    rows = []
+    for entry in _json_bytes(state.raw)['entries']:
+        selection = entry['selection']
+        if ((period is not None and selection['period'] != period)
+                or (perspective is not None and selection['perspective'] != perspective)
+                or (report_id is not None and report_id not in selection['reports'])):
+            continue
+        verified = [r for r in entry['revisions'] if r['acceptance'] == 'verified']
+        chosen = ([r for r in verified if r['revision_id'] == entry['active_revision']]
+                  if entry['active_revision'] is not None else verified)
+        row = {**entry, 'acceptance': 'verified' if verified else 'unavailable',
+               'query_selection': ('no_accepted_revision' if not verified else
+                                   'selected' if len(chosen) == 1 else 'ambiguous_revision'),
+               'historical_stages': [{'revision_id': r['revision_id'], **r['historical_stages']} for r in verified],
+               'counts': chosen[0]['counts'] if len(chosen) == 1 else None,
+               'local_health': 'not_checked' if verified else 'unavailable',
+               'payload_validation': 'not_run'}
+        rows.append(row)
+    return rows

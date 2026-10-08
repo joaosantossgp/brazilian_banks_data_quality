@@ -40,12 +40,12 @@ Os quatro checkpoints de entrada possuem hashes/escopos na spec. A conferência 
 
 ## Task 1 — integridade, autoridades e catálogo
 
-- [ ] RED: criar testes causais de hash obrigatório/mismatch, duplicate JSON keys/inputs/selections/reports, fields extras, NaN, IDbool/zero, path absoluto/UNC/drive/backslash/escape/symlink/junction, output existente.
-- [ ] RED: testar oferta 66≠aceite 66; tipo desconhecido, falso accepted, hashes/links/perfil/seleção divergentes, replay como primary e whitelist histórica ampliada.
-- [ ] Executar somente o módulo novo e observar falha pela ausência do comportamento exigido.
-- [ ] Implementar parser fechado e captura dos bytes pinados uma vez; sem import pesado na descoberta. Reautenticar três tipos finitos 11 da spec, sem copiar toda a aquisição/lineage ou chamar authoring/run.
-- [ ] Implementar serialização determinística, registry/proofs pequenos congelados, oferta/aceite/revisões/active separados; rejeitar duplicação antes de normalizar.
-- [ ] GREEN: executar módulo novo, conferir ausência de imports DuckDB/writes/GET no list. Revisão independente parcial e resolver achados antes da ponte de consulta.
+- [x] RED: criar testes causais de hash obrigatório/mismatch, duplicate JSON keys/inputs/selections/reports, fields extras, NaN, IDbool/zero, path absoluto/UNC/drive/backslash/escape/symlink/junction, output existente.
+- [x] RED: testar oferta 66≠aceite 66; tipo desconhecido, falso accepted, hashes/links/perfil/seleção divergentes, replay como primary e whitelist histórica ampliada.
+- [x] Executar somente o módulo novo e observar falha pela ausência do comportamento exigido.
+- [x] Implementar parser fechado e captura dos bytes pinados uma vez; sem import pesado na descoberta. Reautenticar três tipos finitos 11 da spec, sem copiar toda a aquisição/lineage ou chamar authoring/run.
+- [x] Implementar serialização determinística, registry/proofs pequenos congelados, oferta/aceite/revisões/active separados; rejeitar duplicação antes de normalizar.
+- [x] GREEN: executar módulo novo, conferir ausência de imports DuckDB/writes/GET no list. Revisão independente parcial e resolver achados antes da ponte de consulta.
 
 ```powershell
 & .\.venv\Scripts\python.exe -B -m unittest discover -s tests -p test_financial_catalog.py -v
