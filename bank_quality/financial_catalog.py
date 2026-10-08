@@ -1,7 +1,7 @@
-"""Financial catalog metadata boundary and finite historical anchors.
+"""Financial catalog metadata boundary and finite snapshot authorities.
 
-Supplement/pipeline authority, construction and querying are added in subsequent
-reviewed checkpoints. Handoff shape alone never authorizes a snapshot.
+Construction and querying are added in subsequent reviewed checkpoints.
+Handoff shape and installed offers alone never authorize a snapshot.
 """
 from dataclasses import dataclass
 import ast
@@ -203,6 +203,111 @@ def _selection_shape(selection):
     for report in reports:
         _positive_integer(report)
     _require(len(set(reports)) == len(reports), 'Duplicate native report')
+
+
+def _selection_key(selection):
+    _selection_shape(selection)
+    return (selection['period'], selection['perspective'], tuple(selection['reports']))
+
+
+def _active_choices_shape(choices):
+    _require(type(choices) is list, 'Active revision choices must be a list')
+    selections = set()
+    for choice in choices:
+        _fields(choice, ('selection', 'revision_id'))
+        key = _selection_key(choice['selection'])
+        _require(key not in selections, 'Duplicate active selection')
+        selections.add(key)
+        if choice['revision_id'] is not None:
+            _hash(choice['revision_id'])
+
+
+def _catalog_inputs_shape(value):
+    """Validate explicit inputs before deduplication or normalization can hide conflicts."""
+    _fields(value, ('contract', 'registry', 'gates', 'active_revisions', 'parent_catalog'))
+    _require(value['contract'] == 'ifdata-financial-catalog-inputs-v1', 'Unknown catalog inputs contract')
+    _reference_shape(value['registry'])
+    _require(value['registry']['path'] == 'bank_quality/financial-reports-registry.json',
+             'Catalog registry must be the installed finite offer registry')
+    if value['parent_catalog'] is not None:
+        _reference_shape(value['parent_catalog'])
+    _require(type(value['gates']) is list, 'Catalog gates must be a list')
+    paths, pins = set(), set()
+    for ref in value['gates']:
+        _reference_shape(ref)
+        _require(ref['path'] not in paths and ref['sha256'] not in pins, 'Duplicate catalog gate reference')
+        paths.add(ref['path']); pins.add(ref['sha256'])
+    _active_choices_shape(value['active_revisions'])
+
+
+_OFFERED_PERIODS = tuple(year * 100 + month for year in range(2010, 2027)
+                       for month in (3, 6, 9, 12) if year * 100 + month <= 202606)
+
+
+def _registry_entries(value):
+    """Freeze metadata for the authorized 66 offers; never derive acceptance from a profile."""
+    _fields(value, ('contract', 'members', 'legacy_202312_sources'))
+    _require(value['contract'] == 'ifdata-financial-reports-registry-v1'
+             and type(value['members']) is list and len(value['members']) == len(_OFFERED_PERIODS)
+             and type(value['legacy_202312_sources']) is dict, 'Invalid finite registry')
+    entries, periods = [], set()
+    for member in value['members']:
+        _fields(member, ('selection', 'catalog', 'reports', 'source_offers',
+                         'profile_path', 'profile_sha256', 'descriptor_sha256'))
+        selection = member['selection']
+        _selection_shape(selection)
+        _require(selection['period'] not in periods, 'Duplicate offered period')
+        periods.add(selection['period'])
+        _require(type(member['catalog']) is dict and type(member['source_offers']) is list
+                 and all(type(source) is dict for source in member['source_offers']), 'Invalid native offer metadata')
+        reports = member['reports']
+        _require(type(reports) is list and len(reports) == 4, 'Invalid native report metadata')
+        projected = []
+        for report_id, item in zip(selection['reports'], reports):
+            _fields(item, ('report', 'catalog_pointer'))
+            report = item['report']
+            _require(type(report) is dict and type(report.get('id')) is int and report['id'] == report_id
+                     and type(report.get('n')) is str and report['n']
+                     and type(item['catalog_pointer']) is str and item['catalog_pointer'].startswith('/'),
+                     'Native reports differ from their ordered selection')
+            projected.append({'report_id': report_id, 'native_name': report['n'],
+                              'catalog_pointer': item['catalog_pointer']})
+        # Match the installed descriptor API: canonical compact UTF-8 without newline.
+        payload = {key: member[key] for key in ('selection', 'catalog', 'reports', 'source_offers')}
+        pin = _hash(member['descriptor_sha256'])
+        _require(hashlib.sha256(_canonical(payload)[:-1]).hexdigest() == pin, 'Native descriptor digest mismatch')
+        if member['profile_path'] is None:
+            _require(member['profile_sha256'] is None, 'Inactive offer has an unmatched profile pin')
+        else:
+            expected = (f'financial-reports-profile-{selection["period"]}.json'
+                        if selection['period'] in (202412, 202503)
+                        else f'financial-reports-profiles/{selection["period"]}.json')
+            _require(member['profile_path'] == expected, 'Offer profile path is not its installed native path')
+            _hash(member['profile_sha256'])
+        entries.append({'selection': _json_bytes(_canonical(selection)), 'descriptor_sha256': pin,
+                        'reports': projected, 'revisions': [], 'active_revision': None, 'limitations': []})
+    _require(periods == set(_OFFERED_PERIODS), 'Registry differs from the authorized 66 periods')
+    return sorted(entries, key=lambda entry: _selection_key(entry['selection']))
+
+
+def _apply_active_revisions(entries, choices):
+    """Apply only explicit choices, preserving acceptance when choice is absent or null."""
+    _active_choices_shape(choices)
+    by_selection = {_selection_key(entry['selection']): entry for entry in entries}
+    _require(len(by_selection) == len(entries), 'Duplicate catalog selection')
+    updates = []
+    for choice in choices:
+        key = _selection_key(choice['selection'])
+        _require(key in by_selection, 'Active revision selection is not offered')
+        entry, pin = by_selection[key], choice['revision_id']
+        if pin is not None:
+            verified = [revision for revision in entry['revisions']
+                        if revision['revision_id'] == pin and revision['acceptance'] == 'verified']
+            _require(len(verified) == 1, 'Active revision is not a unique verified revision')
+        updates.append((entry, pin))
+    # Invalid choices must not leave partially applied active selections.
+    for entry, pin in updates:
+        entry['active_revision'] = pin
 
 
 def _handoff_shape(value):

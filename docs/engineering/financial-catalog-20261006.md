@@ -43,3 +43,11 @@ RED observado com handlers ausentes; GREEN focal:24testes,exit0,0,146s,dois skip
 Revisão independente parcial concluída APP, sem achados bloqueantes; `git diff --check` passou. A aprovação cobre o parser deste recorte, antes de ampliar para builder/descoberta. O builder deverá congelar também a autoridade do journal e fechar o inventário dos companions, para que a listagem histórica não dependa da sobrevivência da coordenação externa. Builder, descoberta, CLI/consultas, autoridade futura60 e aceite final das66 referências permanecem fora desta aprovação.
 
 A PR pode conter toda a entrega. Os checkpoints são revisões e testes durante a implementação, com correções antes de ampliar o trecho e revisão final da composição; não são limites de tamanho ou obrigação de dividir PRs.
+
+## Checkpoint de entradas, registry congelado e escolha ativa
+
+Base `360fec49b332e0a9c5427883cb76dd4e9d830f30`. Sete novos testes falharam por ausência dos comportamentos, antes da implementação. GREEN:31testes,exit0,0,151s,dois skips de symlinkWindows. A observação somente metadata do registry físico `c0299e6240bb85473b25b50940cbff3cd44e6cd453c73540ad527b7468fd2ba1` reconheceu66 ofertas201003–202606 e zero revisões; oferta/perfil não fabricam aceite.
+
+Inputs têm campos fechados e rejeitam refs/seleções duplicadas antes de ordenar. Registry confere conjunto finito, seleção e ordem nativa dos reports, digest do descritor no regime existente e paths próprios de perfil. A projeção não compartilha seleção mutável com o caller. Escolhas ativas não nulas exigem revisão verified única; null preserva aceites sem selecionar latest. Todas as escolhas são validadas antes de aplicadas, evitando alteração parcial por erro.
+
+Revisão independente parcial APP, sem achados bloqueantes, antes de builder persistente; diff/check e inventário de dois arquivos conferidos. Não cobre persistência, API pública, descoberta, consultas ou aceite final66. CI do SHA publicado2502444 concluiu success em push37792423895 e PR37792431086; esse resultado não é atribuído aos novos commits locais.

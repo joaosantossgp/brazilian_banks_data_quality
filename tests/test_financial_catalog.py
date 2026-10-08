@@ -248,5 +248,121 @@ class CatalogAuthorityBoundaryTests(unittest.TestCase):
             self.assertIn('three historical', str(ctx.exception))
 
 
+class CatalogInputAndRegistryTests(unittest.TestCase):
+    def registry(self):
+        # A synthetic offer is not an accepted financial snapshot.
+        members = []
+        periods = [year * 100 + month for year in range(2010, 2027)
+                   for month in (3, 6, 9, 12) if year * 100 + month <= 202606]
+        for period in periods:
+            selection = {'period': period, 'perspective': 1005, 'reports': [1, 3, 4, 5]}
+            member = {'selection': selection, 'catalog': {}, 'source_offers': [],
+                      'reports': [{'report': {'id': report, 'n': f'Native {report}'},
+                                   'catalog_pointer': f'/reports/{index}'}
+                                  for index, report in enumerate(selection['reports'])],
+                      'profile_path': None, 'profile_sha256': None}
+            payload = {key: member[key] for key in ('selection', 'catalog', 'reports', 'source_offers')}
+            member['descriptor_sha256'] = hashlib.sha256(catalog._canonical(payload)[:-1]).hexdigest()
+            members.append(member)
+        return {'contract': 'ifdata-financial-reports-registry-v1', 'members': members,
+                'legacy_202312_sources': {}}
+
+    def inputs(self):
+        return {'contract': 'ifdata-financial-catalog-inputs-v1',
+                'registry': {'path': 'bank_quality/financial-reports-registry.json', 'sha256': 'a' * 64},
+                'gates': [], 'active_revisions': [], 'parent_catalog': None}
+
+    def operation(self, name):
+        operation = getattr(catalog, name, None)
+        self.assertTrue(callable(operation), f'Missing catalog behavior: {name}')
+        return operation
+
+    def rejects(self, operation, value):
+        with self.assertRaises(catalog.CatalogError) as ctx:
+            operation(value)
+        self.assertEqual(ctx.exception.code, 'integrity')
+
+    def test_registry_freezes_66_offers_without_inventing_acceptance(self):
+        operation = self.operation('_registry_entries')
+        registry = self.registry()
+        entries = operation(registry)
+        self.assertEqual(len(entries), 66)
+        self.assertEqual(entries[0]['selection']['period'], 201003)
+        self.assertEqual(entries[-1]['selection']['period'], 202606)
+        self.assertTrue(all(e['revisions'] == [] and e['active_revision'] is None for e in entries))
+        self.assertEqual(entries[0]['reports'][0],
+                         {'report_id': 1, 'native_name': 'Native 1', 'catalog_pointer': '/reports/0'})
+        registry['members'][0]['selection']['reports'][0] = 999
+        self.assertEqual(entries[0]['selection']['reports'], [1, 3, 4, 5])
+
+    def test_registry_rejects_duplicates_missing_offer_extra_period_and_descriptor_drift(self):
+        operation = self.operation('_registry_entries')
+        registry = self.registry(); registry['members'][-1] = registry['members'][0]
+        self.rejects(operation, registry)
+        registry = self.registry(); registry['members'].pop()
+        self.rejects(operation, registry)
+        registry = self.registry(); registry['members'][-1]['selection']['period'] = 202609
+        self.rejects(operation, registry)
+        registry = self.registry(); registry['members'][0]['reports'][0]['report']['n'] = 'Altered'
+        self.rejects(operation, registry)
+
+    def test_registry_native_report_order_must_match_selection_even_with_recomputed_pin(self):
+        operation = self.operation('_registry_entries')
+        registry = self.registry(); member = registry['members'][0]
+        member['reports'].reverse()
+        payload = {key: member[key] for key in ('selection', 'catalog', 'reports', 'source_offers')}
+        member['descriptor_sha256'] = hashlib.sha256(catalog._canonical(payload)[:-1]).hexdigest()
+        self.rejects(operation, registry)
+
+    def test_inputs_reject_duplicate_gate_path_pin_and_active_selection_before_normalizing(self):
+        operation = self.operation('_catalog_inputs_shape')
+        for second in [{'path': 'data/runs/gate.json', 'sha256': 'c' * 64},
+                       {'path': 'data/runs/alias.json', 'sha256': 'b' * 64}]:
+            value = self.inputs()
+            value['gates'] = [{'path': 'data/runs/gate.json', 'sha256': 'b' * 64}, second]
+            self.rejects(operation, value)
+        value = self.inputs()
+        choice = {'selection': self.registry()['members'][0]['selection'], 'revision_id': None}
+        value['active_revisions'] = [choice, choice.copy()]
+        self.rejects(operation, value)
+
+    def test_inputs_closed_schema_hash_and_explicit_null_choice(self):
+        operation = self.operation('_catalog_inputs_shape')
+        value = self.inputs()
+        value['active_revisions'] = [{'selection': self.registry()['members'][0]['selection'],
+                                      'revision_id': None}]
+        self.assertIsNone(operation(value))
+        for change in [('accepted', True), ('contract', 'unknown'), ('gates', {}), ('active_revisions', None)]:
+            value = self.inputs(); value[change[0]] = change[1]
+            self.rejects(operation, value)
+        value = self.inputs(); value['registry']['sha256'] = None
+        self.rejects(operation, value)
+
+    def test_explicit_revision_choices_require_offered_selection_and_available_revision(self):
+        operation = self.operation('_apply_active_revisions')
+        entries = self.operation('_registry_entries')(self.registry())
+        selection = entries[0]['selection']
+        entries[0]['revisions'] = [{'revision_id': 'b' * 64, 'acceptance': 'verified'},
+                                   {'revision_id': 'c' * 64, 'acceptance': 'verified'}]
+        operation(entries, [{'selection': selection, 'revision_id': 'c' * 64}])
+        self.assertEqual(entries[0]['active_revision'], 'c' * 64)
+        operation(entries, [{'selection': selection, 'revision_id': None}])
+        self.assertIsNone(entries[0]['active_revision'])
+        for choice in [{'selection': selection, 'revision_id': 'd' * 64},
+                       {'selection': {**selection, 'period': 200912}, 'revision_id': None}]:
+            with self.assertRaises(catalog.CatalogError) as ctx:
+                operation(entries, [choice])
+            self.assertEqual(ctx.exception.code, 'integrity')
+
+    def test_missing_active_choice_does_not_choose_latest_or_erase_acceptance(self):
+        operation = self.operation('_apply_active_revisions')
+        entries = self.operation('_registry_entries')(self.registry())
+        entries[0]['revisions'] = [{'revision_id': 'b' * 64, 'acceptance': 'verified'},
+                                   {'revision_id': 'c' * 64, 'acceptance': 'verified'}]
+        operation(entries, [])
+        self.assertIsNone(entries[0]['active_revision'])
+        self.assertEqual(len(entries[0]['revisions']), 2)
+
+
 if __name__ == '__main__':
     unittest.main()
