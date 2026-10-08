@@ -1,0 +1,125 @@
+# Monitor histórico e continuação: plano de implementação
+
+> Para o executor: aplicar executing-plans, tarefa a tarefa, com TDD e revisão independente parcial conforme a instrução de João. Não criar agente implementador nem pausar para confirmações rotineiras já cobertas pela autonomia técnica. Revisão final de composição continua obrigatória.
+
+**Goal:** corrigir a execução da aquisição59 e retomar F1-01 pela mesma autoridade/saldo, para adquirir as 55 referências e entregar fontes à60.
+
+**Arquitetura:** observação inconclusiva limitada no monitor existente; continuação explícita com prova somente leitura do predecessor, sem editar bootstrap/jobs/bundle/estado histórico. Não criar camada, runtime ou dependência.
+
+**Stack:** Python3.12, Win32, arquivo bounded, claims e journals existentes.
+
+**Spec:** [desenho revisado](../specs/2026-10-08-historical-monitor-continuation-design.md), pin revisado `3d11a4bcfca2d655135443983ead1c0502da5b8b9734d0bf94bde2319a7867ba`; [Issue59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59). Base `ca63ee9674f58f9a80221af721fe6ebfc00025d3`, branch `codex/historical-resource-monitor-continuation`, executor/integrador Root.
+
+## Restrições globais e ownership
+
+Scope/membros/policy finitos do plano59 permanecem iguais; não recalcular budgets, renovar autoridade, alterar perfis/fontes/aceites, executar imagens históricas ou reusar destino de replay. F1-01 antiga fica halted/pending até ativação versionada comprovada. Picos são amostrados; ausência de terminal não significa ausência de HTTP. Chave/corpos/headers/artefatos privados não vão ao GitHub. Método/conteúdo humano, outros hosts/CVM, Project3, CI/proteções/segurança e runtime ficam fora do lote.
+
+Allowlist total de 11 paths já registrada na Issue: monitor e teste Windows; aquisição/batch/CLI e seus dois testes; esta spec/plano; ledger59 existente; arquitetura. Cada tarefa usa somente seu subconjunto. Specs/plans/engineering são destinos canônicos existentes. Evidência de predecessor é privada/inert em `.scratch/`; candidatos/continuações executáveis em `data/runs/` ignorado, exclusivos. Nenhuma pasta raiz/rename/delete.
+
+## Contratos e transições fechados
+
+### Observação do monitor
+
+Interface existente `_ResourceMonitor.sample()` continua sendo barreira síncrona antes do worker; não retorna sucesso inconclusivo. Usa lock próprio de amostragem, separado do lock breve de reservas. Serializar sampling/watch/exit; reservas não ficam bloqueadas durante sleeps. Somente typed pending permite nova amostra por até250ms contínuos, intervalo50ms, clock monotônico. Duração conferida na entrada e saída e antes da resolução; erros genéricos continuam fatais, inclusiveOSError87. Stop/cancel durante pending não fornece amostra completa.
+
+`_machine_resource_sample(destination)` retorna exatamente `elapsed_clock_ns/free_physical_bytes/free_commit_bytes/free_disk_bytes`, com chamadas nativas frescas, sem árvore/RSS. A amostra completa `_resource_sample` usa os mesmos recursos, além de suas identidades e memória próprias, conservando seu elapsed_clock em segundos na interface existente. Evitar duas cópias da lógica Win32.
+
+Cada intervalo em `observation_gaps` contém exatamente `started_clock_ns/ended_clock_ns/duration_ns/reason/observations/status/machine_samples`; status é `resolved/expired/cancelled/failed`. Durante execução, gap aberto permanece interno e bloqueia liberação de worker. Relógios/durações persistidos são inteiros monotônicos em nanosegundos, compatíveis com _closed_data/replay; não afrouxar esse contrato para admitir float. Cada machine_sample contém os quatro campos acima mais `inflight_reserved_bytes/inflight_reserved_attempt_seconds`. Eventos não entram em `sample_count`, não alteram picos de processo e nunca têm RSS zero. `minimum_free` incorpora medidas frescas completas e da máquina; pico de processo vem apenas de completas. Na resolução/erro/expiração, fechar o intervalo sem perder causa. Erro é sticky e ativa cancel_event; uma amostra posterior não cura o monitor.
+
+Enter exige amostra válida; exit para thread, aguarda término, exige ausência de erro e uma observação completa final antes de aceitar. Uma observação final inconclusiva só pode resolver dentro da mesma regra limitada; não transforma pendência em vazio/extinção. Deadlines nativos dos workers e reservas existentes continuam ativos.
+
+Nova prova `financial-acquisition-representative-measurement-v2` conserva campos de identidade v1 e adiciona em `measurements` os campos fechados `observation_gaps/measurement_scope/pending_limit_ms/pending_poll_ms`; valores scope=`sampled_process_peaks_with_explicit_observation_gaps`, limit250/poll50. v1 continua sendo verificada pelo schema original; não reinterpretar dados antigos. Checkpoint de representante deve autenticar a versão da prova e todos os campos, sem mero subset. Gap não resolvido ou expirado impede checkpoint/remaining.
+
+Detalhe da Tarefa2 para revisão antes da implementação: provas novas usam v2 explicitamente; o verificador aceita somente v1 ou v2 e reconstrói a identidade na versão declarada. Checkpoint legado conserva exatamente os campos anteriores e implica v1; checkpoint novo exige `measurement_contract=financial-acquisition-representative-measurement-v2`, além dos campos anteriores. Replay valida o schema de measurements por essa versão, e a verificação física exige igualdade da versão/measurements/profile com a prova original autenticada. Nenhuma seleção por presença silenciosa de campos. Cada gap v2 deve estar `resolved`, ter timestamps inteiros positivos, duração igual à diferença e inferior250ms, observations inteiro positivo igual ao número de machine_samples, razão não vazia e ordenação temporal sem sobreposição. Samples de máquina têm campos exatos, clock dentro do intervalo e crescente, recursos/reservas inteiros não negativos; mínimos agregados não podem exceder nenhuma observação registrada. Profile físico exige margens em cada machine_sample, inclusive bytes reservados no disco. Campos desconhecidos, versão/scope/limits diferentes e gaps failed/expired/cancelled são recusados. Lista vazia é válida quando não houve pending. Picos amostrados não provam observação contínua nem se transformam em RSS zero durante gaps.
+
+### Continuação da mesma autoridade
+
+Referência física é sempre `{path,sha256}`; caminhos são relativos ao root, ancestrais sem reparse/symlink, hash externo antes do parse. Codepins seguem o schema existente fechado de seis arquivos/runtime/HEAD/policy. O snapshot precisa cobrir o bundle/bootstrap/binding/journal/head/halt/receipt e as quatro autoridades; imagens anteriores são somente hashes/bytes para prova, nunca importadas.
+
+O candidato `financial-acquisition-continuation-draft-v1` tem campos exatos: `contract/executable/scope/window_id/original/current_code_pins/classification/effective_totals`. executable=false. `original` contém refs `bundle/bootstrap/binding/snapshot/code_images`; classificação contém `kind/phase_id/period/phase/phase_start/receipt/authority_tails/launch_proof`. kind=`aborted_before_authorized_attempt`, phase=`metadata`; a fase precisa ser a única pending e cada autoridade deve ter sequência0, nenhuma reserva/identity/source/spend. `launch_proof` liga imagens autenticadas e ordem reserva→spec→worker→GET; não aceita texto livre como prova. effective_totals é o replay das despesas originais, nunca um bootstrap zerado.
+
+Detalhamento da Tarefa3 para revisão antes de TDD: `prepare_historical_continuation(bundle_path,bundle_sha256,*,bootstrap_sha256,snapshot_path,snapshot_sha256,code_images_path,code_images_sha256,current_code_pins,destination)` usa paths locais explícitos e hashes externos. `destination` é novo em `data/runs/`, contém somente `draft.json`; saída é `{contract,status,path,sha256}` com contract=`financial-acquisition-continuation-preparation-v1`, status=`prepared`. Nenhum endpoint de run/activate/recover nesta tarefa. Validar os pins correntes pelo verificador v2 existente; verificar os pins históricos por schema/policy/runtime e seis imagens inertes, sem exigir que código atual seja igual ao anterior. Não introduzir parâmetro de bypass/skip no verificador de execução vigente.
+
+Snapshot histórico de entrada conserva o contrato privado já produzido: campos exatos `contract/head/files/verification/cause_observed/classification/new_authority_forbidden/budget_reset_forbidden/sources_collected`, contract=`private-frozen-historical-monitor-stop-v1`, flags true e sources_collected inteiro0. Seus textos e resumo não classificam a fase; somente a leitura física/replay autenticados geram a classificação. Code_images conserva campos exatos `contract/head/files/execution_allowed/purpose`, contract=`private-inert-original-six-code-images-v1`, execution_allowed=false; cada item files tem `original_path/sha256/evidence_path`, seis nomes únicos exatamente do inventário v2. Ler bytes como dados, nunca importar/executar. Reautenticar os arquivos congelados e as imagens ao fim da preparação, antes da escrita exclusiva do candidato.
+
+Reconhecer a semântica histórica por um inventário finito de software previamente revisado: a versão inicial é o vetor físico dos seis arquivos de `ca63ee9674f58f9a80221af721fe6ebfc00025d3`, preservado no manifest de imagens. Pins desconhecidos ou imagens alteradas exigem outro contrato/revisão; não aceitar uma narrativa/AST arbitrária como prova de código não revisado. `launch_proof` tem campos exatos `contract/reviewed_commit/code_files/ordering/attempt_records/worker_identities`; contract=`financial-acquisition-pre-reservation-proof-v1`, ordering=`durable_reserve_before_spec_before_contained_worker_before_authenticated_get`, attempt_records=0 e worker_identities=[] somente depois do replay. `code_files` é o mapa dos seis hashes originais autenticados. O código reconhecido reserva/fsync antes de escrever spec e lançar worker; o worker autentica reserva/contexto antes de GET. Ausência de reserva no journal íntegro prova ausência desse lançamento autorizado; não declara extinção de PID desconhecido. Reconhecimento desta versão de migração não limita o software de aquisição aos11 ou exige pipelines por período.
+
+Decodificar bundle/bootstrap/jobs/targets/policy e os journals sem claims ativos nem `_open_batch`/`_open_authority` executáveis. Reutilizar validadores puros, replay e recomputação de bootstrap/binding; nenhum pin antigo é substituído em memória. Exigir fase metadata única, sequence1, start exato do primeiro membro da janela instalada, nenhum finished/checkpoint/measurement; head deve ser exatamente o tail/state recomputado, sem recovery de head atrasado. Halt físico tem schema existente e pins originais. Receipt é v1 inicial, sessão exata, state/hash/sequence0 iguais ao replay do membro, e diretório da sessão contém somente receipt (nenhuma spec/output/source/checkpoint/terminal, ancestrais sem links). Todos os quatro membros têm journals vazios e estado inicial recomputado, sem reservas/identidades/fontes/gastos/falhas. Outros estados continuam unproven e são rejeitados nesta versão.
+
+`authority_tails` é lista na ordem dos membros; cada item tem exatamente `period/job_sha256/bootstrap_sha256/journal/head/binding/claim/state`, refs `{path,sha256}` para os quatro arquivos físicos e state recomputado. Batch binding e as quatro bindings individuais devem conferir exatamente com scope/job/bootstrap. O snapshot original cobre24 arquivos; bindings/claims individuais adicionais, quando fora desse inventário, são autenticados pelas identidades determinísticas e entram nos tails do candidato. Não fingir que estavam no snapshot antigo nem sobrescrevê-lo. A lista completa de arquivos lidos é reautenticada antes da escrita. Presença de claim file não prova ownership: prepare não concede capacidade, e activate terá de adquirir claims originais e revalidar o candidato sob exclusividade. `phase_start` contém o record completo autenticado; `receipt` é ref física. `effective_totals` vem da função de agregação do replay e conserva exatamente os campos do resumo de gastos existente. Mutantes de bindings, inventories, schema, flags, pins, tail/head, sessão extra, budgets ou code_images devem falhar antes de criar destino.
+
+`prepare_historical_continuation` recebe refs externamente pinadas do predecessor/snapshot/imagens e codepins correntes revisados, autentica/replay e escreve apenas candidato novo, sem capacidade de execução. `activate_historical_continuation` recebe candidato/hash e destino novo; adquire claims originais e da continuação, revalida todos os hashes após claim e faz CAS único para predecessor/scope. Recusa qualquer drift, fork, sucessor já ativo ou ativação parcial sem estado autenticado.
+
+Manifest ativo `financial-acquisition-continuation-v1` tem campos exatos `contract/draft/predecessor_scope/predecessor_bundle/predecessor_bootstrap/current_code_pins/destination/parent_phase_tail/classification/effective_totals`. Não contém novo bootstrap/saldo. Binding de continuação aponta a este manifest/hash e ao binding original; lock/ownership continuam únicos por janela. Uma ativação parcial nunca autoriza GET por ausência de marker; deve ser revalidada pelo mesmo candidato/hash, sem segunda autoridade.
+
+Journals novos são overlay encadeado da mesma autoridade: sequência/hash inicial partem do tail autenticado original, não de EMPTY_HASH. Primeiro evento `continuation_start` autentica manifest; segundo `phase_abort_no_attempt` classifica a fase antiga. Eventos posteriores usam transições conhecidas de phase_start/finish/representative_measurement/checkpoint/halt com contrato de ledger explícito `financial-acquisition-continuation-ledger-v1` e referência ao manifest. O original nunca é truncado/alterado; halt original permanece na proveniência. Estado efetivo conserva gasto/guards originais, arquiva phase_abort e permite uma sessão metadata nova apenas após a classificação. Não conta abort como metadata completo, fonte ou membro falhado; nenhuma devolução.
+
+Authority view do membro combina replay original e overlay, sem bootstrap próprio. Writers novos publicam somente journals/heads novos; código legado/standalone não ganha acesso a essa capacidade. Transporte fechado `financial-acquisition-worker-v4` autentica predecessor+continuação+pins correntes até o binding, sem trocar os codepins do job antigo em memória. Receipt e handoff ganham versões próprias para transportar a autoridade efetiva; versões antigas continuam próprias. Handoff posterior vai à60 e nunca passa automaticamente pelo composer57.
+
+APIs/CLI de execução separadas: `historical-continuation-prepare/activate/verify/run/export`, refs/hashes obrigatórios; run conserva `representative/remaining`, sem callerpolicy/períodos/workers/destino arbitrário. API v2 antiga continua rejeitando software diferente. Nenhum novo endpoint executável é exposto sem prova de ativação e worker/contexto correspondente.
+
+## Tarefa1: monitor causal — revisão parcial
+
+Paths: `bank_quality/windows_acquisition.py`, `tests/test_windows_acquisition.py`.
+
+- [x] RED: typed pending→medida completa dentro250ms, sem cancel e sem amostra zero; unknownerror fatal; pending persistente e resolução tardia recusados; margem/reserva em disco frescas durante pending; enter/exit e erro sticky; chamadas simultâneas sem deadlock; deadline/bounds antes liberação.
+- [x] Implementar recurso de máquina comum, amostragem serial limitada, evidência de gaps e cancel sticky. Nenhuma alteração de sampler de identidade/containment ou OSError87.
+- [x] GREEN dos casos novos e módulo Windows; controle nativo sintético sem GET, explicitamente separado de testes com clock fake.
+- [x] Registrar saídas/pins e pedir revisão do diff da tarefa antes ampliar.
+
+## Tarefa2: medição versionada — revisão parcial
+
+Paths: batch e seu teste; consumo do monitor existente.
+
+- [x] RED para prova/checkpoint v2 íntegros; gaps/timestamps/reservas/limits/unknownscope adulterados recusados; v1 ainda válida pela regra própria; pending não habilita remaining.
+- [x] Dispatch fechado v1/v2 em identidade/prova/replay/checkpoint, sem campos silenciosos nem recaptura do representante.
+- [x] GREEN com regressões representativas existentes, revisão parcial e ledger.
+
+## Tarefa3: prova/classificação offline — revisão parcial
+
+Paths: batch e testes de batch/acquisition.
+
+- [x] RED: predecessor sintético sequence1/pending+halt, quatro membros0 e receipt inicial; preparação sem claims/worker/GET. Reserva válida com journal/head reancorados, heads/receipt/binding adulterados, inventário incompleto, imagem alterada/duplicada, artefatos tardios e drift de catálogo recusados. Replay não importa imagem antiga. Cobertura realista é sintética; não significa classificação do predecessor real.
+- [x] Implementar decoder/replay somente leitura de v2 e classificação delimitada; código/runtime corrente só controla continuação, não fabrica runtime passado.
+- [x] GREEN16 casos, inventário protegido do fixture intacto e revisão focal APP da preparação. Prova do predecessor real somente depois dos gates de composição/integração; ativação não implementada nesta tarefa.
+
+## Tarefa4: overlay/ativação/worker — revisão parcial
+
+Paths: batch/acquisition/CLI e seus testes.
+
+- [ ] RED de CAS/fork/rollback/partial/pins novos, sequência/hashes, samebinding/budgets e abort+nova sessão; qualquer gasto/lancamento desconhecido mantém unproven. API antiga permanece fechada.
+- [ ] Implementar ativação, authority views e transporte v4 com verificação independente no worker; usar writer/claims responsáveis existentes, sem fallback livre ou segurança alterada.
+- [ ] GREEN com worker sintético contido: zero rede, prova de extinção, saldo conservado e versões de receipt/terminal/source export. Revisão parcial.
+
+## Tarefa5: composição e integração
+
+Paths: inventário final das tarefas, ledger59 e arquitetura.
+
+- [ ] Integrar CLI verify/run/export e handoff versionado; teste de representative→remaining na mesma autoridade com mutantes/recovery, sem GET real.
+- [ ] Conferir allowlist, fontes/policy/artefatos protegidos, links/coerência e diffcheck; executar checks pertinentes públicos/native Windows. O global anterior conserva escopo anterior; não vender seu PASS como prova automática dos novos bytes.
+- [ ] Revisão independente do SHA final, PR/checks/integração/ancestry/CI pós-merge; atualizar Issue59/Issue2 e fronteira16/60/61/62–64.
+
+## Tarefa6: retomar aquisição e entregar à60
+
+- [ ] Sob main revisada: pins correntes/runtime/preflight frescos; preparar/verificar a classificação F1-01 real por leitura autenticada. Falha de prova mantém halt e pede correção da prova, sem reset/bypass.
+- [ ] Ativar continuação exclusiva, verificar estado efetivo e preservar todos os 24 hashes originais. Executar representative; medir/revisar fontes/proveniência/ausências/recursos/extinção e gastos.
+- [ ] Executar remaining somente após aceite do checkpoint original; exportar handoff/replay físico em novo destino. Não repetir GET ou medição por conveniência.
+- [ ] #60 inicia pela primeira janela recebida com contrato/allowlist próprios; depois capacidade conjunta medida permite próximo lote59 junto à sanitização60. Reusar software para16janelas, sempipeline manual por período. Catálogo61 expande após aceites60; complemento/método humano permanecem próprios.
+
+## Rulings e evidência
+
+Ruling: tratar somente a classe inconclusiva já observada, mantendo OSError87 fatal — identidade não retida não prova extinção; se esse erro aparecer na aquisição, exigir evidência e desenho causal próprios antes de ampliar.
+
+Ruling: continuação conserva predecessor imutável e usa overlay encadeado — evita reescrever fatos/pins e renovar autoridade. Custo: transporte/replay/exports precisam versão explícita; não disfarçar essa mudança no contrato v2.
+
+Ruling: implementar no checkout autorizado em branch própria — o AGENTS limita atuação a este checkout; nenhum novo host/worktree/dado restaurado é necessário. Imagens anteriores ficam inertes e preservadas.
+
+Prova real anterior: gates de main/read11 e interrupção F1-01 estão na spec/ledger/Issue. Este plano ainda não significa código implementado, classificação aprovada, continuação ativa ou coleta liberada.
+
+Tarefa1 concluída localmente e revisada APP: módulo `4cda858a677258b0b04e6aa137c12109faa44fa6ffdf0b52efc9c1bf43f91feb`, teste `013fe2a135b8a7461b1305a301e765c7e2e37ae994217c7afe577f10aed93e38`. Módulo Windows37/37PASS7.477s; TDD incluiu limite após lock de reservas, cancel/stop durante resolução, terminal pending e corrida de shutdown. Revisão parcial pediu três correções causais, cada uma reproduzida antes do ajuste. Controle nativo r3 sem GET: nove amostras, pending injetada explícita67.778ms e pending nativa97.2264ms resolvidas, filho encerrado/watcher parado,24 hashes originais intactos antes/depois. Não prova identidade do ator histórico nem capacidade dos55. Logs/controle privados em `.scratch/windows59-monitor-shutdown-green-20261008.log` e `.scratch/windows59-monitor-native-control-r3-20261008.json`. Aprovação da Tarefa2 cobre seu contrato para TDD; não certifica sua implementação ou continuação B.
+
+Tarefas1/2 receberam novo APP após integração causal de cleanup: monitor `d9d499c69b5c0d31ae810766cf3e60d143bed86d88ec8dec8553e06db3e7c795`, teste Windows anterior intacto; batch `3d271ce191f1f62969286602a028f34403f201657a6ef55c8ea3350507b3173c`, teste batch `8ffe37ea7644a76574539bc0b6535d492537f7f4f43dc8f5f4ce173b279e096a`. Windows37PASS7.204s; schema6PASS0.117s; três causais abort/cancel/erro nativo/expiração PASS22.376s; histórico anterior23PASS136.421s. O full96 anterior permaneceu NONPASS/sete erros de cleanup418.896s e não é substituído pela soma desses resultados. Novo controle nativo r4: nove amostras, watcher parado e24 hashes antes/depois intactos. Causa fatal preservada em objeto typed, sem analisar texto; cancelamento provocado pelo próprio cleanup abortado não fabrica halt, enquanto erros nativos/expiração/terminal desconhecido permanecem fatais e duráveis.
+
+Tarefa3 recebeu APP focal em batch `a8bc2a7d93d683d1aa59d8c968b09c7ecac3261487eac7b3f0ebed2a60f56d6f` e teste `c621bcbc535506412f3da79e2ac770825fa587a035ed1bce61a9228bd82a137a`:16PASS18.750s, depois de RED dos dois causais de inventário tardio. Imagens sintéticas são reconhecidas somente pela configuração do teste; o teste não certifica os bytes reais da migração. API prepara somente draft não executável em destino novo. Não existe ativação/worker/handoff de continuação nem autorização de GET nesta marcação.
+
+Ruling de visibilidade: publicar uma única PR draft com o checkpoint revisado1–3, mantendo a implementação4 e composição5 na mesma branch/PR. Não dividir artificialmente por tamanho nem integrar o checkpoint como se resolvesse a execução59. A PR deve declarar o recorte implementado, os resultados NONPASS preservados e a pendência operacional; merge somente após composição/checks/revisão do SHA final. Esta escolha é técnica dentro da autorização de publicação vigente, sem nova confirmação rotineira.

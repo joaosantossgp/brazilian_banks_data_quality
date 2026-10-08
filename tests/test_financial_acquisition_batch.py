@@ -40,6 +40,103 @@ def catalog_entry(period):
     return {'dt': period, 'files': files}
 
 
+class RepresentativeMeasurementVersionTests(unittest.TestCase):
+    def fixture(self):
+        batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        measurement = {'sample_count': 2,
+            'peaks': {'tree_working_set_bytes': 20, 'tree_private_bytes': 30},
+            'minimum_free': {'free_physical_bytes': 90, 'free_commit_bytes': 90, 'free_disk_bytes': 90},
+            'measurement_scope': 'sampled_process_peaks_with_explicit_observation_gaps',
+            'pending_limit_ms': 250, 'pending_poll_ms': 50,
+            'observation_gaps': [{'started_clock_ns': 1000, 'ended_clock_ns': 100001000,
+                'duration_ns': 100000000, 'reason': 'synthetic process birth', 'observations': 1,
+                'status': 'resolved', 'machine_samples': [{'elapsed_clock_ns': 50001000,
+                    'free_physical_bytes': 100, 'free_commit_bytes': 100, 'free_disk_bytes': 100,
+                    'inflight_reserved_bytes': 5, 'inflight_reserved_attempt_seconds': 120}]}]}
+        profile = {f'min_free_{key}_bytes': 10 for key in ('physical', 'commit', 'disk')}
+        return batch, measurement, profile
+
+    def validate(self, measurement, profile=None, contract='financial-acquisition-representative-measurement-v2'):
+        batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        batch._validate_representative_measurements(measurement, contract=contract, profile=profile)
+
+    def test_version_two_accepts_resolved_or_empty_gaps(self):
+        batch, measurement, profile = self.fixture()
+        self.validate(measurement, profile)
+        measurement['observation_gaps'] = []
+        self.validate(measurement, profile)
+
+    def test_legacy_schema_stays_closed(self):
+        batch, measurement, profile = self.fixture()
+        legacy = {key: measurement[key] for key in ('sample_count', 'peaks', 'minimum_free')}
+        self.validate(legacy, profile, 'financial-acquisition-representative-measurement-v1')
+        for value, contract in ((measurement, 'financial-acquisition-representative-measurement-v1'),
+                (legacy, 'financial-acquisition-representative-measurement-v2'),
+                (legacy, 'unknown')):
+            with self.subTest(contract=contract), self.assertRaises(ValueError):
+                self.validate(value, profile, contract)
+
+    def test_corrupt_gap_and_measurement_fields_are_rejected(self):
+        batch, measurement, profile = self.fixture()
+        changes = [('measurement_scope', 'unknown'), ('pending_limit_ms', 251),
+                   ('pending_poll_ms', 49), ('sample_count', True), ('extra', 1)]
+        for key, value in changes:
+            with self.subTest(key=key):
+                altered = copy.deepcopy(measurement)
+                altered[key] = value
+                with self.assertRaises(ValueError):
+                    self.validate(altered, profile)
+        for key, value in [('status', 'expired'), ('status', 'cancelled'), ('status', 'failed'),
+                ('duration_ns', 250000000), ('duration_ns', 1), ('started_clock_ns', True),
+                ('ended_clock_ns', 0), ('observations', 2), ('reason', ''), ('extra', 0)]:
+            with self.subTest(gap_key=key, value=value):
+                altered = copy.deepcopy(measurement)
+                altered['observation_gaps'][0][key] = value
+                with self.assertRaises(ValueError):
+                    self.validate(altered, profile)
+
+    def test_machine_sample_clock_and_reservations_are_authenticated(self):
+        batch, measurement, profile = self.fixture()
+        for key, value in [('elapsed_clock_ns', 999), ('elapsed_clock_ns', 100001001),
+                ('inflight_reserved_bytes', -1), ('inflight_reserved_attempt_seconds', True),
+                ('free_commit_bytes', -1), ('extra', 0)]:
+            with self.subTest(key=key):
+                altered = copy.deepcopy(measurement)
+                altered['observation_gaps'][0]['machine_samples'][0][key] = value
+                with self.assertRaises(ValueError):
+                    self.validate(altered, profile)
+
+    def test_overlap_and_unordered_samples_are_rejected(self):
+        batch, measurement, profile = self.fixture()
+        altered = copy.deepcopy(measurement)
+        altered['observation_gaps'].append(copy.deepcopy(altered['observation_gaps'][0]))
+        with self.assertRaises(ValueError):
+            self.validate(altered, profile)
+        altered = copy.deepcopy(measurement)
+        gap = altered['observation_gaps'][0]
+        gap['observations'] = 2
+        gap['machine_samples'].append(copy.deepcopy(gap['machine_samples'][0]))
+        with self.assertRaises(ValueError):
+            self.validate(altered, profile)
+
+    def test_minimum_and_pinned_margins_include_pending_reservations(self):
+        batch, measurement, profile = self.fixture()
+        altered = copy.deepcopy(measurement)
+        altered['minimum_free']['free_physical_bytes'] = 101
+        with self.assertRaises(ValueError):
+            self.validate(altered, profile)
+        altered = copy.deepcopy(measurement)
+        altered['observation_gaps'][0]['machine_samples'][0]['inflight_reserved_bytes'] = 95
+        # Pure replay authenticates schema; the physical profile adds resource margins.
+        self.validate(altered)
+        with self.assertRaises(ValueError):
+            self.validate(altered, profile)
+        altered = copy.deepcopy(measurement)
+        altered['minimum_free']['free_commit_bytes'] = 9
+        with self.assertRaises(ValueError):
+            self.validate(altered, profile)
+
+
 class BatchCompositionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1524,6 +1621,18 @@ class HistoricalPreparationTests(unittest.TestCase):
     def test_v3_production_roundtrip_uses_own_dictionary_subset_and_exports_receipts(self):
         self._v3_roundtrip()
 
+    def test_unknown_terminal_monitor_error_persists_halt_and_blocks_remaining(self):
+        self._v3_roundtrip(terminal_error=True)
+
+    def test_crash_pending_cleanup_does_not_invent_monitor_halt(self):
+        self._v3_roundtrip(crash_pending='cancel')
+
+    def test_crash_pending_cleanup_preserves_concurrent_native_error(self):
+        self._v3_roundtrip(crash_pending='native')
+
+    def test_crash_pending_cleanup_preserves_expiration(self):
+        self._v3_roundtrip(crash_pending='expired')
+
     def test_representative_crash_recovers_original_measurement_without_launch(self):
         self._v3_roundtrip(crash_checkpoint=True)
 
@@ -1545,7 +1654,7 @@ class HistoricalPreparationTests(unittest.TestCase):
     def test_representative_resume_intact_completed_metadata_continues_without_renewal(self):
         self._v3_roundtrip(crash_metadata=True)
 
-    def _v3_roundtrip(self, *, crash_checkpoint=False, crash_metadata=False, proof_damage=None):
+    def _v3_roundtrip(self, *, crash_checkpoint=False, crash_metadata=False, proof_damage=None, terminal_error=False, crash_pending=None):
         machine = patch('bank_quality.windows_acquisition._machine_id', return_value='fixture')
         machine.start()
         self.addCleanup(machine.stop)
@@ -1600,6 +1709,83 @@ class HistoricalPreparationTests(unittest.TestCase):
                     bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
                     resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
             self.assertEqual(specs, [])
+            if crash_pending is not None:
+                import time
+                from bank_quality import windows_acquisition as windows
+                class Crash(BaseException):
+                    pass
+                enabled, pending = threading.Event(), threading.Event()
+                monitors = []
+                original_enter = windows._ResourceMonitor.__enter__
+                original_append = self.batch._Batch.append
+                def enter(monitor):
+                    monitors.append(monitor)
+                    return original_enter(monitor)
+                def observation(*args):
+                    if (monitors and enabled.is_set()
+                            and threading.current_thread() is monitors[0].thread):
+                        raise windows._ProcessObservationPending('synthetic pending during coordinator crash')
+                    return sample
+                def machine_observation(*args):
+                    pending.set()
+                    if not monitors[0].cancel_event.wait(2):
+                        raise RuntimeError('fixture cleanup never cancelled')
+                    if crash_pending == 'native':
+                        raise OSError(87, 'synthetic concurrent native failure')
+                    if crash_pending == 'expired':
+                        time.sleep(.3)
+                    return {'elapsed_clock_ns': time.perf_counter_ns(), 'free_physical_bytes': 100,
+                            'free_commit_bytes': 100, 'free_disk_bytes': 1024 * 1024 * 1024}
+                def append(batch, kind, **details):
+                    record = original_append(batch, kind, **details)
+                    if kind == 'representative_checkpoint':
+                        enabled.set()
+                        self.assertTrue(pending.wait(2), 'watcher did not enter pending')
+                        raise Crash('synthetic coordinator crash during pending')
+                    return record
+                with patch.object(windows._ResourceMonitor, '__enter__', enter), \
+                        patch.object(windows, '_resource_sample', side_effect=observation), \
+                        patch.object(windows, '_machine_resource_sample', side_effect=machine_observation), \
+                        patch.object(self.batch._Batch, 'append', append):
+                    with self.assertRaisesRegex(Crash, 'synthetic coordinator crash'):
+                        self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                            bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                            resource_profile_sha256=sha(profile.read_bytes()))
+                self.assertFalse(monitors[0].thread.is_alive())
+                marker = (self.root / refs['bundle_path']).parent / 'halt.json'
+                if crash_pending == 'cancel':
+                    self.assertFalse(marker.exists(), 'Cleanup invented a monitor halt')
+                    self.assertEqual(monitors[0].observation_gaps[-1]['status'], 'cancelled')
+                else:
+                    halt = json.loads(marker.read_bytes())
+                    self.assertIn('synthetic concurrent native failure' if crash_pending == 'native'
+                                  else 'limit exceeded', halt['reason'])
+                return
+            if terminal_error:
+                from bank_quality.windows_acquisition import _ResourceMonitor
+                original_exit = _ResourceMonitor.__exit__
+                def fail_terminal(monitor, *args):
+                    with patch('bank_quality.windows_acquisition._resource_sample',
+                               side_effect=TypeError('synthetic unknown terminal observation')):
+                        return original_exit(monitor, *args)
+                with patch.object(_ResourceMonitor, '__exit__', fail_terminal):
+                    with self.assertRaisesRegex(TypeError, 'synthetic unknown terminal'):
+                        self.batch.run_historical_batch(self.root / refs['bundle_path'], refs['bundle_sha256'],
+                            bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                            resource_profile_sha256=sha(profile.read_bytes()))
+                marker = self.root / refs['bundle_path']
+                halt = json.loads((marker.parent / 'halt.json').read_bytes())
+                self.assertIn('TypeError', halt['reason'])
+                self.assertIn('synthetic unknown terminal', halt['reason'])
+                previous_specs = len(specs)
+                with patch.object(self.acquisition, 'run_contained_attempt',
+                                  side_effect=AssertionError('Halted representative relaunched')):
+                    result = self.batch.run_historical_batch(marker, refs['bundle_sha256'],
+                        bootstrap_sha256=refs['bootstrap_sha256'], resource_profile_path=profile,
+                        resource_profile_sha256=sha(profile.read_bytes()), stage_mode='remaining')
+                self.assertEqual(result['status'], 'halted')
+                self.assertEqual(len(specs), previous_specs)
+                return
             if crash_metadata:
                 class Crash(BaseException):
                     pass
@@ -1723,6 +1909,11 @@ class HistoricalPreparationTests(unittest.TestCase):
             measurement = self.root / checkpoint['resource_measurement']['path']
             self.assertEqual(sha(measurement.read_bytes()), checkpoint['resource_measurement']['sha256'])
             measured = json.loads(measurement.read_bytes())
+            self.assertEqual(measured['contract'], 'financial-acquisition-representative-measurement-v2')
+            self.assertEqual(checkpoint['measurement_contract'], measured['contract'])
+            self.assertEqual(measured['measurements']['pending_limit_ms'], 250)
+            self.assertEqual(measured['measurements']['pending_poll_ms'], 50)
+            self.assertEqual(measured['measurements']['observation_gaps'], [])
             self.assertEqual(measured['measurements'], checkpoint['measurements'])
             self.assertEqual(measured['phase']['period'], 201003)
             self.assertEqual(measured['resource_profile'], checkpoint['resource_profile'])
@@ -1889,3 +2080,249 @@ class HistoricalPreparationTests(unittest.TestCase):
             self.assertEqual(limits['scheduling_seconds'], budget['scheduling_seconds_max'])
         with self.assertRaises(ValueError):
             self.batch._historical_limits('unknown')
+
+
+class HistoricalContinuationPreparationTests(unittest.TestCase):
+    prepare = HistoricalPreparationTests.prepare
+
+    def setUp(self):
+        HistoricalPreparationTests.setUp(self)
+        self.runtime = self.root / 'data/runs/inert-runtime.bin'
+        self.runtime.write_bytes(b'synthetic runtime, never executed')
+        self.old_files = {}
+        images = []
+        for name in self.batch._CODE_FILES_V2:
+            path = self.root / '.scratch/inert' / (name + '.evidence')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('synthetic inert code: ' + name).encode())
+            self.old_files[name] = sha(path.read_bytes())
+            images.append({'original_path': name, 'sha256': self.old_files[name],
+                           'evidence_path': path.relative_to(self.root).as_posix()})
+        self.pins = {'contract': 'financial-acquisition-code-pins-v2', 'reviewed_commit': 'a' * 40,
+            'files': self.old_files, 'runtime': {'path': self.runtime.relative_to(self.root).as_posix(),
+            'sha256': sha(self.runtime.read_bytes())}, 'policy_sha256': self.batch._HISTORICAL_POLICY_SHA256}
+        # Only this synthetic test recognizes these inert bytes; production has a
+        # fixed reviewed software vector and never executes predecessor images.
+        recognition = {'reviewed_commit': self.pins['reviewed_commit'], 'files': self.old_files,
+                       'runtime_sha256': self.pins['runtime']['sha256']}
+        for name, value in (('_CONTINUATION_PREDECESSOR_V1', recognition),):
+            patcher = patch.object(self.batch, name, value, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        @contextmanager
+        def claim(path):
+            path.touch(exist_ok=True)
+            yield
+        for module, name, value in ((self.acquisition, '_claim', claim),
+                                  (self.batch, '_code_identity_v2', lambda pins: None)):
+            patcher = patch.object(module, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        draft = self.prepare()
+        draft_path = self.root / 'data/runs/draft.json'
+        draft_path.write_bytes(canonical(draft))
+        self.refs = self.batch.initialize_historical_batch(draft_path, sha(draft_path.read_bytes()),
+            self.root / draft['destination'], reviewed_code_pins=self.pins)
+        self.bundle = self.root / self.refs['bundle_path']
+        with self.batch._open_batch(self.bundle, self.refs['bundle_sha256'], self.refs['bootstrap_sha256']) as opened:
+            member = opened.bundle['members'][0]
+            self.start = self.batch._start_phase(opened, member, 'metadata')
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(opened, member)) as authority:
+                receipt = self.acquisition._receipt(authority, Path(self.start['session']).name)
+            self.session = self.root / self.start['session']
+            self.session.mkdir(parents=True)
+            (self.session / 'receipt.json').write_bytes(canonical(receipt))
+            opened.halt('phase_outcome_unproven: synthetic interruption')
+        embedded = json.loads(self.bundle.read_bytes())
+        self.member = embedded['members'][0]
+        self.member_folder, self.member_binding, self.member_claim = self.acquisition._authority_paths(self.member['job'])
+        excluded = set()
+        for member in embedded['members']:
+            folder, binding, lock = self.acquisition._authority_paths(member['job'])
+            excluded.update((binding, lock))
+        core = list(self.bundle.parent.rglob('*'))
+        core += list((self.root / 'data/runs/financial-acquisition-authority').rglob('*'))
+        files = {p.relative_to(self.root).as_posix(): sha(p.read_bytes())
+                 for p in core if p.is_file() and p not in excluded}
+        self.assertEqual(len(files), 24)
+        self.snapshot = {'contract': 'private-frozen-historical-monitor-stop-v1', 'head': 'a' * 40,
+            'files': files, 'verification': {}, 'cause_observed': 'synthetic', 'classification': 'unproven',
+            'new_authority_forbidden': True, 'budget_reset_forbidden': True, 'sources_collected': 0}
+        self.snapshot_path = self.root / '.scratch/snapshot.json'
+        self.snapshot_path.write_bytes(canonical(self.snapshot))
+        self.images_path = self.root / '.scratch/images.json'
+        self.images_path.write_bytes(canonical({'contract': 'private-inert-original-six-code-images-v1',
+            'head': 'a' * 40, 'files': images, 'execution_allowed': False, 'purpose': 'synthetic inert evidence'}))
+        self.current_pins = dict(self.pins, reviewed_commit='b' * 40,
+                                 files={name: 'b' * 64 for name in self.old_files})
+        self.destination = self.root / 'data/runs/continuation-draft'
+
+    def call_prepare(self):
+        with patch.object(self.batch, '_open_batch', side_effect=AssertionError('Executable batch opened')), \
+                patch.object(self.acquisition, '_open_authority', side_effect=AssertionError('Executable authority opened')), \
+                patch.object(self.acquisition, '_claim', side_effect=AssertionError('Preparation acquired claim')), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=AssertionError('Worker launched')), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Network invoked')):
+            return self.batch.prepare_historical_continuation(self.bundle, self.refs['bundle_sha256'],
+                bootstrap_sha256=self.refs['bootstrap_sha256'], snapshot_path=self.snapshot_path,
+                snapshot_sha256=sha(self.snapshot_path.read_bytes()), code_images_path=self.images_path,
+                code_images_sha256=sha(self.images_path.read_bytes()), current_code_pins=self.current_pins,
+                destination=self.destination)
+
+    def repin_frozen(self, path):
+        name = path.relative_to(self.root).as_posix()
+        if name in self.snapshot['files']:
+            self.snapshot['files'][name] = sha(path.read_bytes())
+            self.snapshot_path.write_bytes(canonical(self.snapshot))
+
+    def test_closed_offline_draft_preserves_predecessor_and_additional_bindings(self):
+        protected = {p: sha((self.root / p).read_bytes()) for p in self.snapshot['files']}
+        result = self.call_prepare()
+        self.assertEqual(result['status'], 'prepared')
+        candidate = json.loads((self.root / result['path']).read_bytes())
+        self.assertEqual(sha((self.root / result['path']).read_bytes()), result['sha256'])
+        self.assertFalse(candidate['executable'])
+        self.assertEqual(candidate['classification']['kind'], 'aborted_before_authorized_attempt')
+        self.assertEqual(candidate['classification']['launch_proof']['attempt_records'], 0)
+        self.assertEqual(candidate['classification']['launch_proof']['worker_identities'], [])
+        self.assertEqual(candidate['current_code_pins'], self.current_pins)
+        self.assertEqual(candidate['effective_totals']['totals']['attempts'], 0)
+        self.assertEqual(len(candidate['classification']['authority_tails']), 4)
+        self.assertNotIn(self.member_binding.relative_to(self.root).as_posix(), self.snapshot['files'])
+        self.assertEqual(candidate['classification']['authority_tails'][0]['binding']['path'],
+                         self.member_binding.relative_to(self.root).as_posix())
+        self.assertEqual({p: sha((self.root / p).read_bytes()) for p in protected}, protected)
+
+    def test_member_binding_drift_rejected_outside_original_snapshot(self):
+        self.member_binding.write_bytes(b'{}')
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_reanchored_stale_member_head_is_not_recovered(self):
+        head = self.member_folder / 'head.json'
+        value = json.loads(head.read_bytes())
+        value['sequence'] = 1
+        head.write_bytes(canonical(value))
+        self.repin_frozen(head)
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_initial_receipt_cannot_claim_a_reserved_attempt(self):
+        path = self.session / 'receipt.json'
+        receipt = json.loads(path.read_bytes())
+        receipt['state']['attempts'] = 1
+        path.write_bytes(canonical(receipt))
+        self.repin_frozen(path)
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_unfrozen_worker_artifact_blocks_no_launch_classification(self):
+        (self.session / 'worker-unproven.json').write_bytes(b'{}')
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_changed_inert_image_is_not_accepted_by_repinned_manifest(self):
+        value = json.loads(self.images_path.read_bytes())
+        path = self.root / value['files'][0]['evidence_path']
+        path.write_bytes(b'unknown code, never executed')
+        value['files'][0]['sha256'] = sha(path.read_bytes())
+        self.images_path.write_bytes(canonical(value))
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_destination_must_be_new_without_authority_reset(self):
+        self.destination.mkdir()
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertEqual(list(self.destination.iterdir()), [])
+
+    def test_valid_durable_reservation_cannot_be_classified_from_snapshot_text(self):
+        with self.batch._open_batch(self.bundle, self.refs['bundle_sha256'], self.refs['bootstrap_sha256']) as opened:
+            member = opened.bundle['members'][0]
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=self.batch._MemberContext(opened, member)) as authority:
+                self.acquisition.reserve_attempt(authority, member['job']['targets'][0],
+                    session_id=Path(self.start['session']).name)
+        for name in ('journal.jsonl', 'head.json'):
+            self.repin_frozen(self.member_folder / name)
+        self.snapshot['classification'] = 'caller claims approved zero-attempt recovery'
+        self.snapshot_path.write_bytes(canonical(self.snapshot))
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_reanchored_batch_head_does_not_authorize_recovery(self):
+        head = self.bundle.parent / 'head.json'
+        value = json.loads(head.read_bytes())
+        value['sequence'] = 2
+        head.write_bytes(canonical(value))
+        self.repin_frozen(head)
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_snapshot_missing_initial_receipt_is_not_a_complete_inventory(self):
+        del self.snapshot['files'][(self.session / 'receipt.json').relative_to(self.root).as_posix()]
+        self.snapshot_path.write_bytes(canonical(self.snapshot))
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_duplicate_image_cannot_replace_missing_original_code(self):
+        value = json.loads(self.images_path.read_bytes())
+        value['files'][1] = copy.deepcopy(value['files'][0])
+        self.images_path.write_bytes(canonical(value))
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_empty_unproven_worker_output_directory_is_rejected(self):
+        (self.session / 'attempt-unproven').mkdir()
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def test_catalog_drift_at_final_current_pin_check_is_detected(self):
+        calls = []
+        def code_check(pins):
+            self.assertEqual(pins, self.current_pins)
+            calls.append(True)
+            if len(calls) == 2:
+                (self.root / 'data/raw/catalog/old.bin').write_bytes(b'[]')
+        with patch.object(self.batch, '_code_identity_v2', side_effect=code_check), self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(self.destination.exists())
+
+    def test_output_cannot_be_created_inside_predecessor(self):
+        self.destination = self.bundle.parent / 'new-output'
+        with self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertFalse(self.destination.exists())
+
+    def late_artifact(self, *, directory):
+        calls = []
+        def code_check(pins):
+            calls.append(True)
+            if len(calls) == 2:
+                path = self.session / ('attempt-late' if directory else 'worker-late.json')
+                if directory:
+                    path.mkdir()
+                else:
+                    path.write_bytes(b'{}')
+        with patch.object(self.batch, '_code_identity_v2', side_effect=code_check), self.assertRaises(ValueError):
+            self.call_prepare()
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(self.destination.exists())
+
+    def test_new_worker_file_after_initial_inventory_blocks_preparation(self):
+        self.late_artifact(directory=False)
+
+    def test_new_worker_directory_after_initial_inventory_blocks_preparation(self):
+        self.late_artifact(directory=True)

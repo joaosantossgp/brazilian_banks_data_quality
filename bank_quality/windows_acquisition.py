@@ -375,6 +375,10 @@ class _ProcessObservationPending(RuntimeError):
     """No empty-tree or resource claim may be made from this observation."""
 
 
+class _ProcessObservationCancelled(RuntimeError):
+    """A cancelled observation is distinct from a native error or expiration."""
+
+
 def _candidate_process_ids(coordinator, parents):
     selected = {coordinator['pid']}
     while True:
@@ -425,8 +429,8 @@ def _process_parents(kernel):
     return observed_before, parents
 
 
-def _resource_sample(destination, coordinator):
-    """Measure current coordinator descendants with PID+creation, fail on uncertainty."""
+def _machine_resource_sample(destination):
+    """Fresh machine resources; no process-tree or process-memory claim."""
     kernel = _kernel()
     memory = _MEMORY_STATUS()
     memory.length = C.sizeof(memory)
@@ -439,6 +443,14 @@ def _resource_sample(destination, coordinator):
     kernel.GetDiskFreeSpaceExW.restype = W.BOOL
     _checked(kernel.GetDiskFreeSpaceExW(str(Path(destination).resolve()), C.byref(available),
                                       C.byref(total), C.byref(free)), 'GetDiskFreeSpaceExW')
+    return {'elapsed_clock_ns': time.perf_counter_ns(), 'free_physical_bytes': memory.free_physical,
+            'free_commit_bytes': memory.free_pagefile, 'free_disk_bytes': available.value}
+
+
+def _resource_sample(destination, coordinator):
+    """Measure current coordinator descendants with PID+creation, fail on uncertainty."""
+    machine = _machine_resource_sample(destination)
+    kernel = _kernel()
     observed_before, parents = _process_parents(kernel)
     selected = _candidate_process_ids(coordinator, parents)
     psapi = C.WinDLL('psapi', use_last_error=True)
@@ -466,8 +478,8 @@ def _resource_sample(destination, coordinator):
     finally:
         for handle in handles.values():
             kernel.CloseHandle(handle)
-    return {'elapsed_clock': time.perf_counter(), 'free_physical_bytes': memory.free_physical,
-            'free_commit_bytes': memory.free_pagefile, 'free_disk_bytes': available.value,
+    return {'elapsed_clock': time.perf_counter(),
+            **{key: value for key, value in machine.items() if key != 'elapsed_clock_ns'},
             'processes': processes, 'tree_working_set_bytes': sum(p['working_set_bytes'] for p in processes),
             'tree_private_bytes': sum(p['private_bytes'] for p in processes)}
 
@@ -479,9 +491,12 @@ class _ResourceMonitor:
         self.destination, self.cancel_event = destination, cancel_event
         self.stop = threading.Event()
         self.error = ''
+        self.failure = None
         self.samples = []
         self.reservations = {}
         self.lock = threading.Lock()
+        self.sample_lock = threading.Lock()
+        self.observation_gaps = []
         self.sample_count = 0
         self.peaks = {'tree_working_set_bytes': 0, 'tree_private_bytes': 0}
         self.minimum_free = {}
@@ -501,20 +516,99 @@ class _ResourceMonitor:
                 raise ValueError('Unknown monitor reservation')
             del self.reservations[attempt_id]
 
-    def sample(self):
-        sample = _resource_sample(self.destination, self.identity)
+    def _with_reservations(self, sample):
         with self.lock:
-            sample = {**sample, 'inflight_reserved_bytes': sum(r['reserved_bytes'] for r in self.reservations.values()),
-                      'inflight_reserved_attempt_seconds': sum(r['reserved_attempt_seconds'] for r in self.reservations.values())}
+            return {**sample, 'inflight_reserved_bytes': sum(r['reserved_bytes'] for r in self.reservations.values()),
+                    'inflight_reserved_attempt_seconds': sum(r['reserved_attempt_seconds'] for r in self.reservations.values())}
+
+    def _check_machine(self, sample):
+        for key in ('free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'):
+            self.minimum_free[key] = min(self.minimum_free.get(key, sample[key]), sample[key])
         for key in ('physical', 'commit', 'disk'):
             required = self.profile['min_free_' + key + '_bytes'] + (sample['inflight_reserved_bytes'] if key == 'disk' else 0)
             if sample['free_' + key + '_bytes'] < required:
                 raise RuntimeError('Resource margin exhausted: ' + key)
+
+    def _fail(self, error):
+        if not self.error:
+            self.error = type(error).__name__ + ': ' + str(error)
+            self.failure = error
+        self.cancel_event.set()
+
+    def _close_gap(self, gap, status, *, ended_clock_ns=None):
+        ended = time.perf_counter_ns() if ended_clock_ns is None else ended_clock_ns
+        self.observation_gaps.append({**gap, 'ended_clock_ns': ended,
+            'duration_ns': ended - gap['started_clock_ns'], 'status': status})
+
+    def sample(self, *, terminal=False):
+        import threading
+        # A worker preflight cannot pass while the watcher's observation is pending.
+        # Reservation updates use a different lock and remain available during sleeps.
+        with self.sample_lock:
+            if self.error:
+                raise RuntimeError('Monitor failure: ' + self.error)
+            gap = None
+            failure_status = 'failed'
+            try:
+                while True:
+                    before = time.perf_counter_ns()
+                    if gap is not None:
+                        if (self.stop.is_set() and not terminal) or self.cancel_event.is_set():
+                            failure_status = 'cancelled'
+                            raise _ProcessObservationCancelled('Process observation pending cancelled')
+                        if before - gap['started_clock_ns'] >= 250_000_000:
+                            failure_status = 'expired'
+                            raise RuntimeError('Process observation pending limit exceeded')
+                    try:
+                        sample = _resource_sample(self.destination, self.identity)
+                    except _ProcessObservationPending as error:
+                        if gap is None:
+                            gap = {'started_clock_ns': before, 'reason': str(error),
+                                   'observations': 0, 'machine_samples': []}
+                        gap['observations'] += 1
+                        machine = self._with_reservations(_machine_resource_sample(self.destination))
+                        gap['machine_samples'].append(machine)
+                        self._check_machine(machine)
+                        if time.perf_counter_ns() - gap['started_clock_ns'] >= 250_000_000:
+                            failure_status = 'expired'
+                            raise RuntimeError('Process observation pending limit exceeded')
+                        if (self.stop.is_set() and not terminal) or self.cancel_event.is_set():
+                            failure_status = 'cancelled'
+                            raise _ProcessObservationCancelled('Process observation pending cancelled')
+                        time.sleep(.05)
+                    else:
+                        if gap is not None and time.perf_counter_ns() - gap['started_clock_ns'] >= 250_000_000:
+                            failure_status = 'expired'
+                            raise RuntimeError('Process observation pending limit exceeded')
+                        sample = self._with_reservations(sample)
+                        self._check_machine(sample)
+                        if (gap is None and self.stop.is_set() and not self.cancel_event.is_set()
+                                and threading.current_thread() is self.thread):
+                            # Discard an in-flight watcher sample during normal shutdown.
+                            # __exit__ joins this thread and obtains a separate terminal sample.
+                            return
+                        if (self.stop.is_set() and not terminal) or self.cancel_event.is_set():
+                            failure_status = 'cancelled'
+                            raise _ProcessObservationCancelled('Process observation pending cancelled')
+                        if gap is not None:
+                            resolved_at = time.perf_counter_ns()
+                            if resolved_at - gap['started_clock_ns'] >= 250_000_000:
+                                failure_status = 'expired'
+                                raise RuntimeError('Process observation pending limit exceeded')
+                            self._close_gap(gap, 'resolved', ended_clock_ns=resolved_at)
+                            gap = None
+                        self._accept_sample(sample)
+                        return
+            except Exception as error:
+                if gap is not None:
+                    self._close_gap(gap, failure_status)
+                self._fail(error)
+                raise
+
+    def _accept_sample(self, sample):
         self.sample_count += 1
         for key in self.peaks:
             self.peaks[key] = max(self.peaks[key], sample[key])
-        for key in ('free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'):
-            self.minimum_free[key] = min(self.minimum_free.get(key, sample[key]), sample[key])
         self.samples.append(sample)
         del self.samples[:-128]
 
@@ -522,17 +616,15 @@ class _ResourceMonitor:
         while not self.stop.wait(self.profile['sampling_interval_ms'] / 1000):
             try:
                 self.sample()
-            except (ValueError, OSError, RuntimeError) as error:
-                self.error = type(error).__name__ + ': ' + str(error)
-                self.cancel_event.set()
+            except Exception as error:
+                self._fail(error)
                 return
 
     def __enter__(self):
         try:
             self.sample()
-        except (ValueError, OSError, RuntimeError) as error:
-            self.error = type(error).__name__ + ': ' + str(error)
-            self.cancel_event.set()
+        except Exception as error:
+            self._fail(error)
             raise
         self.thread.start()
         return self
@@ -543,3 +635,4 @@ class _ResourceMonitor:
             self.thread.join()
         if self.error:
             raise RuntimeError('Monitor failure: ' + self.error)
+        self.sample(terminal=True)
