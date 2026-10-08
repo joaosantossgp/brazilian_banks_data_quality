@@ -1226,3 +1226,153 @@ def discover(catalog: Catalog, *, period=None, perspective=None, report_id=None)
                'payload_validation': 'not_run'}
         rows.append(row)
     return rows
+
+
+def _present_file(root, relative):
+    path = _contained_path(root, relative)
+    try:
+        info = path.stat()
+    except FileNotFoundError as exc:
+        raise CatalogError('missing_local_artifact', 'Required local snapshot artifact is absent') from exc
+    except OSError as exc:
+        raise CatalogError('integrity', 'Local snapshot artifact cannot be inspected') from exc
+    _require(stat.S_ISREG(info.st_mode), 'Local snapshot artifact is not a regular file')
+    return path, info
+
+
+def _current_registry(root):
+    relative = 'bank_quality/financial-reports-registry.json'
+    path, _ = _present_file(root, relative)
+    try:
+        with path.open('rb') as stream:
+            opened = os.fstat(stream.fileno())
+            _require(stat.S_ISREG(opened.st_mode) and opened.st_size <= _MAX_METADATA_BYTES,
+                     'Current registry exceeds its metadata boundary')
+            raw = stream.read(_MAX_METADATA_BYTES + 1)
+        _require(len(raw) <= _MAX_METADATA_BYTES and os.path.samestat(opened, _contained_path(root, relative).stat()),
+                 'Current registry changed identity during capture')
+    except OSError as exc:
+        raise CatalogError('integrity', 'Current registry cannot be captured') from exc
+    value = _json_bytes(raw)
+    return value, _registry_entries(value), hashlib.sha256(raw).hexdigest()
+
+
+def resolve_snapshot(catalog: Catalog, *, period: int, perspective: int,
+                     report_id: int | None = None, revision_id: str | None = None) -> dict:
+    """Resolve one accepted revision and inspect local metadata, without opening payloads."""
+    state = _context(catalog)
+    _positive_integer(period); _positive_integer(perspective)
+    if report_id is not None:
+        _positive_integer(report_id)
+    if revision_id is not None:
+        _hash(revision_id)
+    rows = discover(catalog, period=period, perspective=perspective, report_id=report_id)
+    if len(rows) != 1:
+        raise CatalogError('unknown_selection', 'Selection or native report is not offered')
+    entry = rows[0]
+    verified = [r for r in entry['revisions'] if r['acceptance'] == 'verified']
+    if not verified:
+        raise CatalogError('unavailable', 'Offered selection has no accepted revision')
+    choice = revision_id if revision_id is not None else entry['active_revision']
+    candidates = [r for r in verified if choice is None or r['revision_id'] == choice]
+    if not candidates:
+        raise CatalogError('unknown_selection', 'Requested revision is not accepted for this selection')
+    if len(candidates) != 1:
+        raise CatalogError('ambiguous_revision', 'Selection requires an explicit accepted revision')
+    revision = candidates[0]
+    registry, current_entries, registry_pin = _current_registry(state.root)
+    current = next((e for e in current_entries if e['selection'] == entry['selection']), None)
+    member = next((m for m in registry['members'] if m['selection'] == entry['selection']), None)
+    if (current is None or member is None or current['descriptor_sha256'] != entry['descriptor_sha256']
+            or current['reports'] != entry['reports']
+            or member['profile_path'] != revision['profile']['path'].removeprefix('bank_quality/')
+            or member['profile_sha256'] != revision['profile']['sha256']):
+        raise CatalogError('stale_context', 'Installed selection or profile differs from the frozen catalog')
+    _present_file(state.root, revision['profile']['path'])
+    try:
+        _native_profile_image(state.root, revision['profile'])
+    except CatalogError as exc:
+        raise CatalogError('stale_context', 'Installed native profile differs from its accepted pin') from exc
+    manifest_ref = revision['parquet']
+    target, _ = _present_file(state.root, manifest_ref['path'])
+    manifest = _read_reference(state.root, manifest_ref).document()
+    _require(manifest.get('selection') == entry['selection'] and manifest.get('accepted') is True
+             and manifest.get('profile_sha256') == revision['profile']['sha256'],
+             'Snapshot manifest differs from the accepted selection/profile')
+    _require(type(manifest.get('files')) is list, 'Snapshot file inventory is absent')
+    files = set()
+    for ref in manifest['files']:
+        _fields(ref, ('path', 'bytes', 'sha256'))
+        _reference_shape({k: ref[k] for k in ('path', 'sha256')})
+        _require(type(ref['bytes']) is int and ref['bytes'] >= 0 and ref['path'] not in files,
+                 'Invalid snapshot file inventory')
+        _require(ref['path'].startswith(('metadata/', 'parts/')), 'Foreign snapshot file role')
+        files.add(ref['path'])
+        _, info = _present_file(target.parent, ref['path'])
+        _require(info.st_size == ref['bytes'], 'Snapshot file size differs from its pinned inventory')
+        if ref['path'].startswith('metadata/'):
+            image = _read_reference(target.parent, {k: ref[k] for k in ('path', 'sha256')}, json_required=False)
+            _require(len(image.raw) == ref['bytes'], 'Snapshot metadata byte count differs')
+    expected_dirs = {parent.as_posix() for name in files for parent in PurePosixPath(name).parents
+                     if parent.as_posix() != '.'}
+    actual = set(); pending = [target.parent]
+    try:
+        while pending:
+            directory = pending.pop()
+            for candidate in directory.iterdir():
+                relative = candidate.relative_to(target.parent).as_posix()
+                checked = _contained_path(target.parent, relative)
+                if checked.is_dir():
+                    _require(relative in expected_dirs, 'Unexpected snapshot directory')
+                    pending.append(checked)
+                else:
+                    _require(checked.is_file(), 'Nonregular snapshot artifact')
+                    actual.add(relative)
+    except OSError as exc:
+        raise CatalogError('integrity', 'Snapshot inventory cannot be inspected') from exc
+    _require(actual == files | {'manifest.json'}, 'Snapshot physical inventory differs')
+    return {'selection': entry['selection'], 'revision_id': revision['revision_id'],
+            'report_id': report_id, 'destination': target.parent, 'manifest_sha256': manifest_ref['sha256'],
+            'profile': revision['profile'], 'acceptance': 'verified',
+            'current_registry_sha256': registry_pin,
+            'registry_drift': registry_pin != _json_bytes(state.raw)['registry']['sha256'],
+            'historical_stages': revision['historical_stages'], 'counts': revision['counts'],
+            'local_health': 'metadata_verified', 'payload_validation': 'not_run'}
+
+
+def snapshot_connection(catalog: Catalog, *, period: int, perspective: int,
+                        report_id: int | None = None, revision_id: str | None = None):
+    """Open the complete native snapshot; the caller owns and closes its connection."""
+    resolved = resolve_snapshot(catalog, period=period, perspective=perspective,
+                                report_id=report_id, revision_id=revision_id)
+    from . import financial_reports_parquet as adapter
+    try:
+        return adapter.snapshot_connection(resolved['destination'], manifest_sha256=resolved['manifest_sha256'])
+    except (ValueError, OSError) as exc:
+        raise CatalogError('integrity', 'Native snapshot validation or opening failed') from exc
+
+
+def iter_numeric_decimals(catalog: Catalog, *, period: int, perspective: int,
+                         report_id: int, column_id: int, revision_id: str | None = None):
+    """Yield exact native Decimal values lazily and close the owned iterator on abandonment."""
+    _require(type(column_id) is int and column_id >= 0, 'Expected a nonnegative native column ID')
+    resolved = resolve_snapshot(catalog, period=period, perspective=perspective,
+                                report_id=report_id, revision_id=revision_id)
+    manifest = _read_reference(resolved['destination'],
+                               {'path': 'manifest.json', 'sha256': resolved['manifest_sha256']}).document()
+    bindings = manifest.get('numeric_bindings')
+    _require(type(bindings) is list, 'Native numeric binding inventory is absent')
+    selected = [b for b in bindings if b.get('report_id') == report_id and b.get('column_id') == column_id]
+    if not selected:
+        raise CatalogError('unknown_binding', 'Requested native column is not a numeric leaf binding')
+    _require(len(selected) == 1, 'Duplicate native numeric binding')
+    from . import financial_reports_parquet as adapter
+    iterator = adapter.iter_numeric_decimals(resolved['destination'],
+                                             manifest_sha256=resolved['manifest_sha256'],
+                                             binding_id=(report_id, column_id))
+    try:
+        yield from iterator
+    except (ValueError, OSError) as exc:
+        raise CatalogError('integrity', 'Native Decimal snapshot validation or reading failed') from exc
+    finally:
+        iterator.close()

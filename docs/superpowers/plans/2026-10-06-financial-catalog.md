@@ -55,10 +55,10 @@ API/schema/ordenação/erros exatos estão na spec. Testar que hash alternativo 
 
 ## Task 2 — resolução e consultas nativas
 
-- [ ] RED: seleção desconhecida/sem gate/revisão ambígua/explícita, report fora da seleção, drift do membro/perfil e metadados alterados. Não escolher latest/mtime automaticamente.
-- [ ] RED: ponte real às fixtures dos adapters, precisão larga/texto/Decimal e None, filtro report parametrizado sem reduzir a seleção do perfil, binding grupo/texto/IDdesconhecido.
-- [ ] Implementar snapshot_connection/iter_numeric_decimals delegando ao adapter nativo com hash externo; um snapshot por vez, fechamento de conexão e iterator no cancelamento.
-- [ ] GREEN: executar somente os dois módulos 61; revisão independente da seleção/ponte antes de CLI e corpus.
+- [x] RED: seleção desconhecida/sem gate/revisão ambígua/explícita, report fora da seleção, drift do membro/perfil e metadados alterados. Não escolher latest/mtime automaticamente.
+- [x] RED: ponte real às fixtures dos adapters, precisão larga/texto/Decimal e None, filtro report parametrizado sem reduzir a seleção do perfil, binding grupo/texto/IDdesconhecido.
+- [x] Implementar snapshot_connection/iter_numeric_decimals delegando ao adapter nativo com hash externo; um snapshot por vez, fechamento de conexão e iterator no cancelamento.
+- [x] GREEN: executar somente os dois módulos 61; revisão independente da seleção/ponte antes de CLI e corpus.
 
 ```powershell
 & .\.venv\Scripts\python.exe -B -m unittest discover -s tests -p 'test_financial_catalog*.py' -v

@@ -679,7 +679,7 @@ assert 'bank_quality.financial_acquisition' not in sys.modules
         with self.assertRaises(catalog.CatalogError):
             catalog._freeze_revision(gate_image, gate, verified, {})
 
-    def accepted_state(self):
+    def accepted_state(self, snapshot_files=None, *, cells=1, gate_path='.scratch/catalog61-test.json'):
         # Manufactured frozen post-validation state: it does not bypass or exercise a real authority parser.
         registry = CatalogInputAndRegistryTests().registry()
         entries = catalog._registry_entries(registry)
@@ -693,14 +693,15 @@ assert 'bank_quality.financial_acquisition' not in sys.modules
                           'profile_sha256': profile.sha256, 'files': []})
         parquet = image('data/curated/test/manifest.json', {'selection': selection, 'accepted': True,
                         'profile_sha256': profile.sha256, 'source_manifest_sha256': admission.sha256,
-                        'source_files': [], 'cells': 1, 'observations': 1, 'cadaster_records': 1,
-                        'presence_counts': {'stored': 1}, 'value_state_counts': {'numeric': 1}, 'numeric_bindings': []})
+                        'source_files': [], 'cells': cells, 'observations': 1, 'cadaster_records': 1,
+                        'presence_counts': {'stored': 1}, 'value_state_counts': {'numeric': 1}, 'numeric_bindings': [],
+                        'files': [] if snapshot_files is None else snapshot_files})
         ref = lambda captured: {'path': captured.path, 'sha256': captured.sha256}
         gate = {'contract': 'ifdata-financial-catalog-gate-v1', 'selection': selection, 'revision': parquet.sha256,
                 'profile': {**ref(profile), 'hash_policy': 'installed_profile_native_lf'},
                 'admission': ref(admission), 'parquet': ref(parquet),
                 'proof': {'kind': 'accepted_supplement403_v1', 'supplement': catalog._SUPPLEMENT403}, 'limitations': []}
-        gate_image = image('.scratch/catalog61-test.json', gate)
+        gate_image = image(gate_path, gate)
         verified = {'acceptance': 'verified', 'historical_stages': {'state': 'available', 'kind': 'accepted_supplement403_v1'},
                     'parquet_metadata': parquet.document(), 'captured_images': (profile, admission, parquet)}
         store = {}; revision = catalog._freeze_revision(gate_image, gate, verified, store)
@@ -721,6 +722,136 @@ assert 'bank_quality.financial_acquisition' not in sys.modules
                     'parent_catalog': None, 'entries': entries, 'coverage': catalog._coverage(entries),
                     'files': [], 'limitations': []}
         return document, store, entry, revision
+
+    def resolution_context(self, snapshot_files=None):
+        document, store, entry, revision = self.accepted_state(snapshot_files)
+        registry = catalog._json_bytes(store[document['registry']['path']])
+        member = next(m for m in registry['members'] if m['selection'] == entry['selection'])
+        member['profile_path'] = revision['profile']['path'].removeprefix('bank_quality/')
+        member['profile_sha256'] = revision['profile']['sha256']
+        registry_raw = catalog._canonical(registry)
+        store[document['registry']['path']] = registry_raw
+        document['registry']['sha256'] = hashlib.sha256(registry_raw).hexdigest()
+        inputs = catalog._json_bytes(store[document['inputs']['path']])
+        inputs['registry']['sha256'] = document['registry']['sha256']
+        store[document['inputs']['path']] = catalog._canonical(inputs)
+        document['inputs']['sha256'] = hashlib.sha256(store[document['inputs']['path']]).hexdigest()
+        (self.root / 'bank_quality/financial-reports-registry.json').write_bytes(registry_raw)
+        fragment = catalog._json_bytes(store[revision['proof']['path']])
+        for key in ('profile', 'parquet'):
+            original = revision[key]
+            path = self.root / original['path']; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(store[fragment[key]['image']['path']])
+        path, pin = self.persist_state(document, store, 'financial-catalog-resolution')
+        return catalog.load_catalog(path, catalog_sha256=pin), entry, revision
+
+    def resolve_error(self, context, expected, **selector):
+        operation = self.operation('resolve_snapshot')
+        with self.assertRaises(catalog.CatalogError) as caught:
+            operation(context, period=selector.pop('period', 202403),
+                      perspective=selector.pop('perspective', 1005), **selector)
+        self.assertEqual(caught.exception.code, expected)
+
+    def test_resolution_selects_full_snapshot_and_explicit_revision(self):
+        context, entry, revision = self.resolution_context()
+        operation = self.operation('resolve_snapshot')
+        resolved = operation(context, period=202403, perspective=1005, report_id=3)
+        self.assertEqual(resolved['selection'], entry['selection'])
+        self.assertEqual(resolved['revision_id'], revision['revision_id'])
+        self.assertEqual(resolved['manifest_sha256'], revision['parquet']['sha256'])
+        self.assertEqual(resolved['destination'], self.root / 'data/curated/test')
+        self.assertEqual(resolved['local_health'], 'metadata_verified')
+        self.assertEqual(resolved['payload_validation'], 'not_run')
+        self.assertFalse(resolved['registry_drift'])
+        self.assertEqual(operation(context, period=202403, perspective=1005,
+                                   revision_id=revision['revision_id'])['revision_id'], revision['revision_id'])
+
+    def test_resolution_distinguishes_offer_absence_unknown_and_bad_revision(self):
+        context, _, _ = self.resolution_context()
+        self.resolve_error(context, 'unknown_selection', period=190003)
+        self.resolve_error(context, 'unknown_selection', perspective=999)
+        self.resolve_error(context, 'unknown_selection', report_id=999)
+        self.resolve_error(context, 'unavailable', period=201003)
+        self.resolve_error(context, 'unknown_selection', revision_id='a' * 64)
+        self.resolve_error(context, 'integrity', report_id=True)
+        self.resolve_error(context, 'integrity', revision_id='invalid')
+
+    def test_resolution_blocks_manifest_changes_missing_and_profile_drift(self):
+        context, _, revision = self.resolution_context()
+        manifest = self.root / revision['parquet']['path']
+        original = manifest.read_bytes(); manifest.write_bytes(b'{}')
+        self.resolve_error(context, 'integrity')
+        manifest.unlink(); self.resolve_error(context, 'missing_local_artifact')
+        manifest.write_bytes(original)
+        (self.root / revision['profile']['path']).write_bytes(b'{}')
+        self.resolve_error(context, 'stale_context')
+        self.assertEqual(catalog.discover(context, period=202403)[0]['acceptance'], 'verified')
+
+    def test_resolution_only_target_member_drift_blocks_and_original_admission_not_required(self):
+        context, _, revision = self.resolution_context()
+        operation = self.operation('resolve_snapshot')
+        path = self.root / 'bank_quality/financial-reports-registry.json'
+        registry = catalog._json_bytes(path.read_bytes())
+        registry['members'][0]['catalog'] = {'unrelated': 'changed'}
+        payload = {k: registry['members'][0][k] for k in ('selection', 'catalog', 'reports', 'source_offers')}
+        registry['members'][0]['descriptor_sha256'] = hashlib.sha256(catalog._canonical(payload)[:-1]).hexdigest()
+        path.write_bytes(catalog._canonical(registry))
+        resolved = operation(context, period=202403, perspective=1005)
+        self.assertEqual(resolved['revision_id'], revision['revision_id'])
+        self.assertTrue(resolved['registry_drift'])
+        member = next(m for m in registry['members'] if m['selection']['period'] == 202403)
+        member['profile_sha256'] = 'a' * 64
+        path.write_bytes(catalog._canonical(registry))
+        self.resolve_error(context, 'stale_context')
+
+    def test_resolution_checks_declared_presence_and_metadata_hash_without_reading_payload(self):
+        metadata = b'{"embedded":true}'
+        payload = b'opaque synthetic payload'
+        files = [{'path': name, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+                 for name, raw in [('metadata/source-manifest.json', metadata), ('parts/cells.parquet', payload)]]
+        context, _, revision = self.resolution_context(files)
+        destination = (self.root / revision['parquet']['path']).parent
+        for ref, raw in zip(files, (metadata, payload)):
+            path = destination / ref['path']; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
+        operation = self.operation('resolve_snapshot')
+        self.assertEqual(operation(context, period=202403, perspective=1005)['local_health'], 'metadata_verified')
+        part = destination / 'parts/cells.parquet'
+        part.write_bytes(b'x' * len(payload))
+        self.assertEqual(operation(context, period=202403, perspective=1005)['payload_validation'], 'not_run')
+        part.unlink(); self.resolve_error(context, 'missing_local_artifact')
+        part.write_bytes(payload)
+        (destination / files[0]['path']).write_bytes(b'x' * len(metadata))
+        self.resolve_error(context, 'integrity')
+
+    def test_resolution_rejects_snapshot_inventory_extras(self):
+        context, _, revision = self.resolution_context()
+        destination = (self.root / revision['parquet']['path']).parent
+        (destination / 'extra.json').write_bytes(b'{}')
+        self.resolve_error(context, 'integrity')
+
+    def test_resolution_keeps_multiple_revisions_ambiguous_without_automatic_latest(self):
+        self.resolution_context()  # Install matching current registry/profile/first manifest.
+        document, store, entry, first = self.accepted_state()
+        second_document, second_store, _, second = self.accepted_state(cells=2, gate_path='.scratch/catalog61-second.json')
+        for name, raw in second_store.items():
+            if name.startswith('metadata/revisions/'):
+                store[name] = raw
+        entry['revisions'] = sorted([first, second], key=lambda r: r['revision_id'])
+        entry['active_revision'] = None
+        inputs = catalog._json_bytes(store[document['inputs']['path']])
+        other_inputs = catalog._json_bytes(second_store[second_document['inputs']['path']])
+        inputs['gates'] += other_inputs['gates']
+        inputs['active_revisions'] = [{'selection': entry['selection'], 'revision_id': None}]
+        store[document['inputs']['path']] = catalog._canonical(inputs)
+        document['inputs']['sha256'] = hashlib.sha256(store[document['inputs']['path']]).hexdigest()
+        document['coverage'] = catalog._coverage(document['entries'])
+        path, pin = self.persist_state(document, store, 'financial-catalog-two-revisions')
+        context = catalog.load_catalog(path, catalog_sha256=pin)
+        self.resolve_error(context, 'ambiguous_revision')
+        selected = self.operation('resolve_snapshot')(context, period=202403, perspective=1005,
+                                                      revision_id=first['revision_id'])
+        self.assertEqual(selected['revision_id'], first['revision_id'])
+        self.assertEqual(catalog.discover(context, period=202403)[0]['query_selection'], 'ambiguous_revision')
 
     def mutate_fragment(self, store, revision, change):
         name = revision['proof']['path']; fragment = catalog._json_bytes(store[name]); change(fragment)
