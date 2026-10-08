@@ -1,5 +1,6 @@
 """Windows containment integration tests use only a known local fixture worker."""
 import hashlib
+from contextlib import nullcontext
 import importlib
 import json
 import os
@@ -15,6 +16,34 @@ from unittest.mock import patch, Mock
 
 
 class WindowsAcquisitionTests(unittest.TestCase):
+    def test_resource_snapshot_reassociates_newborn_identity_with_current_parent(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        identities = {10: root, 20: {'pid': 20, 'creation_time': 110}}
+        for parent, expected in ((10, {10, 20}), (99, {10})):
+            with self.subTest(parent=parent):
+                refresh = Mock(return_value=(120, {10: 1, 20: parent}))
+                self.assertEqual(api._reconcile_process_snapshot(
+                    root, {10: 1, 20: 10}, identities, observed_before=105,
+                    refresh=refresh), expected)
+                refresh.assert_called_once_with()
+
+    def test_resource_snapshot_new_candidate_remains_pending(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        with self.assertRaises(api._ProcessObservationPending):
+            api._reconcile_process_snapshot(root, {10: 1, 20: 10},
+                {10: root, 20: {'pid': 20, 'creation_time': 110}}, observed_before=105,
+                refresh=lambda: (120, {10: 1, 20: 10, 30: 20}))
+
+    def test_resource_snapshot_unknown_refresh_is_fatal(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        with self.assertRaisesRegex(OSError, 'snapshot fixture'):
+            api._reconcile_process_snapshot(root, {10: 1, 20: 10},
+                {10: root, 20: {'pid': 20, 'creation_time': 110}}, observed_before=105,
+                refresh=Mock(side_effect=OSError('snapshot fixture')))
+
     def test_resource_tree_excludes_stale_parent_pid_and_its_branch(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         coordinator = {'pid': 10, 'creation_time': 100}
@@ -55,7 +84,11 @@ class WindowsAcquisitionTests(unittest.TestCase):
                 return False
             pointer._obj.th32ProcessID, pointer._obj.th32ParentProcessID = pid, parent
             return True
-        kernel.CreateToolhelp32Snapshot.return_value = 77
+        def new_snapshot(flags, pid):
+            nonlocal entries
+            entries = iter(parents.items())
+            return 77
+        kernel.CreateToolhelp32Snapshot.side_effect = new_snapshot
         def snapshot_time(pointer):
             pointer._obj.dwLowDateTime = 1000
             pointer._obj.dwHighDateTime = 0
@@ -77,11 +110,19 @@ class WindowsAcquisitionTests(unittest.TestCase):
         self.assertEqual(result['tree_private_bytes'], 180)
         self.assertEqual({call.args[0] for call in kernel.CloseHandle.call_args_list}, {77, 10, 20, 30, 40, 50})
 
-        for failure in ('identity', 'memory', 'recycled'):
+        for failure in ('identity', 'memory', 'recycled', 'newborn'):
             with self.subTest(failure=failure):
                 entries = iter(parents.items())
                 kernel.CloseHandle.reset_mock()
                 psapi.GetProcessMemoryInfo.reset_mock()
+                if failure == 'newborn':
+                    stamps = iter((105, 1000))
+                    def newborn_time(pointer):
+                        pointer._obj.dwLowDateTime = next(stamps)
+                        pointer._obj.dwHighDateTime = 0
+                    kernel.GetSystemTimeAsFileTime.side_effect = newborn_time
+                else:
+                    kernel.GetSystemTimeAsFileTime.side_effect = snapshot_time
                 def identify(k, handle, pid):
                     if failure == 'identity' and pid == 30:
                         raise OSError('identity fixture')
@@ -95,12 +136,14 @@ class WindowsAcquisitionTests(unittest.TestCase):
                         patch.object(api, '_identity', side_effect=identify), \
                         patch.object(api.C, 'WinDLL', return_value=psapi, create=True), \
                         patch.object(api.C, 'get_last_error', return_value=18, create=True), \
-                        self.assertRaises(expected_error):
+                        (nullcontext() if failure == 'newborn' else self.assertRaises(expected_error)):
                     api._resource_sample(Path('.'), coordinator)
                 expected_handles = [77, 10, 20, 30] if failure == 'identity' else [77, 10, 20, 30, 40, 50]
+                if failure in ('recycled', 'newborn'):
+                    expected_handles.insert(0, 77)
                 self.assertEqual([call.args[0] for call in kernel.CloseHandle.call_args_list], expected_handles)
                 self.assertEqual([call.args[0] for call in psapi.GetProcessMemoryInfo.call_args_list],
-                                 [10] if failure == 'memory' else [])
+                                 [10, 20, 30] if failure == 'newborn' else ([10] if failure == 'memory' else []))
 
     def test_resource_profile_is_closed_serial_and_machine_specific(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
