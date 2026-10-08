@@ -48,7 +48,7 @@ Preencher antes do claim conforme [workflow](https://github.com/joaosantossgp/br
 
 Revisar e testar cada fatia antes de ampliar a implementação. Registrar checkpoint com base/head ou hashes, inventário, comandos/resultados, achados/correções, limitações e próximo handoff. Falha/achado material interrompe expansão; revalidar o recorte afetado após diagnóstico/correção. Não repetir suítes sem motivo ou promover passes isolados a PASS global.
 
-Planejar PRs pequenas para mudanças independentes integráveis; transição indivisível exige justificativa e checkpoints. Dados são aceitos por lote/janela, sem PR artificial por trimestre. A revisão final confere composição/deltas/SHA e checks finais pertinentes; pesquisa também exige conferência de domínio/fontes, sem testes que apenas reproduzem texto.
+A PR pode ter o tamanho necessário ao escopo autorizado e reunir várias fatias; não exigir PR pequena, divisão por fatia ou justificativa de tamanho/transição indivisível. Dados são aceitos por lote/janela, sem PR artificial por trimestre. A revisão final confere composição/deltas/SHA e checks finais pertinentes; pesquisa também exige conferência de domínio/fontes, sem testes que apenas reproduzem texto.
 
 ## Dependências e prontidão
 Listar bloqueador real, link, entrada faltante, responsável pelo desbloqueio e evidência para resolvê-lo; ou declarar **nenhuma pendência externa para iniciar**, com verificação. Separar vínculos de contexto de bloqueadores e etapas internas futuras.
