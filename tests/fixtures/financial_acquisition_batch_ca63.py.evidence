@@ -9,7 +9,6 @@ import hashlib
 import json
 from pathlib import Path
 import stat
-import sys
 
 from . import financial_acquisition as acquisition
 
@@ -1298,63 +1297,6 @@ def _ledger_state():
     return {'pending': {}, 'finished': {}, 'guard': '', 'guard_streak': 0, 'halt': ''}
 
 
-def _validate_representative_measurements(measurements, *, contract, profile=None):
-    acquisition._closed_data(measurements)
-    legacy = 'financial-acquisition-representative-measurement-v1'
-    current = 'financial-acquisition-representative-measurement-v2'
-    _require(contract in (legacy, current), 'Unknown representative measurement version')
-    fields = {'sample_count', 'peaks', 'minimum_free'}
-    if contract == current:
-        fields |= {'observation_gaps', 'measurement_scope', 'pending_limit_ms', 'pending_poll_ms'}
-    _require(type(measurements) is dict and set(measurements) == fields
-             and type(measurements['sample_count']) is int and measurements['sample_count'] > 0,
-             'Invalid closed representative measurements')
-    for key, names in (('peaks', {'tree_working_set_bytes', 'tree_private_bytes'}),
-                       ('minimum_free', {'free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'})):
-        _require(type(measurements[key]) is dict and set(measurements[key]) == names
-                 and all(type(v) is int and v >= 0 for v in measurements[key].values()),
-                 'Invalid representative resource measurements')
-    if profile is not None:
-        for key in ('physical', 'commit', 'disk'):
-            _require(measurements['minimum_free']['free_' + key + '_bytes'] >= profile['min_free_' + key + '_bytes'],
-                     'Representative measurement below pinned resource margin')
-    if contract == legacy:
-        return
-    _require(measurements['measurement_scope'] == 'sampled_process_peaks_with_explicit_observation_gaps'
-             and type(measurements['pending_limit_ms']) is int and measurements['pending_limit_ms'] == 250
-             and type(measurements['pending_poll_ms']) is int and measurements['pending_poll_ms'] == 50
-             and type(measurements['observation_gaps']) is list, 'Invalid observation scope or bounds')
-    previous_end = 0
-    for gap in measurements['observation_gaps']:
-        _require(type(gap) is dict and set(gap) == {'started_clock_ns', 'ended_clock_ns', 'duration_ns',
-            'reason', 'observations', 'status', 'machine_samples'}, 'Invalid closed observation gap')
-        _require(all(type(gap[key]) is int and gap[key] > 0 for key in
-            ('started_clock_ns', 'ended_clock_ns', 'duration_ns', 'observations'))
-            and gap['status'] == 'resolved' and type(gap['reason']) is str and bool(gap['reason'])
-            and gap['ended_clock_ns'] - gap['started_clock_ns'] == gap['duration_ns'] < 250_000_000
-            and gap['started_clock_ns'] >= previous_end
-            and type(gap['machine_samples']) is list and len(gap['machine_samples']) == gap['observations'],
-            'Unresolved, expired or inconsistent observation gap')
-        previous_end = gap['ended_clock_ns']
-        previous_sample = gap['started_clock_ns'] - 1
-        for sample in gap['machine_samples']:
-            _require(type(sample) is dict and set(sample) == {'elapsed_clock_ns', 'free_physical_bytes',
-                'free_commit_bytes', 'free_disk_bytes', 'inflight_reserved_bytes', 'inflight_reserved_attempt_seconds'}
-                and all(type(value) is int and value >= 0 for value in sample.values())
-                and gap['started_clock_ns'] <= sample['elapsed_clock_ns'] <= gap['ended_clock_ns']
-                and sample['elapsed_clock_ns'] > previous_sample, 'Invalid pending machine observation')
-            previous_sample = sample['elapsed_clock_ns']
-            for key in ('physical', 'commit', 'disk'):
-                field = 'free_' + key + '_bytes'
-                _require(measurements['minimum_free'][field] <= sample[field],
-                         'Aggregate minimum exceeds pending observation')
-                if profile is not None:
-                    required = profile['min_free_' + key + '_bytes']
-                    if key == 'disk':
-                        required += sample['inflight_reserved_bytes']
-                    _require(sample[field] >= required, 'Pending observation below pinned resource margin')
-
-
 def _apply_phase(state, record, bundle):
     base = {'contract', 'sequence', 'previous_record_sha256', 'bundle_sha256', 'bootstrap_sha256', 'kind'}
     kind = record.get('kind')
@@ -1362,10 +1304,6 @@ def _apply_phase(state, record, bundle):
               if kind == 'phase_start' else {'phase_id', 'result', 'recovered'} if kind == 'phase_finish' else
               {'phase_id', 'resource_measurement'} if kind == 'representative_measurement' else
               {'representative_period', 'phase_id', 'resource_profile', 'resource_measurement', 'measurements', 'result'} if kind == 'representative_checkpoint' else {'reason'})
-    if kind == 'representative_checkpoint' and 'measurement_contract' in record:
-        fields |= {'measurement_contract'}
-        _require(record['measurement_contract'] == 'financial-acquisition-representative-measurement-v2',
-                 'New checkpoint requires explicit measurement version two')
     _require(type(record) is dict and set(record) == base | fields and record['contract'] == 'financial-acquisition-batch-ledger-v1'
              and type(record['sequence']) is int and record['sequence'] > 0 and kind in (('phase_start', 'phase_finish', 'halt', 'representative_measurement', 'representative_checkpoint')
                  if bundle['contract'] == 'financial-acquisition-batch-v2' else ('phase_start', 'phase_finish', 'halt')),
@@ -1440,8 +1378,14 @@ def _apply_phase(state, record, bundle):
         _relative_name(ref['path'])
         acquisition._digest(ref['sha256'])
         measurements = record['measurements']
-        _validate_representative_measurements(measurements, contract=record.get('measurement_contract',
-            'financial-acquisition-representative-measurement-v1'))
+        acquisition._closed_data(measurements)
+        _require(type(measurements) is dict and set(measurements) == {'sample_count', 'peaks', 'minimum_free'}
+                 and type(measurements['sample_count']) is int and measurements['sample_count'] > 0,
+                 'Measured representative checkpoint required')
+        for key, fields in (('peaks', {'tree_working_set_bytes', 'tree_private_bytes'}),
+                            ('minimum_free', {'free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'})):
+            _require(type(measurements[key]) is dict and set(measurements[key]) == fields
+                     and all(type(v) is int and v >= 0 for v in measurements[key].values()), 'Invalid representative measurements')
         state['representative_checkpoint'] = copy.deepcopy(record)
     else:
         _require(type(record['reason']) is str and record['reason'], 'Halt reason required')
@@ -1981,19 +1925,10 @@ def _run_scheduler(bundle_path, bundle_sha256, *, bootstrap_sha256, metadata_wor
                         acquisition._write_exclusive(_ROOT / start['session'] / 'terminal.json', result)
                         if stage_mode is not None and start['phase'] == 'values' and start['period'] == batch.bundle['acquire_periods'][0] and result['status'] == 'complete':
                             monitor.sample()
-                            with monitor.sample_lock:
-                                measurements = {'sample_count': monitor.sample_count, 'peaks': dict(monitor.peaks),
-                                    'minimum_free': dict(monitor.minimum_free),
-                                    'observation_gaps': copy.deepcopy(monitor.observation_gaps),
-                                    'measurement_scope': 'sampled_process_peaks_with_explicit_observation_gaps',
-                                    'pending_limit_ms': 250, 'pending_poll_ms': 50}
-                                _require(not monitor.error and not cancelled.is_set(),
-                                         'Representative monitor failed before measurement snapshot')
-                            measurement = {**_representative_measurement_identity(batch, start, result,
-                                contract='financial-acquisition-representative-measurement-v2'),
-                                'resource_profile': copy.deepcopy(resource_profile_ref), 'measurements': measurements}
-                            _validate_representative_measurements(measurements, contract=measurement['contract'],
-                                profile=_read(resource_profile_ref))
+                            measurement = {**_representative_measurement_identity(batch, start, result),
+                                'resource_profile': copy.deepcopy(resource_profile_ref),
+                                'measurements': {'sample_count': monitor.sample_count, 'peaks': dict(monitor.peaks),
+                                                 'minimum_free': dict(monitor.minimum_free)}}
                             path = _ROOT / start['session'] / 'resource-measurement.json'
                             acquisition._write_exclusive(path, measurement)
                             ref = {'path': path.relative_to(_ROOT).as_posix(), 'sha256': _sha(path.read_bytes())}
@@ -2016,9 +1951,7 @@ def _run_scheduler(bundle_path, bundle_sha256, *, bootstrap_sha256, metadata_wor
                     batch.append('representative_checkpoint', representative_period=representative,
                         phase_id=values['phase_id'], result=copy.deepcopy(values['result']),
                         resource_measurement=copy.deepcopy(batch.state['representative_measurement']['resource_measurement']),
-                        resource_profile=copy.deepcopy(original['resource_profile']), measurements=copy.deepcopy(original['measurements']),
-                        **({'measurement_contract': original['contract']} if original['contract'] ==
-                           'financial-acquisition-representative-measurement-v2' else {}))
+                        resource_profile=copy.deepcopy(original['resource_profile']), measurements=copy.deepcopy(original['measurements']))
                 if 'representative_checkpoint' in batch.state:
                     _verify_representative_checkpoint(batch, resource_profile_ref=resource_profile_ref)
             result = _run_summary(batch)
@@ -2037,37 +1970,12 @@ def _run_scheduler(bundle_path, bundle_sha256, *, bootstrap_sha256, metadata_wor
             batch.halt(('critical_monitor_failure: ' if monitor is not None and monitor.error else 'coordinator_failure: ') + str(error))
             raise
         finally:
-            # Failure cancels workers immediately. Normal cleanup must not cancel
-            # its own mandatory terminal resource observation.
-            propagating_exception = sys.exc_info()[0] is not None
-            aborting = propagating_exception or bool(batch.halted)
-            cleanup_cancellation = (propagating_exception and monitor is not None
-                and not cancelled.is_set() and not monitor.stop.is_set() and not monitor.error)
-            if aborting:
-                cancelled.set()
-            try:
-                pool.shutdown(wait=True, cancel_futures=True)
-                if monitor is not None:
-                    if aborting:
-                        # An aborted execution has no successful terminal measurement.
-                        # Preserve its original exception rather than replacing it with
-                        # the cancellation deliberately issued by this cleanup.
-                        monitor.stop.set()
-                        if monitor.thread.ident is not None:
-                            monitor.thread.join()
-                        from .windows_acquisition import _ProcessObservationCancelled
-                        induced_cancel = (cleanup_cancellation
-                            and isinstance(monitor.failure, _ProcessObservationCancelled))
-                        if monitor.error and not induced_cancel:
-                            batch.halt('critical_monitor_failure: ' + monitor.error)
-                    else:
-                        try:
-                            monitor.__exit__(None, None, None)
-                        except Exception:
-                            batch.halt('critical_monitor_failure: ' + monitor.error)
-                            raise
-            finally:
-                cancelled.set()
+            cancelled.set()
+            pool.shutdown(wait=True, cancel_futures=True)
+            if monitor is not None:
+                if monitor.error:
+                    batch.halt('critical_monitor_failure: ' + monitor.error)
+                monitor.__exit__(None, None, None)
 
 
 def _run_batch(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str, metadata_workers: int = 1) -> dict:
@@ -2148,9 +2056,7 @@ def export_historical_sources(bundle_path, bundle_sha256, *, bootstrap_sha256, o
                 'sha256': _sha(output.read_bytes()), 'periods': bundle['acquire_periods']}
 
 
-def _representative_measurement_identity(batch, start, result, *, contract='financial-acquisition-representative-measurement-v1'):
-    _require(contract in ('financial-acquisition-representative-measurement-v1',
-                         'financial-acquisition-representative-measurement-v2'), 'Unknown representative measurement version')
+def _representative_measurement_identity(batch, start, result):
     member = next(m for m in batch.bundle['members'] if m['period'] == start['period'])
     with acquisition._open_authority(member['job'], member['bootstrap_sha256'], coordinator=_MemberContext(batch, member)) as authority:
         receipt = _read(result['receipt'])
@@ -2163,7 +2069,7 @@ def _representative_measurement_identity(batch, start, result, *, contract='fina
                  and all(r['session_id'] == Path(start['session']).name for r in attempts)
                  and all(r['tree_extinct'] is True for r in attempts if r['kind'] == 'finish'),
                  'Original representative measurement lacks authenticated reservation/worker/extinction proof')
-    return {'contract': contract,
+    return {'contract': 'financial-acquisition-representative-measurement-v1',
         'bundle_sha256': batch.pin, 'bootstrap_sha256': batch.bootstrap_pin,
         'code_pins': copy.deepcopy(batch.bundle['code_pins']),
         'phase': {key: start[key] for key in ('phase_id', 'period', 'phase', 'session', 'job_sha256',
@@ -2176,15 +2082,23 @@ def _original_representative_measurement(batch, terminal, *, resource_profile_re
     _require(anchor is not None and anchor['phase_id'] == terminal['phase_id'],
              'Original representative measurement missing; capacity/remaining unavailable without reGET')
     proof = _read(anchor['resource_measurement'])
-    _require(type(proof) is dict, 'Invalid original representative measurement')
-    expected = _representative_measurement_identity(batch, terminal, terminal['result'], contract=proof.get('contract'))
+    expected = _representative_measurement_identity(batch, terminal, terminal['result'])
     _require(type(proof) is dict and set(proof) == set(expected) | {'resource_profile', 'measurements'},
              'Invalid closed original representative measurement')
     _same({key: proof[key] for key in expected}, expected, 'Original representative phase/reservation/pins differ')
     from .windows_acquisition import _resource_profile
     profile = _resource_profile(_read(proof['resource_profile']))
     measurements = proof['measurements']
-    _validate_representative_measurements(measurements, contract=proof['contract'], profile=profile)
+    _require(type(measurements) is dict and set(measurements) == {'sample_count', 'peaks', 'minimum_free'}
+             and type(measurements['sample_count']) is int and measurements['sample_count'] > 0,
+             'Original representative sample count missing')
+    for key, fields in (('peaks', {'tree_working_set_bytes', 'tree_private_bytes'}),
+                        ('minimum_free', {'free_physical_bytes', 'free_commit_bytes', 'free_disk_bytes'})):
+        _require(type(measurements[key]) is dict and set(measurements[key]) == fields
+                 and all(type(v) is int and v >= 0 for v in measurements[key].values()), 'Invalid original representative measurements')
+    for key in ('physical', 'commit', 'disk'):
+        _require(measurements['minimum_free']['free_' + key + '_bytes'] >= profile['min_free_' + key + '_bytes'],
+                 'Original representative measurement below pinned resource margin')
     if resource_profile_ref is not None:
         _same(resource_profile_ref, proof['resource_profile'], 'Resource profile must match original representative measurement')
     return copy.deepcopy(proof)
@@ -2201,8 +2115,6 @@ def _verify_representative_checkpoint(batch, *, resource_profile_ref=None):
     original = _original_representative_measurement(batch, terminal, resource_profile_ref=resource_profile_ref)
     _same(checkpoint['resource_measurement'], batch.state['representative_measurement']['resource_measurement'], 'Representative original measurement reference differs')
     _same(checkpoint['measurements'], original['measurements'], 'Representative checkpoint differs from original measurements')
-    _same(checkpoint.get('measurement_contract', 'financial-acquisition-representative-measurement-v1'),
-          original['contract'], 'Representative checkpoint measurement version differs from original proof')
     _same(checkpoint['resource_profile'], original['resource_profile'], 'Representative checkpoint differs from original profile')
     from .windows_acquisition import _resource_profile
     profile = _resource_profile(_read(checkpoint['resource_profile']))
@@ -2212,409 +2124,3 @@ def _verify_representative_checkpoint(batch, *, resource_profile_ref=None):
     if resource_profile_ref is not None:
         _same(resource_profile_ref, checkpoint['resource_profile'], 'Remaining resource profile must match reviewed representative checkpoint')
     return copy.deepcopy(checkpoint)
-
-
-# Physical reviewed Windows bytes, not Git blob hashes. These images are data,
-# never a fallback runtime. Another predecessor requires a reviewed proof version.
-_CONTINUATION_PREDECESSOR_V1 = {
-    'reviewed_commit': 'ca63ee9674f58f9a80221af721fe6ebfc00025d3',
-    'runtime_sha256': '03f4ad6bc75d78023d962ce54301932abb65521a7cc68fb30ca2c4ad0dadba55',
-    'files': {
-        'bank_quality/archive.py': '41331b6a6b17db61819f23cedc820e66839515345058c7b939d05221e5cef8a4',
-        'bank_quality/financial_acquisition.py': 'b03c0dbd376a9486f8c93d8088968c8881b9de85a01fc35ab2f96370860dcb98',
-        'bank_quality/financial_acquisition_batch.py': '176961e269879589ed45f6ef37b6ca670729649564ee24f0a4f611725e34448c',
-        'bank_quality/financial_acquisition_compat.py': 'ffc68f895f1e6aa9abcd72456779b4a27ad570156c169e26ad72f2b629ddb316',
-        'bank_quality/windows_acquisition.py': '85260a690079afc54fb8cb5c98bb0ec3545c90a75fb90baeb3762f142ab7fb59',
-        'scripts/acquire-financial.py': 'f1c8b90658b48f548df93e17534759ef935c3e260c86720759ef38cdf825f2b7'}}
-
-
-def _historical_continuation_candidate(bundle_path, bundle_sha256, *, bootstrap_sha256,
-        snapshot_path, snapshot_sha256, code_images_path, code_images_sha256,
-        current_code_pins, destination, held_claims=frozenset()):
-    """Read/replay a known zero-attempt predecessor; issue no execution capability."""
-    output = acquisition._safe_destination(destination)
-    _code_identity_v2(current_code_pins)
-    observed = {}
-
-    def take(path, pin=None):
-        path = _path(Path(path).absolute().relative_to(_ROOT.absolute()).as_posix())
-        if path in held_claims:
-            # The native exclusive handle prohibits a second reader, even in
-            # this process. Only acquired, previously empty lock files qualify.
-            info = path.lstat()
-            _require(stat.S_ISREG(info.st_mode) and info.st_size == 0
-                and not (getattr(info, 'st_file_attributes', 0) & 0x400), 'Held claim is not an empty regular file')
-            raw = b''
-        else:
-            raw = path.read_bytes()
-        actual = _sha(raw)
-        if pin is not None:
-            _require(actual == acquisition._digest(pin), 'Predecessor file hash differs')
-        name = path.relative_to(_ROOT).as_posix()
-        _require(name not in observed or observed[name] == actual, 'Predecessor changed during preparation')
-        observed[name] = actual
-        return raw, {'path': name, 'sha256': actual}
-
-    def read(path, pin=None):
-        raw, ref = take(path, pin)
-        return _json(raw), ref
-
-    snapshot, snapshot_ref = read(snapshot_path, snapshot_sha256)
-    acquisition._closed_data(snapshot)
-    _require(type(snapshot) is dict and set(snapshot) == {'contract', 'head', 'files', 'verification',
-        'cause_observed', 'classification', 'new_authority_forbidden', 'budget_reset_forbidden', 'sources_collected'}
-        and snapshot['contract'] == 'private-frozen-historical-monitor-stop-v1'
-        and snapshot['new_authority_forbidden'] is True and snapshot['budget_reset_forbidden'] is True
-        and type(snapshot['sources_collected']) is int and snapshot['sources_collected'] == 0
-        and type(snapshot['files']) is dict and type(snapshot['verification']) is dict
-        and all(type(snapshot[key]) is str and snapshot[key] for key in ('head', 'cause_observed', 'classification')),
-        'Invalid frozen predecessor snapshot')
-    for name, pin in snapshot['files'].items():
-        take(_ROOT / _relative_name(name), pin)
-    bundle, bundle_ref = read(bundle_path, bundle_sha256)
-    _require(type(bundle) is dict and set(bundle) == {'contract', 'scope', 'selection', 'acquire_periods',
-        'reuse_periods', 'catalogs', 'members', 'reuse', 'policies', 'caps', 'executable', 'destination',
-        'code_pins', 'window_id', 'policy_sha256'} and bundle['contract'] == 'financial-acquisition-batch-v2',
-        'Closed historical predecessor bundle required')
-    pins = bundle['code_pins']
-    _require(type(pins) is dict and set(pins) == {'contract', 'reviewed_commit', 'files', 'runtime', 'policy_sha256'}
-        and pins['contract'] == 'financial-acquisition-code-pins-v2'
-        and type(pins['runtime']) is dict and set(pins['runtime']) == {'path', 'sha256'}
-        and pins['policy_sha256'] == _HISTORICAL_POLICY_SHA256, 'Invalid original code pins')
-    recognized = {'reviewed_commit': pins['reviewed_commit'], 'files': pins['files'],
-                  'runtime_sha256': pins['runtime']['sha256']}
-    _same(recognized, _CONTINUATION_PREDECESSOR_V1, 'Unreviewed predecessor software has no launch proof')
-    _require(snapshot['head'] == pins['reviewed_commit'], 'Snapshot original HEAD differs')
-    take(_ROOT / pins['runtime']['path'], pins['runtime']['sha256'])
-    images, images_ref = read(code_images_path, code_images_sha256)
-    _require(type(images) is dict and set(images) == {'contract', 'head', 'files', 'execution_allowed', 'purpose'}
-        and images['contract'] == 'private-inert-original-six-code-images-v1'
-        and images['head'] == pins['reviewed_commit'] and images['execution_allowed'] is False
-        and type(images['purpose']) is str and bool(images['purpose'])
-        and type(images['files']) is list and len(images['files']) == len(_CODE_FILES_V2),
-        'Invalid inert code image inventory')
-    names, image_paths = set(), set()
-    for image in images['files']:
-        _require(type(image) is dict and set(image) == {'original_path', 'sha256', 'evidence_path'}
-            and image['original_path'] in pins['files'] and image['original_path'] not in names
-            and image['sha256'] == pins['files'][image['original_path']]
-            and type(image['evidence_path']) is str and image['evidence_path'].endswith('.evidence')
-            and image['evidence_path'] not in image_paths, 'Changed or duplicate original code image')
-        names.add(image['original_path'])
-        image_paths.add(image['evidence_path'])
-        take(_ROOT / image['evidence_path'], image['sha256'])
-    _require(names == set(_CODE_FILES_V2), 'Incomplete original code inventory')
-    draft = {key: copy.deepcopy(value) for key, value in bundle.items() if key != 'code_pins'}
-    _require(type(bundle['members']) is list and all(type(m) is dict and set(m) == {'period', 'job',
-        'job_sha256', 'session_root', 'job_path', 'job_file_sha256', 'authority_path', 'bootstrap_sha256'}
-        for m in bundle['members']), 'Invalid predecessor members')
-    draft.update(contract='financial-acquisition-batch-draft-v2', executable=False,
-        members=[{key: m[key] for key in ('period', 'job', 'job_sha256', 'session_root')} for m in bundle['members']])
-    draft = _verify_draft(draft)
-    # Pure validators authenticate these sources too; include their physical bytes
-    # in the final drift check rather than only rechecking the bundle envelopes.
-    for ref in bundle['catalogs'].values():
-        manifest_path = _ROOT / ref['manifest_path']
-        manifest, _ = read(manifest_path, ref['manifest_sha256'])
-        take(manifest_path.parent / _relative_name(manifest['body_path']), ref['body_sha256'])
-        if 'response_metadata_path' in manifest:
-            take(manifest_path.parent / _relative_name(manifest['response_metadata_path']))
-    _same(bundle, _build_bundle(draft, bundle['destination'], pins), 'Original bundle differs from installed window')
-    folder = acquisition._safe_destination(_ROOT / bundle['destination'])
-    _require(Path(bundle_path).absolute() == folder / 'bundle.json'
-        and not output.is_relative_to(folder)
-        and not folder.is_relative_to(output)
-        and not output.is_relative_to(_ROOT / 'data/runs/financial-acquisition-authority'),
-        'Preparation cannot write into predecessor ownership')
-    bootstrap, bootstrap_ref = read(folder / 'bootstrap.json', bootstrap_sha256)
-    _same(bootstrap, _batch_bootstrap(bundle, bundle_sha256), 'Original bootstrap differs')
-    binding_path, batch_claim = _batch_paths(bundle['scope'])
-    binding, binding_ref = read(binding_path)
-    _same(binding, _binding(bundle, bundle_sha256, bootstrap_sha256), 'Original batch binding differs')
-    take(batch_claim)
-    journal, journal_ref = take(folder / 'journal.jsonl')
-    _require(journal.endswith(b'\n'), 'Partial or empty predecessor phase journal')
-    replay = _replay_phase_records([_json(line) for line in journal.splitlines()], anchored_bundle={
-        'bundle': bundle, 'bundle_sha256': bundle_sha256, 'bootstrap_sha256': bootstrap_sha256})
-    _require(len(replay['records']) == 1 and replay['records'][0]['kind'] == 'phase_start'
-        and len(replay['state']['pending']) == 1 and not replay['state']['finished']
-        and not replay['state']['halt'], 'Only one initial pending phase can be classified')
-    start = replay['records'][0]
-    _require(start['phase'] == 'metadata' and start['period'] == bundle['acquire_periods'][0]
-        and start['member_sequence'] == 0 and start['member_record_sha256'] == acquisition._EMPTY_HASH,
-        'Only initial first-member metadata can be classified')
-    head, head_ref = read(folder / 'head.json')
-    _same(head, replay['head'], 'Predecessor phase head is stale or changed')
-    halt, halt_ref = read(folder / 'halt.json')
-    _require(type(halt) is dict and set(halt) == {'contract', 'bundle_sha256', 'bootstrap_sha256', 'reason'}
-        and halt['contract'] == 'financial-acquisition-batch-halt-v1' and halt['bundle_sha256'] == bundle_sha256
-        and halt['bootstrap_sha256'] == bootstrap_sha256 and type(halt['reason']) is str and bool(halt['reason']),
-        'Invalid original interruption marker')
-    core = {ref['path'] for ref in (bundle_ref, bootstrap_ref, binding_ref, journal_ref, head_ref, halt_ref)}
-    core.add(batch_claim.relative_to(_ROOT).as_posix())
-    allowed_batch_files = {ref['path'] for ref in (bundle_ref, bootstrap_ref, journal_ref, head_ref, halt_ref)}
-    tails, members, original_receipt_ref = [], [], None
-    for member in bundle['members']:
-        job, job_ref = read(_ROOT / member['job_path'], member['job_file_sha256'])
-        _same(job, member['job'], 'Original physical member job differs')
-        core.add(job_ref['path'])
-        allowed_batch_files.add(job_ref['path'])
-        targets = _verify_historical_job(job)
-        authority_folder, authority_binding, authority_claim = acquisition._authority_paths(job)
-        member_bootstrap, member_bootstrap_ref = read(authority_folder / 'bootstrap.json', member['bootstrap_sha256'])
-        _same(member_bootstrap, _member_bootstrap(job), 'Original member bootstrap differs')
-        raw, member_journal_ref = take(authority_folder / 'journal.jsonl')
-        _require(raw == b'', 'Any member attempt or spend prevents no-launch classification')
-        state_data = acquisition._replay_member_records([], job_identity=member['job_sha256'], targets=targets,
-            policy=acquisition._limits(job), job_contract=job['contract'])
-        member_head, member_head_ref = read(authority_folder / 'head.json')
-        _same(member_head, state_data['head'], 'Original member head is not initial')
-        member_bind, member_binding_ref = read(authority_binding)
-        _same(member_bind, {'acquisition_scope': job['acquisition_scope'], 'job_sha256': member['job_sha256'],
-            'bootstrap_sha256': member['bootstrap_sha256']}, 'Original member scope binding differs')
-        _, member_claim_ref = take(authority_claim)
-        core.update(ref['path'] for ref in (member_bootstrap_ref, member_journal_ref, member_head_ref))
-        state = state_data['state']
-        tails.append({'period': member['period'], 'job_sha256': member['job_sha256'],
-            'bootstrap_sha256': member['bootstrap_sha256'], 'journal': member_journal_ref, 'head': member_head_ref,
-            'binding': member_binding_ref, 'claim': member_claim_ref, 'state': state})
-        members.append({'period': member['period'], 'sequence': 0, 'pending_attempts': 0,
-                        **{key: state[key] for key in _COUNTERS}})
-        if member['period'] == start['period']:
-            receipt, original_receipt_ref = read(_ROOT / start['session'] / 'receipt.json')
-            prefix = acquisition._prove_receipt_prefix(receipt, [], identity={
-                'job_sha256': member['job_sha256'], 'bootstrap_sha256': member['bootstrap_sha256'],
-                'targets': targets, 'policy': acquisition._limits(job)}, job_contract=job['contract'])
-            _require(prefix['head']['sequence'] == 0 and prefix['session_id'] == Path(start['session']).name,
-                     'Receipt does not prove the initial exact session')
-            core.add(original_receipt_ref['path'])
-            allowed_batch_files.add(original_receipt_ref['path'])
-    _require(set(snapshot['files']) == core, 'Frozen predecessor inventory is incomplete or unexpected')
-    # Reject evidence of any unproven worker, including files not in the snapshot.
-    allowed_directories = {folder}
-    for name in allowed_batch_files:
-        allowed_directories.update(parent for parent in (_ROOT / name).parents if parent.is_relative_to(folder))
-    def check_tree():
-        actual_batch_files = set()
-        pending_directories = [folder]
-        while pending_directories:
-            current = pending_directories.pop()
-            acquisition._safe_destination(current)
-            for path in current.iterdir():
-                checked = acquisition._safe_destination(path)
-                mode = checked.lstat().st_mode
-                if stat.S_ISREG(mode):
-                    actual_batch_files.add(checked.relative_to(_ROOT).as_posix())
-                else:
-                    _require(stat.S_ISDIR(mode) and checked in allowed_directories,
-                             'Unexpected predecessor directory or special file')
-                    pending_directories.append(checked)
-        _require(actual_batch_files == allowed_batch_files, 'Unproven execution artifacts in predecessor tree')
-    check_tree()
-    _require(original_receipt_ref is not None, 'Original receipt missing')
-    totals = {'contract': 'financial-acquisition-batch-state-v1', 'status': 'halted', 'halt': halt['reason'],
-        'bundle_sha256': bundle_sha256, 'bootstrap_sha256': bootstrap_sha256, 'sequence': 1,
-        'members': members, 'totals': {key: sum(m[key] for m in members) for key in _COUNTERS},
-        'pending_phases': list(replay['state']['pending']), 'finished_phases': []}
-    candidate = {'contract': 'financial-acquisition-continuation-draft-v1', 'executable': False,
-        'scope': bundle['scope'], 'window_id': bundle['window_id'],
-        'original': {'bundle': bundle_ref, 'bootstrap': bootstrap_ref, 'binding': binding_ref,
-                     'snapshot': snapshot_ref, 'code_images': images_ref},
-        'current_code_pins': copy.deepcopy(current_code_pins),
-        'classification': {'kind': 'aborted_before_authorized_attempt', 'phase_id': start['phase_id'],
-            'period': start['period'], 'phase': start['phase'], 'phase_start': start,
-            'receipt': original_receipt_ref, 'authority_tails': tails,
-            'launch_proof': {'contract': 'financial-acquisition-pre-reservation-proof-v1',
-                'reviewed_commit': pins['reviewed_commit'], 'code_files': copy.deepcopy(pins['files']),
-                'ordering': 'durable_reserve_before_spec_before_contained_worker_before_authenticated_get',
-                'attempt_records': 0, 'worker_identities': []}}, 'effective_totals': totals}
-    acquisition._closed_data(candidate)
-    _code_identity_v2(current_code_pins)
-    for name, pin in list(observed.items()):
-        take(_ROOT / name, pin)
-    check_tree()
-    return candidate
-
-
-def prepare_historical_continuation(bundle_path, bundle_sha256, *, bootstrap_sha256,
-        snapshot_path, snapshot_sha256, code_images_path, code_images_sha256,
-        current_code_pins, destination):
-    """Prepare a nonexecutable draft; no claims, worker or authority writer."""
-    output = acquisition._safe_destination(destination)
-    _require(not output.exists(), 'Continuation preparation destination must be new')
-    candidate = _historical_continuation_candidate(bundle_path, bundle_sha256,
-        bootstrap_sha256=bootstrap_sha256, snapshot_path=snapshot_path, snapshot_sha256=snapshot_sha256,
-        code_images_path=code_images_path, code_images_sha256=code_images_sha256,
-        current_code_pins=current_code_pins, destination=destination)
-    _require(not output.exists(), 'Continuation destination appeared during preparation')
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.mkdir()
-    acquisition._write_exclusive(output / 'draft.json', candidate)
-    return {'contract': 'financial-acquisition-continuation-preparation-v1', 'status': 'prepared',
-            'path': (output / 'draft.json').relative_to(_ROOT).as_posix(), 'sha256': _sha(_canonical(candidate))}
-
-
-def _reconstruct_continuation_draft(path, pin, destination, *, held_claims=frozenset()):
-    _file(path, acquisition._digest(pin))
-    draft = _json(path.read_bytes())
-    _require(type(draft) is dict and set(draft) == {'contract', 'executable', 'scope', 'window_id',
-        'original', 'current_code_pins', 'classification', 'effective_totals'}
-        and draft['contract'] == 'financial-acquisition-continuation-draft-v1' and draft['executable'] is False
-        and type(draft['original']) is dict
-        and set(draft['original']) == {'bundle', 'bootstrap', 'binding', 'snapshot', 'code_images'},
-        'Invalid closed continuation draft')
-    for ref in draft['original'].values():
-        _require(type(ref) is dict and set(ref) == {'path', 'sha256'}, 'Invalid original reference')
-        _path(ref['path'])
-        acquisition._digest(ref['sha256'])
-    original = draft['original']
-    candidate = _historical_continuation_candidate(_path(original['bundle']['path']), original['bundle']['sha256'],
-        bootstrap_sha256=original['bootstrap']['sha256'], snapshot_path=_path(original['snapshot']['path']),
-        snapshot_sha256=original['snapshot']['sha256'], code_images_path=_path(original['code_images']['path']),
-        code_images_sha256=original['code_images']['sha256'], current_code_pins=draft['current_code_pins'],
-        destination=destination, held_claims=held_claims)
-    _same(draft, candidate, 'Continuation draft differs from authenticated predecessor replay')
-    _file(path, pin)
-    return candidate
-
-
-def _continuation_activation_files(manifest, manifest_pin):
-    """Deterministic initial overlays, anchored to original tails, not bootstrap."""
-    classification = manifest['classification']
-    parent = manifest['parent_phase_tail']
-    def record(sequence, previous, kind, details):
-        item = {'contract': 'financial-acquisition-continuation-ledger-v1', 'manifest_sha256': manifest_pin,
-            'sequence': sequence, 'previous_record_sha256': previous, 'kind': kind, 'details': details}
-        return dict(item, record_sha256=_sha(_canonical(item)))
-    start = record(parent['sequence'] + 1, parent['record_sha256'], 'continuation_start', {'draft': manifest['draft']})
-    abort = record(start['sequence'] + 1, start['record_sha256'], 'phase_abort_no_attempt',
-        {'phase_id': classification['phase_id'], 'classification': classification})
-    state = {**_ledger_state(), 'aborted': {classification['phase_id']: classification['phase_start']}}
-    files = {'manifest.json': _canonical(manifest),
-        'journal.jsonl': b''.join(_canonical(r) + b'\n' for r in (start, abort)),
-        'head.json': _canonical({'sequence': abort['sequence'], 'record_sha256': abort['record_sha256'],
-                                'state_sha256': _sha(_canonical(state))})}
-    for tail in classification['authority_tails']:
-        head = _json(_path(tail['head']['path']).read_bytes())
-        item = record(head['sequence'] + 1, head['record_sha256'], 'continuation_start',
-            {key: tail[key] for key in ('period', 'job_sha256', 'bootstrap_sha256')})
-        prefix = 'members/' + str(tail['period']) + '/'
-        files[prefix + 'journal.jsonl'] = _canonical(item) + b'\n'
-        files[prefix + 'head.json'] = _canonical({'sequence': item['sequence'],
-            'record_sha256': item['record_sha256'], 'state_sha256': _sha(_canonical(tail['state']))})
-    return files
-
-
-def _check_activation_tree(folder, filenames):
-    """Inspect before descending; unexpected directories can hide a launch."""
-    allowed_files = {folder / name for name in filenames}
-    allowed_dirs = {folder}
-    for path in allowed_files:
-        allowed_dirs.update(parent for parent in path.parents if parent.is_relative_to(folder))
-    if not folder.exists():
-        return
-    pending = [folder]
-    while pending:
-        current = pending.pop()
-        acquisition._safe_destination(current)
-        _require(stat.S_ISDIR(current.lstat().st_mode), 'Activation folder is not a directory')
-        for path in current.iterdir():
-            acquisition._safe_destination(path)
-            mode = path.lstat().st_mode
-            if stat.S_ISREG(mode):
-                _require(path in allowed_files, 'Unexpected continuation activation file')
-            else:
-                _require(stat.S_ISDIR(mode) and path in allowed_dirs, 'Unexpected activation directory or special file')
-                pending.append(path)
-
-
-def _append_continuation_records(path, expected):
-    current = path.read_bytes() if path.exists() else b''
-    _require(expected.startswith(current) and (not current or current.endswith(b'\n')),
-             'Partial or altered continuation ledger blocks activation')
-    if current == expected:
-        return
-    with path.open('ab' if path.exists() else 'xb') as output:
-        output.write(expected[len(current):])
-        output.flush()
-        os.fsync(output.fileno())
-    _require(path.read_bytes() == expected, 'Durable continuation ledger differs')
-
-
-def activate_historical_continuation(draft_path, draft_sha256, *, destination):
-    """Claim and activate the same predecessor. This API grants no worker capability."""
-    from contextlib import ExitStack
-    path = _path(Path(draft_path).absolute().relative_to(_ROOT.absolute()).as_posix())
-    folder = acquisition._safe_destination(destination)
-    _require(not folder.is_relative_to(path.parent) and not path.parent.is_relative_to(folder),
-             'Activation destination overlaps preparation ownership')
-    draft = _reconstruct_continuation_draft(path, draft_sha256, folder)
-    binding, batch_claim = _batch_paths(draft['scope'])
-    claims = [batch_claim] + [_path(tail['claim']['path']) for tail in draft['classification']['authority_tails']]
-    _require(len(claims) == 5 and len(set(claims)) == 5, 'Five distinct original claims required')
-    for lock in claims:
-        _require(lock.is_file() and lock.read_bytes() == b'', 'Original empty claim file required')
-    with ExitStack() as stack:
-        for lock in claims:
-            stack.enter_context(acquisition._claim(lock))
-        held = frozenset(claims)
-        draft = _reconstruct_continuation_draft(path, draft_sha256, folder, held_claims=held)
-        original = draft['original']
-        bundle = _json(_path(original['bundle']['path']).read_bytes())
-        parent = _json(_path(bundle['destination'] + '/head.json').read_bytes())
-        draft_ref = {'path': path.relative_to(_ROOT).as_posix(), 'sha256': draft_sha256}
-        manifest = {'contract': 'financial-acquisition-continuation-v1', 'draft': draft_ref,
-            'predecessor_scope': draft['scope'], 'predecessor_bundle': original['bundle'],
-            'predecessor_bootstrap': original['bootstrap'], 'current_code_pins': draft['current_code_pins'],
-            'destination': folder.relative_to(_ROOT).as_posix(), 'parent_phase_tail': parent,
-            'classification': draft['classification'], 'effective_totals': draft['effective_totals']}
-        manifest_ref = {'path': (folder / 'manifest.json').relative_to(_ROOT).as_posix(), 'sha256': _sha(_canonical(manifest))}
-        cas = binding.with_name(binding.name.replace('.binding.json', '.continuation.json'))
-        expected_binding = {'contract': 'financial-acquisition-continuation-binding-v1', 'scope': draft['scope'],
-            'predecessor_bundle': original['bundle'], 'predecessor_bootstrap': original['bootstrap'],
-            'predecessor_binding': original['binding'], 'draft': draft_ref, 'manifest': manifest_ref}
-        if cas.exists():
-            _same(_json(_path(cas.relative_to(_ROOT).as_posix()).read_bytes()), expected_binding,
-                  'Continuation scope already bound to another successor')
-        else:
-            _require(not folder.exists(), 'Activation destination must be new before binding')
-            acquisition._write_exclusive(cas, expected_binding)
-        files = _continuation_activation_files(manifest, manifest_ref['sha256'])
-        ready = {'contract': 'financial-acquisition-continuation-ready-v1', 'manifest': manifest_ref,
-            'activation_files': {(folder / name).relative_to(_ROOT).as_posix(): _sha(raw) for name, raw in files.items()}}
-        ready_path = folder / 'ready.json'
-        _check_activation_tree(folder, set(files) | {'ready.json'})
-        completed = ready_path.exists()
-        if completed:
-            _same(_json(ready_path.read_bytes()), ready, 'Continuation ready differs')
-        # Validate the whole surviving prefix before making any recovery writes.
-        for name, expected in files.items():
-            target = folder / name
-            if not target.exists():
-                _require(not completed, 'Ready activation lacks an initial file')
-                continue
-            raw = target.read_bytes()
-            if name.endswith('journal.jsonl') and not completed:
-                _require(expected.startswith(raw) and (not raw or raw.endswith(b'\n')),
-                         'Partial or altered continuation ledger blocks activation')
-            else:
-                _require(raw == expected, 'Continuation activation file advanced or changed')
-        folder.mkdir(parents=True, exist_ok=True)
-        for name, expected in files.items():
-            target = acquisition._safe_destination(folder / name)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if name.endswith('journal.jsonl'):
-                _append_continuation_records(target, expected)
-            elif not target.exists():
-                acquisition._write_exclusive(target, _json(expected))
-        _reconstruct_continuation_draft(path, draft_sha256, folder, held_claims=held)
-        if not completed:
-            acquisition._write_exclusive(ready_path, ready)
-        _check_activation_tree(folder, set(files) | {'ready.json'})
-        _same(_json(cas.read_bytes()), expected_binding, 'Continuation CAS drift')
-        for name, expected in files.items():
-            _require((folder / name).read_bytes() == expected, 'Activation changed during final validation')
-        _require(ready_path.read_bytes() == _canonical(ready), 'Ready changed during final validation')
-        return {'contract': 'financial-acquisition-continuation-activation-v1', 'status': 'activated',
-            'manifest': manifest_ref, 'ready': {'path': ready_path.relative_to(_ROOT).as_posix(),
-                                               'sha256': _sha(_canonical(ready))}}

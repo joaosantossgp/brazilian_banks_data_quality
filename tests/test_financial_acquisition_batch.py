@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -2326,3 +2327,218 @@ class HistoricalContinuationPreparationTests(unittest.TestCase):
 
     def test_new_worker_directory_after_initial_inventory_blocks_preparation(self):
         self.late_artifact(directory=True)
+
+
+class HistoricalContinuationActivationTests(unittest.TestCase):
+    prepare = HistoricalContinuationPreparationTests.prepare
+    setUp = HistoricalContinuationPreparationTests.setUp
+    call_prepare = HistoricalContinuationPreparationTests.call_prepare
+
+    def prepared(self):
+        result = self.call_prepare()
+        self.candidate_path = self.root / result['path']
+        self.candidate_pin = result['sha256']
+        self.active_destination = self.root / 'data/runs/continuation-active'
+        binding, self.batch_claim = self.batch._batch_paths(json.loads(self.bundle.read_bytes())['scope'])
+        self.cas = binding.with_name(binding.name.replace('.binding.json', '.continuation.json'))
+        self.claims = [self.batch_claim] + [self.root / tail['claim']['path'] for tail in
+            json.loads(self.candidate_path.read_bytes())['classification']['authority_tails']]
+
+    def activate(self):
+        with patch.object(self.acquisition, 'run_contained_attempt', side_effect=AssertionError('Worker launched')), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=AssertionError('Network invoked')), \
+                patch.object(self.batch, '_open_batch', side_effect=AssertionError('Old batch opened')):
+            return self.batch.activate_historical_continuation(self.candidate_path, self.candidate_pin,
+                destination=self.active_destination)
+
+    def protected(self):
+        candidate = json.loads(self.candidate_path.read_bytes())
+        paths = set(self.snapshot['files'])
+        for tail in candidate['classification']['authority_tails']:
+            paths.update(tail[key]['path'] for key in ('binding', 'claim', 'journal', 'head'))
+        return {name: sha((self.root / name).read_bytes()) for name in paths}
+
+    def test_activation_claims_original_scope_and_preserves_states_and_original_bytes(self):
+        self.prepared()
+        protected = self.protected()
+        held, seen = set(), []
+        original_read = Path.read_bytes
+        @contextmanager
+        def claim(path):
+            self.assertIn(path, self.claims)
+            self.assertNotIn(path, held)
+            seen.append(path)
+            held.add(path)
+            try:
+                yield
+            finally:
+                held.remove(path)
+        def read(path):
+            if path in held:
+                raise OSError('Native share-mode0 prohibits a second reader')
+            return original_read(path)
+        with patch.object(self.acquisition, '_claim', claim), patch.object(Path, 'read_bytes', read):
+            result = self.activate()
+        self.assertEqual(seen, self.claims)
+        self.assertFalse(held)
+        self.assertEqual(result['status'], 'activated')
+        manifest = json.loads((self.root / result['manifest']['path']).read_bytes())
+        candidate = json.loads(self.candidate_path.read_bytes())
+        self.assertEqual(manifest['current_code_pins'], self.current_pins)
+        self.assertEqual(manifest['effective_totals'], candidate['effective_totals'])
+        records = [json.loads(line) for line in (self.active_destination / 'journal.jsonl').read_bytes().splitlines()]
+        self.assertEqual([r['sequence'] for r in records], [2, 3])
+        self.assertEqual([r['kind'] for r in records], ['continuation_start', 'phase_abort_no_attempt'])
+        self.assertEqual(records[0]['previous_record_sha256'], self.start['record_sha256'])
+        self.assertEqual(records[1]['previous_record_sha256'], records[0]['record_sha256'])
+        state = dict(self.batch._ledger_state(), aborted={self.start['phase_id']: self.start})
+        self.assertEqual(json.loads((self.active_destination / 'head.json').read_bytes())['state_sha256'], sha(canonical(state)))
+        for tail in candidate['classification']['authority_tails']:
+            head = json.loads((self.active_destination / 'members' / str(tail['period']) / 'head.json').read_bytes())
+            self.assertEqual(head['sequence'], 1)
+            self.assertEqual(head['state_sha256'], sha(canonical(tail['state'])))
+        self.assertEqual(self.protected(), protected)
+        self.assertFalse((self.active_destination / 'bootstrap.json').exists())
+
+    def test_repeat_is_read_only_but_other_destination_is_a_fork(self):
+        self.prepared()
+        first = self.activate()
+        before = {p: sha(p.read_bytes()) for p in self.root.rglob('*') if p.is_file()}
+        with patch.object(self.acquisition, '_write_exclusive', side_effect=AssertionError('Repeat wrote')):
+            self.assertEqual(self.activate(), first)
+        self.assertEqual({p: sha(p.read_bytes()) for p in before}, before)
+        self.active_destination = self.root / 'data/runs/fork'
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse(self.active_destination.exists())
+
+    def test_repinned_candidate_cannot_forge_budget(self):
+        self.prepared()
+        candidate = json.loads(self.candidate_path.read_bytes())
+        candidate['effective_totals']['totals']['attempts'] = 5
+        self.candidate_path.write_bytes(canonical(candidate))
+        self.candidate_pin = sha(self.candidate_path.read_bytes())
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse(self.cas.exists())
+        self.assertFalse(self.active_destination.exists())
+
+    def test_claim_denial_blocks_cas_and_releases_earlier_claims(self):
+        self.prepared()
+        held = set()
+        @contextmanager
+        def claim(path):
+            if path == self.claims[2]:
+                raise OSError('Exclusive claim denied')
+            held.add(path)
+            try:
+                yield
+            finally:
+                held.remove(path)
+        with patch.object(self.acquisition, '_claim', claim), self.assertRaises(OSError):
+            self.activate()
+        self.assertFalse(held)
+        self.assertFalse(self.cas.exists())
+
+    def test_predecessor_drift_after_claim_is_rechecked_before_cas(self):
+        self.prepared()
+        @contextmanager
+        def claim(path):
+            if path == self.claims[-1]:
+                (self.session / 'receipt.json').write_bytes(b'{}')
+            yield
+        with patch.object(self.acquisition, '_claim', claim), self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse(self.cas.exists())
+
+    def crash_at(self, name):
+        self.prepared()
+        protected = self.protected()
+        original = self.acquisition._write_exclusive
+        class Crash(BaseException):
+            pass
+        def write(path, value):
+            if path == self.active_destination / name:
+                raise Crash('Interrupted activation')
+            return original(path, value)
+        with patch.object(self.acquisition, '_write_exclusive', write), self.assertRaises(Crash):
+            self.activate()
+        self.assertTrue(self.cas.exists())
+        self.assertFalse((self.active_destination / 'ready.json').exists())
+        self.activate()
+        self.assertEqual(self.protected(), protected)
+        self.assertTrue((self.active_destination / 'ready.json').exists())
+
+    def test_crash_after_cas_completes_only_same_candidate(self):
+        self.crash_at('manifest.json')
+
+    def test_crash_before_ready_completes_without_reset(self):
+        self.crash_at('ready.json')
+
+    def test_complete_journal_prefix_resumes_but_partial_tail_does_not(self):
+        self.prepared()
+        self.activate()
+        (self.active_destination / 'ready.json').unlink()
+        journal = self.active_destination / 'journal.jsonl'
+        full = journal.read_bytes()
+        journal.write_bytes(full.splitlines(keepends=True)[0])
+        (self.active_destination / 'head.json').unlink()
+        self.activate()
+        self.assertEqual(journal.read_bytes(), full)
+        (self.active_destination / 'ready.json').unlink()
+        journal.write_bytes(full[:-1])
+        preserved = journal.read_bytes()
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertEqual(journal.read_bytes(), preserved)
+
+    def test_advanced_head_and_extra_directory_prevent_reset(self):
+        self.prepared()
+        self.activate()
+        head_path = self.active_destination / 'head.json'
+        original = head_path.read_bytes()
+        head = json.loads(original)
+        head['sequence'] = 4
+        head_path.write_bytes(canonical(head))
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertEqual(head_path.read_bytes(), canonical(head))
+        head_path.write_bytes(original)
+        (self.active_destination / 'unproven-worker').mkdir()
+        with self.assertRaises(ValueError):
+            self.activate()
+
+    def test_premature_ready_blocks_completing_inconsistent_activation(self):
+        self.prepared()
+        self.activate()
+        (self.active_destination / 'members' / '201006' / 'head.json').unlink()
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse((self.active_destination / 'members' / '201006' / 'head.json').exists())
+
+    def test_parent_destination_cannot_own_or_overwrite_the_predecessor(self):
+        self.prepared()
+        self.active_destination = self.bundle.parent.parent
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse(self.cas.exists())
+
+    def test_nonempty_claim_is_not_silently_assumed_empty_under_lock(self):
+        self.prepared()
+        self.claims[-1].write_bytes(b'changed claim')
+        with self.assertRaises(ValueError):
+            self.activate()
+        self.assertFalse(self.cas.exists())
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Real Win32 API host required')
+    def test_native_five_exclusive_claims_allow_revalidation_and_release(self):
+        from bank_quality.windows_acquisition import exclusive_claim
+        self.prepared()
+        protected = self.protected()
+        with patch.object(self.acquisition, '_claim', exclusive_claim):
+            self.activate()
+            for claim in self.claims:
+                with exclusive_claim(claim), self.assertRaises(OSError):
+                    with exclusive_claim(claim):
+                        self.fail('Second owner acquired the same claim')
+        self.assertEqual(self.protected(), protected)
