@@ -15,6 +15,15 @@ Impacto na arquitetura da Issue e conformidade com [destinos canônicos](https:/
 Declare conflitos e alterações em CI, política/checker, templates ou contratos sensíveis.
 O PR não amplia sua própria autorização; compare com política e validator da base.
 
+## Checkpoints de revisão e testes parciais
+Identifique a fatia integrável entregue e suas dependências/handoffs. Se várias fatias permanecerem na mesma PR, justificar a transição indivisível; não guardar a primeira revisão para o conjunto inteiro. Seguir o [workflow](https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/main/docs/agents/workflow.md#revisões-e-testes-por-fatias).
+
+| Fatia / resultado | Base e head ou snapshot/hashes revisados | Checks / resultado / limitações | Revisor / verdict / achados resolvidos | Evidência na Issue ou handoff |
+|---|---|---|---|---|
+| Preencher | Preencher | Preencher | Preencher | Preencher |
+
+Registrar falhas originais e correções; passes isolados posteriores não substituem o resultado global. Explicitar os deltas após os checkpoints e a revisão final de composição/inventário/SHA; confirmar os checks finais pertinentes. Não declarar uma revisão antiga como aprovação automática do head atual.
+
 ## Validação
 Registre checks executados e evidências; declare limitações e checks não executados.
 Checker: observação, verdict/erros, versão, base/head; não required nesta fase.

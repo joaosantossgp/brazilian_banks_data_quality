@@ -39,6 +39,17 @@ Preencher a sequência adequada ao resultado, com entradas, entregáveis e gate 
 
 Matt direciona pesquisa/spec/tickets; Superpowers desenho/plano/TDD/debug/review/verificação. Feynman é condicional; Context7 exige versão usada. Visual: diagram-design disponível, SVG/PNG embutidos e alternativa textual; HTML temporário excluído. Presença/testes não provam invocação; skill ausente exige fallback explícito, sem instalação implícita.
 
+## Fatias, testes e revisões durante a execução
+Preencher antes do claim conforme [workflow](https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/main/docs/agents/workflow.md#revisões-e-testes-por-fatias). Usar as Issues existentes quando o recorte couber; desdobramentos exigem escopo explícito e atualização da #2.
+
+| Fatia / resultado verificável | Entradas / dependências | Owner / base / allowlist / destino | Checks pertinentes | Revisão independente / condição de saída |
+|---|---|---|---|---|
+| Preencher | Preencher | Preencher | Preencher | Preencher |
+
+Revisar e testar cada fatia antes de ampliar a implementação. Registrar checkpoint com base/head ou hashes, inventário, comandos/resultados, achados/correções, limitações e próximo handoff. Falha/achado material interrompe expansão; revalidar o recorte afetado após diagnóstico/correção. Não repetir suítes sem motivo ou promover passes isolados a PASS global.
+
+Planejar PRs pequenas para mudanças independentes integráveis; transição indivisível exige justificativa e checkpoints. Dados são aceitos por lote/janela, sem PR artificial por trimestre. A revisão final confere composição/deltas/SHA e checks finais pertinentes; pesquisa também exige conferência de domínio/fontes, sem testes que apenas reproduzem texto.
+
 ## Dependências e prontidão
 Listar bloqueador real, link, entrada faltante, responsável pelo desbloqueio e evidência para resolvê-lo; ou declarar **nenhuma pendência externa para iniciar**, com verificação. Separar vínculos de contexto de bloqueadores e etapas internas futuras.
 
