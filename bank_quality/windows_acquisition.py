@@ -93,6 +93,7 @@ def _kernel():
                                    W.DWORD, C.c_void_p, W.LPCWSTR, C.c_void_p, C.c_void_p]),
         'IsProcessInJob': (W.BOOL, [W.HANDLE, W.HANDLE, C.POINTER(W.BOOL)]),
         'GetProcessTimes': (W.BOOL, [W.HANDLE] + [C.POINTER(W.FILETIME)] * 4),
+        'GetSystemTimeAsFileTime': (None, [C.POINTER(W.FILETIME)]),
         'ResumeThread': (W.DWORD, [W.HANDLE]),
         'TerminateJobObject': (W.BOOL, [W.HANDLE, W.UINT]),
         'GetExitCodeProcess': (W.BOOL, [W.HANDLE, C.POINTER(W.DWORD)]),
@@ -340,20 +341,70 @@ class _PROCESS_MEMORY(C.Structure):
          'peak_nonpaged_pool', 'nonpaged_pool', 'pagefile', 'peak_pagefile', 'private_bytes')]
 
 
-def _resource_sample(destination, coordinator):
-    """Measure current coordinator descendants with PID+creation, fail on uncertainty."""
-    kernel = _kernel()
-    memory = _MEMORY_STATUS()
-    memory.length = C.sizeof(memory)
-    kernel.GlobalMemoryStatusEx.argtypes = [C.POINTER(_MEMORY_STATUS)]
-    kernel.GlobalMemoryStatusEx.restype = W.BOOL
-    _checked(kernel.GlobalMemoryStatusEx(C.byref(memory)), 'GlobalMemoryStatusEx')
-    free, total, available = (C.c_ulonglong() for _ in range(3))
-    kernel.GetDiskFreeSpaceExW.argtypes = [W.LPCWSTR, C.POINTER(C.c_ulonglong),
-                                         C.POINTER(C.c_ulonglong), C.POINTER(C.c_ulonglong)]
-    kernel.GetDiskFreeSpaceExW.restype = W.BOOL
-    _checked(kernel.GetDiskFreeSpaceExW(str(Path(destination).resolve()), C.byref(available),
-                                      C.byref(total), C.byref(free)), 'GetDiskFreeSpaceExW')
+def _snapshot_before(kernel):
+    stamp = W.FILETIME()
+    kernel.GetSystemTimeAsFileTime(C.byref(stamp))
+    return (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
+
+
+def _owned_process_ids(coordinator, parents, identities, *, observed_before):
+    """A stale ParentPID cannot make an older process our descendant."""
+    if identities.get(coordinator['pid']) != coordinator:
+        raise RuntimeError('Coordinator PID identity changed')
+    if type(observed_before) is not int or observed_before <= 0:
+        raise RuntimeError('Invalid process snapshot boundary')
+    if any(identity['creation_time'] > observed_before for identity in identities.values()):
+        raise RuntimeError('Process identity was created after the snapshot boundary')
+    selected = {coordinator['pid']}
+    while True:
+        added = set()
+        for pid, parent in parents.items():
+            if pid in selected or parent not in selected:
+                continue
+            child = identities[pid]
+            if child['pid'] != pid or type(child['creation_time']) is not int or child['creation_time'] <= 0:
+                raise RuntimeError('Invalid observed child identity')
+            if child['creation_time'] >= identities[parent]['creation_time']:
+                added.add(pid)
+        if not added:
+            return selected
+        selected |= added
+
+
+class _ProcessObservationPending(RuntimeError):
+    """No empty-tree or resource claim may be made from this observation."""
+
+
+def _candidate_process_ids(coordinator, parents):
+    selected = {coordinator['pid']}
+    while True:
+        added = {pid for pid, parent in parents.items() if parent in selected}
+        if added <= selected:
+            return selected
+        selected |= added
+
+
+def _reconcile_process_snapshot(coordinator, parents, identities, *, observed_before, refresh):
+    """Exactly one fresh association for identities born during the first snapshot.
+
+    The caller retains every process handle through refresh and identity checks.
+    New candidates remain explicitly inconclusive, never an empty tree.
+    """
+    if identities.get(coordinator['pid']) != coordinator:
+        raise RuntimeError('Coordinator PID identity changed')
+    if any(identity['creation_time'] > observed_before for identity in identities.values()):
+        observed_before, parents = refresh()
+    candidates = _candidate_process_ids(coordinator, parents)
+    if not candidates <= identities.keys():
+        raise _ProcessObservationPending('New process candidate lacks a retained identity')
+    relevant = {pid: identities[pid] for pid in candidates}
+    if any(identity['creation_time'] > observed_before for identity in relevant.values()):
+        raise _ProcessObservationPending('Process birth remains after snapshot boundary')
+    return _owned_process_ids(coordinator, parents, relevant, observed_before=observed_before)
+
+
+def _process_parents(kernel):
+    observed_before = _snapshot_before(kernel)
     snapshot = kernel.CreateToolhelp32Snapshot(2, 0)
     if snapshot == C.c_void_p(-1).value:
         raise OSError(C.get_last_error(), 'Resource process snapshot failed')
@@ -371,28 +422,49 @@ def _resource_sample(destination, coordinator):
             raise OSError(C.get_last_error(), 'Resource process enumeration incomplete')
     finally:
         kernel.CloseHandle(snapshot)
-    selected = {coordinator['pid']}
-    while True:
-        added = {pid for pid, parent in parents.items() if parent in selected}
-        if added <= selected:
-            break
-        selected |= added
+    return observed_before, parents
+
+
+def _resource_sample(destination, coordinator):
+    """Measure current coordinator descendants with PID+creation, fail on uncertainty."""
+    kernel = _kernel()
+    memory = _MEMORY_STATUS()
+    memory.length = C.sizeof(memory)
+    kernel.GlobalMemoryStatusEx.argtypes = [C.POINTER(_MEMORY_STATUS)]
+    kernel.GlobalMemoryStatusEx.restype = W.BOOL
+    _checked(kernel.GlobalMemoryStatusEx(C.byref(memory)), 'GlobalMemoryStatusEx')
+    free, total, available = (C.c_ulonglong() for _ in range(3))
+    kernel.GetDiskFreeSpaceExW.argtypes = [W.LPCWSTR, C.POINTER(C.c_ulonglong),
+                                         C.POINTER(C.c_ulonglong), C.POINTER(C.c_ulonglong)]
+    kernel.GetDiskFreeSpaceExW.restype = W.BOOL
+    _checked(kernel.GetDiskFreeSpaceExW(str(Path(destination).resolve()), C.byref(available),
+                                      C.byref(total), C.byref(free)), 'GetDiskFreeSpaceExW')
+    observed_before, parents = _process_parents(kernel)
+    selected = _candidate_process_ids(coordinator, parents)
     psapi = C.WinDLL('psapi', use_last_error=True)
     psapi.GetProcessMemoryInfo.argtypes = [W.HANDLE, C.POINTER(_PROCESS_MEMORY), W.DWORD]
     psapi.GetProcessMemoryInfo.restype = W.BOOL
-    processes = []
-    for pid in sorted(selected):
-        handle = _checked(kernel.OpenProcess(0x1000 | 0x10, False, pid), 'Resource OpenProcess')
-        try:
-            identity = _identity(kernel, handle, pid)
-            if pid == coordinator['pid'] and identity != coordinator:
-                raise RuntimeError('Coordinator PID identity changed')
+    processes, handles, identities = [], {}, {}
+    try:
+        for pid in sorted(selected):
+            handles[pid] = _checked(kernel.OpenProcess(0x1000 | 0x10, False, pid), 'Resource OpenProcess')
+            identities[pid] = _identity(kernel, handles[pid], pid)
+        def refresh():
+            fresh = _process_parents(kernel)
+            for pid, handle in handles.items():
+                if _identity(kernel, handle, pid) != identities[pid]:
+                    raise RuntimeError('Retained process identity changed')
+            return fresh
+        owned = _reconcile_process_snapshot(coordinator, parents, identities,
+            observed_before=observed_before, refresh=refresh)
+        for pid in sorted(owned):
             counters = _PROCESS_MEMORY()
             counters.cb = C.sizeof(counters)
-            _checked(psapi.GetProcessMemoryInfo(handle, C.byref(counters), C.sizeof(counters)), 'GetProcessMemoryInfo')
-            processes.append({**identity, 'working_set_bytes': counters.working_set,
+            _checked(psapi.GetProcessMemoryInfo(handles[pid], C.byref(counters), C.sizeof(counters)), 'GetProcessMemoryInfo')
+            processes.append({**identities[pid], 'working_set_bytes': counters.working_set,
                               'private_bytes': counters.private_bytes})
-        finally:
+    finally:
+        for handle in handles.values():
             kernel.CloseHandle(handle)
     return {'elapsed_clock': time.perf_counter(), 'free_physical_bytes': memory.free_physical,
             'free_commit_bytes': memory.free_pagefile, 'free_disk_bytes': available.value,

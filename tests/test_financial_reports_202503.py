@@ -139,6 +139,10 @@ class Fixture202503:
 
 class FinancialReports202503Tests(unittest.TestCase):
     def setUp(self):
+        self.prepare_fixture()
+
+    def prepare_fixture(self):
+        """Give independent mutations fresh physical paths, without I/O retries."""
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
@@ -292,9 +296,7 @@ class FinancialReports202503Tests(unittest.TestCase):
         for role in self.fixture.data:
             for change in ('body', 'context', 'utc', 'url', 'final_url', 'hash'):
                 with self.subTest(role=role, change=change):
-                    self.fixture.write_sources()
-                    self.fixture.profile['source_pins'] = copy.deepcopy(self.fixture.pins)
-                    self.fixture.save_profile()
+                    self.prepare_fixture()
                     path = self.root / (role + '.manifest.json')
                     manifest = json.loads(path.read_bytes())
                     if change == 'body': (self.root / (role + '.bin')).write_bytes(b'changed')
@@ -308,6 +310,7 @@ class FinancialReports202503Tests(unittest.TestCase):
                         self.fixture.profile['source_pins'][role]['manifest_sha256'] = sha(path.read_bytes())
                         self.fixture.save_profile()
                     with self.assertRaises(ValueError): self.admit()
+                    self.assertFalse(self.source.exists())
         self.assertFalse(self.source.exists())
 
     def test_wrong_2024_namespace_or_normalized_double_slash_rejected_even_repinned(self):
