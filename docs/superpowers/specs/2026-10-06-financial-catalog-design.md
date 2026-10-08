@@ -135,6 +135,8 @@ Saída de resolve_snapshot: selection completa, revision_id, report_id opcional,
 
 CLI nova `scripts/query-financial.py`: commands `catalog-prepare`, `list`, `show`, `counts`, `bindings`, `cells`, `decimals`. Ler requer `--catalog` + `--catalog-sha256`; consultar também período e perspectiva, report nativo conforme command, opcional `--revision`. `show` fornece seleção/paths/hashes/aceite/saúde leve/policy sem abrir DuckDB; `list` retorna rows + coverage global congelada. `counts/bindings/cells/decimals` usam seleção única e templates SQL fixos; nada de SQL arbitrário ou casts globais. `cells` default limit 100, máximo 10000; filtros `--institution`/report são parametrizados. `decimals` exige report+column; serializa Decimal como texto exato, preserva None/null. Contagens e metadados antes de rows; jamais imprimir chave/header/arquivo bruto.
 
+O mesmo limite default100/max10000 aplica-se à saída decimals para limitar materialização/impressão, sem reduzir o snapshot validado; ambos retornam limit/truncated e leem no máximo uma linha adicional para detectar truncamento, fechando o iterator. list mantém coverage global mesmo com filtros. show conserva metadata_verified/not_run; comandos de query retornam payload_verified somente após sucesso do adapter. native_counts contém as contagens pinadas do snapshot completo, enquanto counts retorna cells/observations/cadaster_records do filtro nativo solicitado. Erros de argumentos têm code=arguments/exit2; falha inesperada code=unexpected/exit3. Mensagens públicas são genéricas e não ecoam parâmetros SQL ou conteúdo da exceção.
+
 ### Falhas, ausências e saúde
 
 | Condição | Semântica exigida |

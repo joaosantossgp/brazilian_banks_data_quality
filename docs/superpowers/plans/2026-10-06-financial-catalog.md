@@ -68,12 +68,12 @@ Nenhum cast/UNION numérico global, SQL DECIMAL>38, DOUBLE, arredondamento, annu
 
 ## Task 3 — CLI e corpus 11
 
-- [ ] RED: commands catalog-prepare/list/show/counts/bindings/cells/decimals, hash externo, filtros/limites, Decimal textual, exits 0/2/3 e erros sem payload completo/segredo. Conferir ausência de SQLarbitrário.
-- [ ] Implementar CLI fina conforme spec; células default 100/max 10000 e parâmetros vinculados.
-- [ ] Medir recursos livres nesta máquina e preparar janela serial para corpus. Não impor teto universal, não concorrer com 59 sem orçamento positivo.
-- [ ] Criar catálogo em destino novo ignorado dos 11 wrappers, com hash externo; conferir 66 ofertas/11 aceitos/55 unavailable, determinismo, refs internas e preservação de entradas/catálogos anteriores.
-- [ ] Consultar 11 reais serialmente com contagens/bindings/Decimal e comparação às metadata; documentar escopo real, medida e hashes protegidos. Não afirmar fresh gate por proof histórico ou read 11 anterior.
-- [ ] Revisão independente parcial do resultado antes de ampliar cobertura.
+- [x] RED: commands catalog-prepare/list/show/counts/bindings/cells/decimals, hash externo, filtros/limites, Decimal textual, exits 0/2/3 e erros sem payload completo/segredo. Conferir ausência de SQLarbitrário.
+- [x] Implementar CLI fina conforme spec; células default 100/max 10000 e parâmetros vinculados.
+- [x] Medir recursos livres nesta máquina e preparar janela serial para corpus. Não impor teto universal, não concorrer com 59 sem orçamento positivo.
+- [x] Criar catálogo em destino novo ignorado dos 11 wrappers, com hash externo; conferir 66 ofertas/11 aceitos/55 unavailable, determinismo, refs internas e preservação de entradas/catálogos anteriores.
+- [x] Consultar 11 reais serialmente com contagens/bindings/Decimal e comparação às metadata; documentar escopo real, medida e hashes protegidos. Não afirmar fresh gate por proof histórico ou read 11 anterior.
+- [x] Revisão independente parcial do resultado antes de ampliar cobertura.
 
 Os helpers da preparação não são ferramentas públicas instaladas. Antes de comando real, registrar na 61 o input/hash, destino inexistente, recursos e comandos próprios; nunca repetir execução sobre destino aceito.
 
