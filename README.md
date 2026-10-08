@@ -78,11 +78,27 @@ Admissão financeira offline verificada, usando o índice explícito de cinco ma
 
 O financeiro 1005/92/202312 e 202412 tem conversor próprio: `scripts/convert-financial.py`, com `--source`, `--source-manifest-sha256` e `--output` obrigatórios. Exige os cinco arquivos admitidos, hash externo do manifest e destino novo; não usa o comando Parquet individual acima. [Comandos e hashes 202412](docs/engineering/financial-parquet-20261004.md) e [202312](docs/engineering/financial-snapshot-202312-execution-20261004.md). A seleção vem do índice/manifest validado; nenhum perfil é escolhido por parâmetro de usuário.
 
-Na consulta financeira, cada linha é uma unidade IF.data × variável dentro do snapshot/referência. A view `financial_cells` conserva a grade completa; `financial_observations` seleciona `presence='stored'`. As 32 colunas da admissão são texto preservado; `numeric_decimal` é DECIMAL exato; cinco chaves/identificadores acrescentados pela view delimitam snapshot, ocorrência e binding. `snapshot_connection` exige o path e o hash final esperados e valida integralmente o conjunto antes da consulta. Uma apresentação com variáveis em colunas e séries históricas exige seleção/comparabilidade e contrato próprios.
+Na consulta financeira, cada linha é uma unidade IF.data × variável dentro do snapshot/referência. A view `financial_cells` conserva a grade completa; `financial_observations` seleciona `presence='stored'`. As colunas originais da admissão permanecem textuais. Nas projeções numéricas que cabem, `numeric_decimal` tem DECIMAL exato local ao binding; os bindings largos preservam texto exato e accessor Python Decimal. Os identificadores acrescentados pela view delimitam snapshot, ocorrência e binding. `snapshot_connection` exige o path e o hash final esperados e valida integralmente o conjunto antes da consulta. Uma apresentação com variáveis em colunas e séries históricas exige seleção/comparabilidade e contrato próprios.
 
 Inspeção da aquisição: `& .\.venv\Scripts\python.exe -B scripts/acquire-financial.py --help` e `verify` com job/bootstrap/receipt externos foram executados. [Comando offline e pins reais](docs/engineering/financial-historical-acquisition-20261004.md#comandos-efetivamente-usados). Inicialização, coleta e recovery escrevem destinos novos ou estado de autoridade; usar o contrato da Issue, não repetir a execução aceita por conveniência.
 
 A aquisição por janela usa `batch-prepare` → `batch-initialize` → `batch-run`, com paths/hashes externos, destino novo e identidade/budget imutáveis. [Execução, recursos e comando real](docs/engineering/financial-recent-batch-acquisition-20261005.md#comandos-e-pins-efetivamente-usados). `batch-recover` reconcilia antes de novos despachos; `batch-verify` inspeciona offline o conjunto com os bytes/runtime pinados. Uma janela concluída não pode ser reinicializada para renovar saldo; nova janela exige contrato. Coleta exige HEAD/código/runtime aprovados e margem atual; inspeção offline não faz GET nem exige HEAD histórico. Dados locais ignorados precisam estar disponíveis, sem glob/perfil arbitrário ou calendário futuro.
+
+### Catálogo financeiro autenticado
+
+A [Issue61](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/61) adiciona `scripts/query-financial.py` para preparar, descobrir e consultar snapshots aceitos, com paths e hashes externos explícitos. A oferta de66referências não prova66aceites: o catálogo inicial local possui11aceitos/55indisponíveis. Entradas, provas e catálogos ficam em destinos privados ignorados; os comandos abaixo exigem os artefatos locais descritos no [ledger](docs/engineering/financial-catalog-20261006.md), não fornecidos pelo clone.
+
+```powershell
+$catalogFile = 'data/runs/financial-catalog-20261008-initial11/catalog.json'
+$catalogHash = 'bc26107246a00d19b735d1e386a0a1ce27c65f889d840ec99cb3f723ef4463a3'
+& .\.venv\Scripts\python.exe -B scripts/query-financial.py list --catalog $catalogFile --catalog-sha256 $catalogHash
+& .\.venv\Scripts\python.exe -B scripts/query-financial.py show --catalog $catalogFile --catalog-sha256 $catalogHash --period 202312 --perspective 1005
+& .\.venv\Scripts\python.exe -B scripts/query-financial.py counts --catalog $catalogFile --catalog-sha256 $catalogHash --period 202606 --perspective 1005
+```
+
+`list` usa somente metadados congelados e mantém cobertura global ao filtrar. `show` confere metadados/presença locais e informa `metadata_verified`/`not_run`; a saúde do payload depende da abertura pelo adapter. `counts`, `bindings`, `cells` e `decimals` usam templates fixos e validam o snapshot completo. Recebem período/perspectiva, report opcional e revision explícita quando necessário. `cells` aceita filtro de instituição; `decimals` exige `--report`/`--column` e retorna Decimal como texto exato, preservando null. Saídas cells/decimals têm default100/max10000linhas por `--limit`, com truncamento explícito. O filtro de report não reduz o perfil nativo ou cria uma série harmonizada.
+
+Preparação: `catalog-prepare --inputs <índice-local> --inputs-sha256 <hash-externo> --output data/runs/financial-catalog-<novo-run>`. Exige destino inexistente e handoffs aceitos/autenticados do contrato; não autoriza coleta nem aceita `accepted:true` fornecido sem prova. JSON de erro usa exit2 para argumentos/seleção/indisponibilidade/ambiguidade/binding e exit3 para integridade/stale/I/O/falha inesperada, sem imprimir conteúdo privado da exceção. Detalhes e limites: [spec](docs/superpowers/specs/2026-10-06-financial-catalog-design.md).
 
 ## Pesquisa, rigor e decisões abertas
 
