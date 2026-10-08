@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import stat
 import sys
+from weakref import WeakKeyDictionary
 
 from . import financial_acquisition as acquisition
 
@@ -2725,8 +2726,32 @@ def _replay_continuation_records(records, *, manifest, bundle, member_period=Non
         'head': {'sequence': sequence, 'record_sha256': previous, 'state_sha256': _sha(_canonical(state))}}
 
 
-def verify_historical_continuation(manifest_path, manifest_sha256, *, ready_sha256):
-    """Authenticate current overlay state; never activates or grants execution."""
+def _continuation_links(batch, member_replays, bundle):
+    """Check cross-ledger anchors before a writer persists an event."""
+    phases = [record['details'] for record in batch['records'] if record['kind'] == 'phase_start']
+    for start in phases:
+        replay = member_replays[start['period']]
+        sequence = start['member_sequence']
+        _require(1 <= sequence <= replay['head']['sequence']
+            and replay['records'][sequence - 1]['record_sha256'] == start['member_record_sha256'],
+            'Phase start does not match authenticated member prefix')
+    for period, replay in member_replays.items():
+        member = next(m for m in bundle['members'] if m['period'] == period)
+        targets = _verify_historical_job(member['job'])
+        for record in replay['records'][1:]:
+            details = record['details']
+            matches = [start for start in phases if start['period'] == period
+                and Path(start['session']).name == details['session_id']]
+            _require(len(matches) == 1 and record['sequence'] > matches[0]['member_sequence'],
+                     'Member event lacks its committed continuation phase/session')
+            target = targets.get(details['target_key'])
+            if record['kind'] != 'recovery':
+                _require(target is not None and (target['role'] == 'numeric') == (matches[0]['phase'] == 'values'),
+                         'Member target outside its committed phase')
+
+
+def _continuation_state(manifest_path, manifest_sha256, *, ready_sha256, held_claims=frozenset()):
+    """Internal authentication, including handles held by the sole writer."""
     path = _path(Path(manifest_path).absolute().relative_to(_ROOT.absolute()).as_posix())
     _file(path, acquisition._digest(manifest_sha256))
     manifest = _json(path.read_bytes())
@@ -2741,7 +2766,8 @@ def verify_historical_continuation(manifest_path, manifest_sha256, *, ready_sha2
     draft_path = _path(manifest['draft']['path'])
     _require(not folder.is_relative_to(draft_path.parent) and not draft_path.parent.is_relative_to(folder),
              'Manifest overlaps preparation ownership')
-    draft = _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder)
+    draft = _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder,
+                                          held_claims=held_claims)
     original = draft['original']
     bundle = _json(_path(original['bundle']['path']).read_bytes())
     expected = {'contract': 'financial-acquisition-continuation-v1', 'draft': manifest['draft'],
@@ -2787,34 +2813,220 @@ def verify_historical_continuation(manifest_path, manifest_sha256, *, ready_sha2
             acquisition._authenticated(source, expected=targets[key])
             authenticated_sources.append((source, targets[key]))
         members.append({'period': member['period'], 'head': replay['head'], 'state': replay['state']})
-    phases = [record['details'] for record in batch['records'] if record['kind'] == 'phase_start']
-    for start in phases:
-        replay = member_replays[start['period']]
-        sequence = start['member_sequence']
-        _require(1 <= sequence <= replay['head']['sequence']
-            and replay['records'][sequence - 1]['record_sha256'] == start['member_record_sha256'],
-            'Phase start does not match authenticated member prefix')
-    for period, replay in member_replays.items():
-        member = next(m for m in bundle['members'] if m['period'] == period)
-        targets = _verify_historical_job(member['job'])
-        for record in replay['records'][1:]:
-            details = record['details']
-            matches = [start for start in phases if start['period'] == period
-                and Path(start['session']).name == details['session_id']]
-            _require(len(matches) == 1 and record['sequence'] > matches[0]['member_sequence'],
-                     'Member event lacks its committed continuation phase/session')
-            target = targets.get(details['target_key'])
-            if record['kind'] != 'recovery':
-                _require(target is not None and (target['role'] == 'numeric') == (matches[0]['phase'] == 'values'),
-                         'Member target outside its committed phase')
-    _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder)
+    _continuation_links(batch, member_replays, bundle)
+    _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder,
+                                  held_claims=held_claims)
     for current, pin in observed.items():
         _file(current, pin)
     _check_activation_tree(folder, set(files) | {'ready.json'})
     for source, target in authenticated_sources:
         acquisition._authenticated(source, expected=target)
-    return {'contract': 'financial-acquisition-continuation-state-v1', 'executable': False,
+    summary = {'contract': 'financial-acquisition-continuation-state-v1', 'executable': False,
         'status': 'halted' if batch['state']['halt'] else 'verified', 'manifest': manifest_ref,
         'ready': {'path': ready_path.relative_to(_ROOT).as_posix(), 'sha256': ready_sha256},
         'original': copy.deepcopy(original), 'batch': {'head': batch['head'], 'state': batch['state']},
         'members': members, 'totals': {key: sum(m['state'][key] for m in members) for key in _COUNTERS}}
+    return summary, manifest, bundle, batch, member_replays
+
+
+def verify_historical_continuation(manifest_path, manifest_sha256, *, ready_sha256):
+    """Read-only authentication; no claim, recovery or worker capability."""
+    return _continuation_state(manifest_path, manifest_sha256, ready_sha256=ready_sha256)[0]
+
+
+_CONTINUATION_OWNERS = WeakKeyDictionary()
+
+
+class _ContinuationMember:
+    """Member overlay writer, valid only while its owner's five claims are held."""
+    def __init__(self, owner, member, replay):
+        self.owner, self.member = owner, member
+        self.job = member['job']
+        self.folder = owner.folder / 'members' / str(member['period'])
+        self.bootstrap_sha256 = member['bootstrap_sha256']
+        self.targets = _verify_historical_job(self.job)
+        self.policies = acquisition._limits(self.job)
+        self.records, self.state = replay['records'], replay['state']
+        self.active = True
+
+    def head(self):
+        return {'sequence': self.records[-1]['sequence'], 'record_sha256': self.records[-1]['record_sha256'],
+                'state_sha256': _sha(_canonical(self.state))}
+
+    def commit(self, kind, *, attempt_id='', target_key='', session_id='', **details):
+        with self.owner.lock:
+            _require(self.active and self.owner.active, 'Continuation member claim is closed')
+            common = {'attempt_id': attempt_id, 'target_key': target_key, 'session_id': session_id,
+                'attempt_delta': 0, 'reserved_bytes': 0, 'observed_bytes': None,
+                'reserved_attempt_seconds': 0, 'observed_attempt_seconds': None,
+                'reserved_backoff_seconds': 0, 'observed_backoff_seconds': None,
+                'failure_count': self.state['failures'], 'failure_streak': self.state['failure_streak'], **details}
+            if kind in ('finish', 'orphan', 'guard_failure'):
+                common['failure_count'] += common['status'] != 'source_complete'
+                common['failure_streak'] = 0 if common['status'] == 'source_complete' else common['failure_streak'] + 1
+            return self.owner._append(kind, common, period=self.member['period'])
+
+
+class _ContinuationBatch:
+    """One serial transaction lock shared by all five overlay writers."""
+    def __init__(self, manifest_path, manifest_pin, ready_pin, held_claims, authenticated):
+        from threading import RLock
+        _, self.manifest, self.bundle, replay, member_replays = authenticated
+        self.path, self.pin, self.ready_pin = Path(manifest_path).absolute(), manifest_pin, ready_pin
+        self.held_claims = held_claims
+        self.folder = _ROOT / self.manifest['destination']
+        self.records, self.state = replay['records'], replay['state']
+        # Constructing a data image is not issuance of a claim capability.
+        self.active, self.lock = False, RLock()
+        self.members = {m['period']: _ContinuationMember(self, m, member_replays[m['period']])
+                        for m in self.bundle['members']}
+
+    def close(self):
+        with self.lock:
+            self.active = False
+            _CONTINUATION_OWNERS.pop(self, None)
+            for member in self.members.values():
+                member.active = False
+
+    def member(self, period):
+        _require(type(period) is int and period in self.members, 'Member outside continuation window')
+        return self.members[period]
+
+    def head(self):
+        return {'sequence': self.records[-1]['sequence'], 'record_sha256': self.records[-1]['record_sha256'],
+                'state_sha256': _sha(_canonical(self.state))}
+
+    def _checked(self):
+        _require(self.active and _CONTINUATION_OWNERS.get(self)
+                 == (self.held_claims, self.path, self.pin, self.ready_pin),
+                 'Continuation owner does not hold its issued claims')
+        try:
+            authenticated = _continuation_state(self.path, self.pin, ready_sha256=self.ready_pin,
+                                                held_claims=self.held_claims)
+            _, manifest, bundle, batch, members = authenticated
+            _same(manifest, self.manifest, 'Active continuation manifest changed')
+            _same(bundle, self.bundle, 'Active predecessor bundle changed')
+            folder = self.path.parent
+            _require(self.folder == folder and self.folder == _ROOT / manifest['destination'],
+                     'Continuation writer destination differs from its issued capability')
+            _require(set(self.members) == set(bundle['acquire_periods']), 'Continuation writer member map differs')
+            _same(batch['head'], self.head(), 'Continuation owner batch tail changed')
+            for period, replay in members.items():
+                writer = self.member(period)
+                member = next(m for m in bundle['members'] if m['period'] == period)
+                _require(type(writer) is _ContinuationMember and writer.owner is self and writer.active
+                         and writer.folder == folder / 'members' / str(period), 'Member writer capability/destination differs')
+                _same(writer.member, member, 'Member writer binding changed')
+                _same(writer.job, member['job'], 'Member writer job changed')
+                _same(writer.targets, _verify_historical_job(member['job']), 'Member writer targets changed')
+                _same(writer.policies, acquisition._limits(member['job']), 'Member writer limits changed')
+                _require(writer.bootstrap_sha256 == member['bootstrap_sha256'], 'Member writer bootstrap changed')
+                _same(replay['head'], writer.head(), 'Continuation owner member tail changed')
+            return batch, members
+        except BaseException:
+            self.close()
+            raise
+
+    def _append(self, kind, details, *, period=None):
+        with self.lock:
+            batch, members = self._checked()
+            _require(not batch['state']['halt'], 'Continuation is halted')
+            current = batch if period is None else members[period]
+            unsigned = {'contract': 'financial-acquisition-continuation-ledger-v1', 'manifest_sha256': self.pin,
+                'sequence': current['head']['sequence'] + 1, 'previous_record_sha256': current['head']['record_sha256'],
+                'kind': kind, 'details': copy.deepcopy(details)}
+            record = dict(unsigned, record_sha256=_sha(_canonical(unsigned)))
+            replay = _replay_continuation_records(current['records'] + [record], manifest=self.manifest,
+                                                 bundle=self.bundle, member_period=period)
+            if period is None:
+                batch = replay
+            else:
+                members[period] = replay
+            _continuation_links(batch, members, self.bundle)
+            for member_period, proposed in members.items():
+                member = next(m for m in self.bundle['members'] if m['period'] == member_period)
+                targets = _verify_historical_job(member['job'])
+                for key, source in proposed['state']['sources'].items():
+                    acquisition._authenticated(source, expected=targets[key])
+            writer = self if period is None else self.member(period)
+            folder = _CONTINUATION_OWNERS[self][1].parent
+            if period is not None:
+                folder = folder / 'members' / str(period)
+            try:
+                journal = acquisition._safe_destination(folder / 'journal.jsonl')
+                with journal.open('ab') as output:
+                    output.write(_canonical(record) + b'\n')
+                    output.flush()
+                    os.fsync(output.fileno())
+                acquisition._replace_head(folder, replay['head'])
+                _require(journal.read_bytes() == b''.join(_canonical(r) + b'\n' for r in replay['records']),
+                         'Durable continuation journal differs')
+                _same(_json((folder / 'head.json').read_bytes()), replay['head'],
+                      'Durable continuation head differs')
+                writer.records, writer.state = replay['records'], replay['state']
+                self._checked()
+            except BaseException:
+                self.close()
+                raise
+            return copy.deepcopy(record)
+
+    def append(self, kind, **details):
+        return self._append(kind, details)
+
+
+@contextmanager
+def _open_continuation(manifest_path, manifest_sha256, *, ready_sha256):
+    """Acquire existing claims only; never initializes, recovers or refunds."""
+    from contextlib import ExitStack
+    authenticated = _continuation_state(manifest_path, manifest_sha256, ready_sha256=ready_sha256)
+    _, manifest, bundle, batch, _ = authenticated
+    _require(not batch['state']['halt'], 'Continuation is halted')
+    _, batch_claim = _batch_paths(manifest['predecessor_scope'])
+    claims = [batch_claim] + [_path(tail['claim']['path']) for tail in manifest['classification']['authority_tails']]
+    _require(len(claims) == 5 and len(set(claims)) == 5, 'Five distinct original claims required')
+    for lock in claims:
+        _require(lock.is_file() and lock.read_bytes() == b'', 'Original empty claim required')
+    with ExitStack() as stack:
+        for lock in claims:
+            stack.enter_context(acquisition._claim(lock))
+        held = frozenset(claims)
+        authenticated = _continuation_state(manifest_path, manifest_sha256, ready_sha256=ready_sha256,
+                                            held_claims=held)
+        _require(not authenticated[3]['state']['halt'], 'Continuation halted under claim')
+        owner = _ContinuationBatch(manifest_path, manifest_sha256, ready_sha256, held, authenticated)
+        _CONTINUATION_OWNERS[owner] = (held, owner.path, manifest_sha256, ready_sha256)
+        owner.active = True
+        try:
+            yield owner
+        finally:
+            owner.close()
+
+
+def _start_continuation_phase(owner, member, phase):
+    _require(type(owner) is _ContinuationBatch and owner.active, 'Active continuation coordinator required')
+    with owner.lock:
+        _require(member in owner.bundle['members'] and not owner.state['pending'],
+                 'Unfinished phase or foreign member blocks dispatch')
+        authority = owner.member(member['period'])
+        _require(not authority.state['pending'], 'Unfinished attempt blocks dispatch')
+        identity = uuid.uuid4().hex
+        return owner.append('phase_start', phase_id=identity, period=member['period'], phase=phase,
+            session=owner.manifest['destination'] + '/members/' + str(member['period']) + '/sessions/' + phase + '-' + identity,
+            job_sha256=member['job_sha256'], member_bootstrap_sha256=member['bootstrap_sha256'],
+            member_sequence=authority.head()['sequence'], member_record_sha256=authority.head()['record_sha256'])
+
+
+def _reserve_continuation_attempt(authority, target, *, session_id):
+    _require(type(authority) is _ContinuationMember and authority.active and authority.owner.active,
+             'Authenticated active continuation member required')
+    with authority.owner.lock:
+        _require(type(session_id) is str and re.fullmatch('[A-Za-z0-9_-]{1,80}', session_id), 'Invalid session ID')
+        key = target.get('target_key')
+        _require(key in authority.targets and target == authority.targets[key], 'Target outside original member')
+        matches = [start for start in authority.owner.state['pending'].values()
+                   if start['period'] == authority.member['period'] and Path(start['session']).name == session_id]
+        _require(len(matches) == 1, 'Reservation requires its committed pending phase')
+        used = authority.state['targets'].get(key, {}).get('body_bytes', 0)
+        return authority.commit('reserve', attempt_id=uuid.uuid4().hex, target_key=key, session_id=session_id,
+            attempt_delta=1, reserved_bytes=acquisition._body_cap(target, authority.policies) - used,
+            reserved_attempt_seconds=authority.policies['deadline_seconds'])

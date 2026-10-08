@@ -2544,6 +2544,294 @@ class HistoricalContinuationActivationTests(unittest.TestCase):
         self.assertEqual(self.protected(), protected)
 
 
+class HistoricalContinuationWriterTests(unittest.TestCase):
+    setUp = HistoricalContinuationPreparationTests.setUp
+    prepare = HistoricalContinuationPreparationTests.prepare
+    call_prepare = HistoricalContinuationPreparationTests.call_prepare
+    prepared = HistoricalContinuationActivationTests.prepared
+    activate = HistoricalContinuationActivationTests.activate
+
+    def activated(self):
+        self.prepared()
+        self.active_refs = self.activate()
+
+    def opened(self):
+        return self.batch._open_continuation(self.root / self.active_refs['manifest']['path'],
+            self.active_refs['manifest']['sha256'], ready_sha256=self.active_refs['ready']['sha256'])
+
+    def protected(self):
+        return {name: sha((self.root / name).read_bytes()) for name in self.snapshot['files']}
+
+    def require_api(self):
+        self.assertTrue(callable(getattr(self.batch, '_open_continuation', None)),
+                        'Missing authenticated continuation writer')
+
+    def test_durable_phase_and_reservation_use_original_budget_and_preserve_predecessor(self):
+        self.require_api()
+        self.activated()
+        before = self.protected()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            target = member.job['targets'][0]
+            reservation = self.batch._reserve_continuation_attempt(member, target,
+                session_id=Path(start['details']['session']).name)
+            self.assertEqual(reservation['contract'], 'financial-acquisition-continuation-ledger-v1')
+            self.assertEqual(start['sequence'], 4)
+            self.assertEqual(reservation['sequence'], 2)
+            self.assertEqual(member.state['attempts'], 1)
+            self.assertEqual(member.state['body_bytes'], self.acquisition._body_cap(target, member.policies))
+            self.assertEqual(member.state['attempt_seconds'], member.policies['deadline_seconds'])
+            self.assertEqual(json.loads((member.folder / 'head.json').read_bytes()), member.head())
+            records = [json.loads(line) for line in (member.folder / 'journal.jsonl').read_bytes().splitlines()]
+            self.assertEqual(records[-1], reservation)
+        self.assertEqual(self.protected(), before)
+        with self.opened() as reopened:
+            self.assertEqual(reopened.member(201003).state['attempts'], 1)
+            self.assertEqual(reopened.member(201003).state['pending'], member.state['pending'])
+            with self.assertRaises(ValueError):
+                self.batch._start_continuation_phase(reopened, self.member, 'metadata')
+        with self.assertRaises(ValueError):
+            member.commit('recovery')
+
+    def test_claims_are_original_ordered_and_revalidated_before_writer_creation(self):
+        self.require_api()
+        self.activated()
+        wanted = [self.batch._batch_paths(json.loads(self.bundle.read_bytes())['scope'])[1]]
+        wanted += [self.acquisition._authority_paths(m['job'])[2] for m in json.loads(self.bundle.read_bytes())['members']]
+        acquired, released = [], []
+        @contextmanager
+        def claim(path):
+            acquired.append(path)
+            try:
+                yield
+            finally:
+                released.append(path)
+        with patch.object(self.acquisition, '_claim', claim), self.opened() as owner:
+            self.assertEqual(acquired, wanted)
+            self.assertTrue(owner.active)
+            self.assertTrue(all(owner.member(m['period']).active for m in owner.bundle['members']))
+        self.assertEqual(released, wanted[::-1])
+        self.assertFalse(owner.active)
+        self.assertTrue(all(not m.active for m in owner.members.values()))
+
+    def test_reservation_without_phase_or_wrong_session_target_never_appends(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            journal = (member.folder / 'journal.jsonl').read_bytes()
+            target = member.job['targets'][0]
+            with self.assertRaises(ValueError):
+                self.batch._reserve_continuation_attempt(member, target, session_id='metadata-' + 'c' * 32)
+            self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), journal)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            for offered, session in ((target, 'metadata-' + 'd' * 32),
+                    (dict(target, url='https://invalid.example'), Path(start['details']['session']).name)):
+                with self.subTest(session=session), self.assertRaises(ValueError):
+                    self.batch._reserve_continuation_attempt(member, offered, session_id=session)
+                self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), journal)
+
+    def test_changed_cas_under_last_claim_rejects_owner_and_releases_claims(self):
+        self.require_api()
+        self.activated()
+        acquired, released = [], []
+        @contextmanager
+        def claim(path):
+            acquired.append(path)
+            if len(acquired) == 5:
+                value = json.loads(self.cas.read_bytes())
+                value['manifest']['sha256'] = 'f' * 64
+                self.cas.write_bytes(canonical(value))
+            try:
+                yield
+            finally:
+                released.append(path)
+        with patch.object(self.acquisition, '_claim', claim), self.assertRaises(ValueError):
+            with self.opened():
+                self.fail('Forged CAS granted ownership')
+        self.assertEqual(released, acquired[::-1])
+
+    def test_head_failure_after_durable_append_closes_owner_without_reset_or_retry(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            before_head = (member.folder / 'head.json').read_bytes()
+            with patch.object(self.acquisition, '_replace_head', side_effect=OSError('Synthetic head write failed')):
+                with self.assertRaises(OSError):
+                    self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                        session_id=Path(start['details']['session']).name)
+            after_journal = (member.folder / 'journal.jsonl').read_bytes()
+            self.assertEqual(json.loads(after_journal.splitlines()[-1])['kind'], 'reserve')
+            self.assertEqual((member.folder / 'head.json').read_bytes(), before_head)
+            with self.assertRaises(ValueError):
+                member.commit('recovery')
+            self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), after_journal)
+        with self.assertRaises(ValueError):
+            with self.opened():
+                self.fail('Stale head was silently reset')
+
+    def test_halt_blocks_reservation_and_reopening_does_not_remove_halt(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            owner.append('halt', reason='synthetic containment failure')
+            journal = (member.folder / 'journal.jsonl').read_bytes()
+            with self.assertRaises(ValueError):
+                self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                    session_id=Path(start['details']['session']).name)
+            self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), journal)
+        with self.assertRaises(ValueError):
+            with self.opened():
+                self.fail('Halted writer reopened')
+
+    def test_concurrent_reservations_cannot_commit_the_same_tail_twice(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            barrier = Barrier(2)
+            def reserve():
+                barrier.wait(timeout=10)
+                try:
+                    return self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                        session_id=Path(start['details']['session']).name)
+                except ValueError:
+                    return None
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(reserve) for _ in range(2)]
+                results = [future.result(timeout=60) for future in futures]
+            self.assertEqual(sum(result is not None for result in results), 1)
+            records = [json.loads(line) for line in (member.folder / 'journal.jsonl').read_bytes().splitlines()]
+            self.assertEqual([record['sequence'] for record in records], [1, 2])
+            self.assertEqual(member.head()['sequence'], 2)
+            self.assertEqual(member.state['attempts'], 1)
+            self.assertEqual(len(member.state['pending']), 1)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Real Win32 API host required')
+    def test_native_claims_permit_append_but_deny_a_second_owner(self):
+        from bank_quality.windows_acquisition import exclusive_claim
+        self.require_api()
+        self.activated()
+        protected = self.protected()
+        with patch.object(self.acquisition, '_claim', exclusive_claim):
+            with self.opened() as owner:
+                self.batch._start_continuation_phase(owner, self.member, 'metadata')
+                for claim in owner.held_claims:
+                    with self.assertRaises(OSError):
+                        with exclusive_claim(claim):
+                            self.fail('Concurrent native owner acquired existing claim')
+            for claim in owner.held_claims:
+                with exclusive_claim(claim):
+                    pass
+        self.assertEqual(self.protected(), protected)
+
+    def test_fsync_failure_does_not_return_reservation_or_leave_writer_active(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            before_head = (member.folder / 'head.json').read_bytes()
+            with patch.object(self.batch.os, 'fsync', side_effect=OSError('Synthetic fsync failure')):
+                with self.assertRaises(OSError):
+                    self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                        session_id=Path(start['details']['session']).name)
+            self.assertFalse(owner.active)
+            self.assertFalse(member.active)
+            self.assertEqual((member.folder / 'head.json').read_bytes(), before_head)
+            self.assertEqual(json.loads((member.folder / 'journal.jsonl').read_bytes().splitlines()[-1])['kind'], 'reserve')
+
+    def test_head_drift_before_append_poison_owner_without_writing_journal(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            journal = (member.folder / 'journal.jsonl').read_bytes()
+            head_path = member.folder / 'head.json'
+            forged = json.loads(head_path.read_bytes())
+            forged['state_sha256'] = 'f' * 64
+            head_path.write_bytes(canonical(forged))
+            with self.assertRaises(ValueError):
+                self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                    session_id=Path(start['details']['session']).name)
+            self.assertFalse(owner.active)
+            self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), journal)
+
+    def test_unclaimed_constructor_cannot_issue_a_writer_capability(self):
+        self.require_api()
+        self.activated()
+        path = self.root / self.active_refs['manifest']['path']
+        state = self.batch._continuation_state(path, self.active_refs['manifest']['sha256'],
+            ready_sha256=self.active_refs['ready']['sha256'])
+        locks = frozenset([self.batch._batch_paths(state[1]['predecessor_scope'])[1]] +
+            [self.root / tail['claim']['path'] for tail in state[1]['classification']['authority_tails']])
+        before = (self.active_destination / 'journal.jsonl').read_bytes()
+        forged = self.batch._ContinuationBatch(path, self.active_refs['manifest']['sha256'],
+            self.active_refs['ready']['sha256'], locks, state)
+        try:
+            with self.assertRaises(ValueError):
+                self.batch._start_continuation_phase(forged, self.member, 'metadata')
+            self.assertEqual((self.active_destination / 'journal.jsonl').read_bytes(), before)
+        finally:
+            forged.close()
+
+    def test_new_false_source_is_rejected_before_any_durable_finish(self):
+        self.require_api()
+        self.activated()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            session = Path(start['details']['session']).name
+            reservation = self.batch._reserve_continuation_attempt(member, member.job['targets'][0], session_id=session)
+            attempt = reservation['details']['attempt_id']
+            key = reservation['details']['target_key']
+            member.commit('identity', attempt_id=attempt, target_key=key, session_id=session,
+                identity={'pid': 7, 'creation_time': 9, 'contained': True},
+                spec_path='data/runs/synthetic-worker.json', spec_sha256='e' * 64)
+            journal, head = ((member.folder / name).read_bytes() for name in ('journal.jsonl', 'head.json'))
+            with self.assertRaises((ValueError, OSError)):
+                member.commit('finish', attempt_id=attempt, target_key=key, session_id=session,
+                    observed_bytes=5, observed_attempt_seconds=2, actual_elapsed_microseconds=2_000_000,
+                    overshoot_microseconds=0, status='source_complete', retryable=False,
+                    source_ref={'manifest_path': 'missing/source.json', 'manifest_sha256': 'f' * 64},
+                    guard='', attempt_evidence={}, tree_extinct=True, worker_exit_code=0, deadline_reached=False)
+            self.assertEqual((member.folder / 'journal.jsonl').read_bytes(), journal)
+            self.assertEqual((member.folder / 'head.json').read_bytes(), head)
+            self.assertIn(attempt, member.state['pending'])
+
+    def test_batch_folder_redirect_cannot_write_into_frozen_predecessor(self):
+        self.require_api()
+        self.activated()
+        before = self.protected()
+        with self.opened() as owner:
+            owner.folder = self.bundle.parent
+            with self.assertRaises(ValueError):
+                self.batch._start_continuation_phase(owner, self.member, 'metadata')
+        self.assertEqual(self.protected(), before)
+
+    def test_member_folder_redirect_cannot_write_into_original_authority(self):
+        self.require_api()
+        self.activated()
+        before = self.protected()
+        with self.opened() as owner:
+            member = owner.member(201003)
+            start = self.batch._start_continuation_phase(owner, self.member, 'metadata')
+            member.folder = self.member_folder
+            with self.assertRaises(ValueError):
+                self.batch._reserve_continuation_attempt(member, member.job['targets'][0],
+                    session_id=Path(start['details']['session']).name)
+        self.assertEqual(self.protected(), before)
+
+
 class HistoricalContinuationReplayTests(unittest.TestCase):
     prepare = HistoricalContinuationPreparationTests.prepare
     setUp = HistoricalContinuationPreparationTests.setUp
