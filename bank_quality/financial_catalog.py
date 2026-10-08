@@ -144,7 +144,7 @@ class _PinnedImage:
         return _json_bytes(self.raw)
 
 
-def _read_reference(root, reference, *, max_bytes=_MAX_METADATA_BYTES, json_required=True):
+def _read_reference(root, reference, *, max_bytes=_MAX_METADATA_BYTES, json_required=True, native_profile=False):
     _fields(reference, ('path', 'sha256'))
     pin = _hash(reference['sha256'])
     _positive_integer(max_bytes)
@@ -162,10 +162,16 @@ def _read_reference(root, reference, *, max_bytes=_MAX_METADATA_BYTES, json_requ
         raise
     except OSError as exc:
         raise CatalogError('integrity', 'Metadata reference cannot be captured') from exc
-    _require(hashlib.sha256(raw).hexdigest() == pin, 'Metadata reference SHA-256 mismatch')
+    physical = hashlib.sha256(raw).hexdigest()
+    if native_profile:
+        _require(reference['path'].startswith(('bank_quality/financial-reports-profile-',
+                                              'bank_quality/financial-reports-profiles/'))
+                 and reference['path'].endswith('.json'), 'Native profile policy used outside installed profiles')
+    digest = hashlib.sha256(raw.replace(b'\r\n', b'\n')).hexdigest() if native_profile else physical
+    _require(digest == pin, 'Metadata reference SHA-256 mismatch')
     if json_required:
         _json_bytes(raw)
-    return _PinnedImage(reference['path'], pin, raw)
+    return _PinnedImage(reference['path'], physical, raw)
 
 
 _TRUSTED_BASE = 'c7455f06ff2dc52a7958e300b19df01bca9b92c7'
@@ -239,6 +245,16 @@ def _trusted_code_image(root, reference):
     _require(hashlib.sha256(image.raw.replace(b'\r\n', b'\n')).hexdigest() == _TRUSTED_CODE_LF,
              'Historical code image differs from the trusted Git base')
     return image
+
+
+def _native_profile_image(root, reference):
+    _fields(reference, ('path', 'sha256', 'hash_policy'))
+    _require(reference['hash_policy'] == 'installed_profile_native_lf', 'Unsupported profile hash policy')
+    _require(type(reference['path']) is str
+             and reference['path'].startswith(('bank_quality/financial-reports-profile-',
+                                               'bank_quality/financial-reports-profiles/')),
+             'Native profile policy used outside installed profiles')
+    return _read_reference(root, {k: reference[k] for k in ('path', 'sha256')}, native_profile=True)
 
 
 def _validate_historical_gate(root, gate):
@@ -371,3 +387,184 @@ def _validate_historical_gate(root, gate):
                              'Historical comparison inventory differs')
     return {'acceptance': 'verified', 'historical_stages': stage.copy(), 'parquet_metadata': pq,
             'profile_metadata': profile, 'captured_images': tuple(images)}
+
+
+_SUPPLEMENT403 = {'path': 'data/runs/financial-batch-sanitization-inputs-20261005/accepted-supplement.json',
+                  'sha256': 'a4295c26925be5ef771f3fea8cd8a52b37bf03ed89cade32ed188e1a4409c2e2'}
+_PIPELINE57_ROOT = 'data/runs/financial-batch-sanitization-202312-202606-20261005-attempt2/'
+_PIPELINE57_PLAN = {'path': _PIPELINE57_ROOT + 'plan.json',
+                    'sha256': '86d6432c3238699947b4c5d1dc63d367848ec225eb80fb30cf94234a736569f5'}
+_PIPELINE57_RESULT = {'path': _PIPELINE57_ROOT + 'execution/result-98.json',
+                      'sha256': '438d084a331d9e43d902244060caf922e38d8a65b8f0eab19fb3735958a91485'}
+_PIPELINE57_HEAD = {'path': _PIPELINE57_ROOT + 'execution/head.json',
+                    'sha256': '70c952d05c99df09123de6b78b5b008b93ccfa02f7b5befb2752caf39ddd9da6'}
+
+
+def _projection_links(admission, parquet, admission_ref, selection, profile_pin):
+    _require(admission.get('selection') == parquet.get('selection') == selection
+             and admission.get('accepted') is True and parquet.get('accepted') is True,
+             'Snapshot selection/acceptance differs')
+    _require(admission.get('profile_sha256') == parquet.get('profile_sha256') == profile_pin
+             and parquet.get('source_manifest_sha256') == admission_ref['sha256']
+             and parquet.get('source_files') == admission.get('files'), 'Snapshot cross-pins differ')
+
+
+def _validate_supplement_gate(root, gate):
+    _handoff_shape(gate)
+    proof = gate['proof']
+    _require(proof['kind'] == 'accepted_supplement403_v1'
+             and proof['supplement'] == _SUPPLEMENT403, 'Wrong supplement authority pin')
+    images = []
+    def capture(ref):
+        image = _read_reference(root, ref); images.append(image)
+        return image.document()
+    supplement = capture(proof['supplement'])
+    _fields(supplement, ('contract', 'members', 'limitations'))
+    _require(supplement['contract'] == 'ifdata-financial-accepted-supplement-v1'
+             and type(supplement['members']) is list and len(supplement['members']) == 1,
+             'Unsupported supplement metadata')
+    member = supplement['members'][0]
+    _fields(member, ('selection', 'evidence'))
+    expected = {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]}
+    _require(member['selection'] == gate['selection'] == expected, 'Supplement native selection differs')
+    refs = member['evidence']
+    _fields(refs, ('profile', 'admission', 'parquet', 'replay_admission', 'replay_parquet', 'query', 'replay_query', 'compare'))
+    _require(gate['admission'] == refs['admission'] and gate['parquet'] == refs['parquet']
+             and gate['profile'] == {**refs['profile'], 'hash_policy': 'installed_profile_native_lf'},
+             'Supplement handoff refs differ')
+    docs = {key: capture(image) for key, image in refs.items()}
+    native = _native_profile_image(root, gate['profile']); images.append(native)
+    _require(native.document() == docs['profile'] and docs['profile']['selection'] == expected,
+             'Supplement installed profile differs')
+    for prefix in ('', 'replay_'):
+        admission, parquet, query = (docs[prefix + key] for key in ('admission', 'parquet', 'query'))
+        _projection_links(admission, parquet, refs[prefix + 'admission'], expected, gate['profile']['sha256'])
+        _fields(query, ('accessor_snapshots_opened', 'all_original_csvs_origins_and_decimal_rows_validated_by_adapter',
+                        'baseline_sha256', 'binding_nodes', 'cadaster_columns', 'cadaster_records', 'cells', 'contract',
+                        'exact_python_decimal_rows_checked', 'execution_head', 'grade_all_varchar', 'grade_columns',
+                        'http_requests', 'manifest_sha256', 'observations', 'presence_counts', 'stage',
+                        'typed_views_checked', 'value_state_counts', 'wide_text_bindings'))
+        _require(query['contract'] == 'root-offline-financial-gate-stage-v1'
+                 and query['stage'] == ('replay-query' if prefix else 'query')
+                 and query['manifest_sha256'] == refs[prefix + 'parquet']['sha256']
+                 and query['grade_columns'] == 32 and query['grade_all_varchar'] is True
+                 and query['all_original_csvs_origins_and_decimal_rows_validated_by_adapter'] is True
+                 and query['accessor_snapshots_opened'] == 1 and query['http_requests'] == 0,
+                 'Supplement query evidence differs')
+        for field in ('cells', 'observations', 'cadaster_records', 'presence_counts', 'value_state_counts'):
+            _require(query[field] == parquet[field], 'Supplement query counts differ')
+        bindings = parquet['numeric_bindings']
+        expected_views = [{'view': b['view'], 'rows': parquet['cadaster_records'],
+                           'encoding': b.get('encoding', 'duckdb_decimal'),
+                           'storage_type': b.get('storage_type', b['decimal_type'])} for b in bindings]
+        _require(query['typed_views_checked'] == expected_views
+                 and query['exact_python_decimal_rows_checked'] == len(bindings) * parquet['cadaster_records']
+                 and query['binding_nodes'] == sum(len(r['nodes']) for r in docs['profile']['reports'])
+                 and query['cadaster_columns'] == len(docs['profile']['cadaster_columns']),
+                 'Supplement accessor/typed coverage differs')
+    comparison = docs['compare']
+    _fields(comparison, ('accepted_sources_unchanged', 'all_manifest_payloads_authenticated', 'baseline_sha256',
+                         'comparisons', 'contract', 'execution_head', 'http_requests', 'protected_equal', 'stage'))
+    _require(comparison['contract'] == 'root-offline-financial-gate-stage-v1'
+             and comparison['stage'] == 'compare' and comparison['http_requests'] == 0
+             and comparison['all_manifest_payloads_authenticated'] is True
+             and comparison['accepted_sources_unchanged'] is True, 'Supplement comparison evidence differs')
+    _positive_integer(comparison['protected_equal'])
+    for key in ('baseline_sha256', 'execution_head'):
+        _require(type(comparison[key]) is str and comparison[key]
+                 and comparison[key] == docs['query'][key] == docs['replay_query'][key], 'Supplement execution origin differs')
+    _fields(comparison['comparisons'], ('admission', 'parquet'))
+    for kind, excluded in (('admission', ['manifest.json']), ('parquet', ['manifest.json', 'metadata/source-manifest.json'])):
+        check = comparison['comparisons'][kind]
+        _fields(check, ('byte_equal', 'separately_validated_execution_metadata'))
+        _require(check['separately_validated_execution_metadata'] == excluded
+                 and check['byte_equal'] == sorted(r['path'] for r in docs[kind]['files']
+                                                  if r['path'] != 'metadata/source-manifest.json'),
+                 'Supplement comparison inventory differs')
+    return {'acceptance': 'verified', 'historical_stages': {'state': 'available', 'kind': proof['kind']},
+            'parquet_metadata': docs['parquet'], 'profile_metadata': docs['profile'], 'captured_images': tuple(images)}
+
+
+def _validate_pipeline_gate(root, gate):
+    _handoff_shape(gate)
+    proof = gate['proof']
+    _require(proof['kind'] == 'pipeline57_v1' and proof['plan'] == _PIPELINE57_PLAN
+             and proof['result'] == _PIPELINE57_RESULT and proof['head'] == _PIPELINE57_HEAD,
+             'Wrong pipeline57 authority pin')
+    images = []
+    def capture(ref):
+        image = _read_reference(root, ref); images.append(image)
+        return image.document()
+    plan, result, head = (capture(proof[key]) for key in ('plan', 'result', 'head'))
+    _require(result.get('contract') == 'ifdata-financial-sanitization-result-v1' and result.get('status') == 'complete'
+             and result.get('plan') == proof['plan'] and result.get('head') == head
+             and head.get('plan_sha256') == proof['plan']['sha256'], 'Pipeline result/head differs')
+    selected = [m for m in plan['members'] if m['selection'] == gate['selection']]
+    completed = [m for m in result['members'] if m['selection'] == gate['selection']]
+    _require(len(selected) == len(completed) == 1, 'Pipeline member is missing or duplicated')
+    member, state = selected[0], completed[0]
+    _require(state['state'] == 'replay_verified' and state['terminal_state'] is None
+             and state['incomplete_stage'] is None and state['errors'] == []
+             and all(state['milestones'][key] is True for key in ('admitted', 'parquet_verified', 'query_verified', 'replay_verified')),
+             'Pipeline member lacks complete milestones')
+    _require([proof['receipts'][s] for s in _STAGES] == state['receipts'], 'Pipeline receipt/member bindings differ')
+    outputs = {}
+    for stage in _STAGES:
+        receipt = capture(proof['receipts'][stage])
+        _require(receipt.get('contract') == 'ifdata-financial-sanitization-stage-receipt-v1'
+                 and receipt.get('status') == 'complete' and receipt.get('document') == proof['plan']
+                 and receipt['measurement']['tree_extinct'] is True
+                 and receipt['measurement']['deadline_reached'] is False and not receipt['measurement']['guard'],
+                 'Pipeline receipt incomplete or resource guard failed')
+        spec, execution = capture(receipt['spec']), capture(receipt['result'])
+        capture(receipt['identity']); capture(receipt['log'])
+        for record in (spec, execution):
+            _require(record['document'] == proof['plan'] and record['member'] == gate['selection']['period']
+                     and record['stage'] == stage, 'Pipeline stage identity differs')
+        _require(execution['status'] == receipt['status'] and execution['outputs'] == receipt['outputs']
+                 and execution['artifacts'] == receipt['artifacts'] and execution['summary'] == receipt['summary'],
+                 'Pipeline stage receipt/result differs')
+        _require(set(receipt['outputs']) == {stage}, 'Pipeline stage outputs differ')
+        outputs[stage] = receipt['outputs'][stage]
+    _require(gate['admission'] == outputs['admit'] and gate['parquet'] == outputs['convert'], 'Pipeline handoff outputs differ')
+    expected_profile = {'path': 'bank_quality/' + member['installed_profile_path'],
+                        'sha256': member['profile']['sha256'], 'hash_policy': 'installed_profile_native_lf'}
+    _require(gate['profile'] == expected_profile, 'Pipeline installed profile reference differs')
+    profile = _native_profile_image(root, gate['profile']); images.append(profile)
+    profile_doc = profile.document()
+    _require(profile_doc['selection'] == gate['selection'], 'Pipeline profile selection differs')
+    handoff = capture(member['final_handoff'])
+    docs = {stage: capture(image) for stage, image in outputs.items()}
+    for prefix in ('', 'replay-'):
+        admission, parquet, query = (docs[prefix + stage] for stage in ('admit', 'convert', 'query'))
+        _projection_links(admission, parquet, outputs[prefix + 'admit'], gate['selection'], gate['profile']['sha256'])
+        _require(admission['input_index_sha256'] == member['final_handoff']['sha256']
+                 and handoff['selection'] == gate['selection'], 'Pipeline source-index lineage differs')
+        _fields(query, ('bindings', 'cadaster_columns', 'cadaster_records', 'cells', 'manifest_sha256', 'numeric_rows',
+                        'observations', 'precision_encodings', 'presence_counts', 'query_verified',
+                        'source_manifest_sha256', 'value_state_counts'))
+        _require(query['query_verified'] is True and query['manifest_sha256'] == outputs[prefix + 'convert']['sha256']
+                 and query['source_manifest_sha256'] == outputs[prefix + 'admit']['sha256'], 'Pipeline query links differ')
+        for field in ('cells', 'observations', 'cadaster_records', 'presence_counts', 'value_state_counts'):
+            _require(query[field] == parquet[field], 'Pipeline query counts differ')
+        bindings = parquet['numeric_bindings']
+        _require(query['bindings'] == len(bindings) and query['numeric_rows'] == len(bindings) * parquet['cadaster_records']
+                 and query['cadaster_columns'] == len(profile_doc['cadaster_columns']), 'Pipeline accessor coverage differs')
+    comparison = docs['compare']
+    _fields(comparison, ('admission_files', 'parquet_files', 'primary_admission', 'primary_parquet',
+                         'replay_admission', 'replay_parquet', 'replay_verified'))
+    _require(comparison['replay_verified'] is True and comparison['primary_admission'] == outputs['admit']
+             and comparison['primary_parquet'] == outputs['convert'] and comparison['replay_admission'] == outputs['replay-admit']
+             and comparison['replay_parquet'] == outputs['replay-convert'], 'Pipeline comparison links differ')
+    # Delegate journal-chain authority to the existing read-only status API.
+    _require(Path(root).resolve() == Path(__file__).resolve().parents[1], 'Pipeline status requires the authorized checkout')
+    from .financial_pipeline import read_status
+    try:
+        status = read_status(_contained_path(root, proof['plan']['path']), plan_sha256=proof['plan']['sha256'])
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise CatalogError('integrity', 'Pipeline journal/status cannot be authenticated') from exc
+    current = [m for m in status['members'] if m['selection'] == gate['selection']]
+    _require(status['status'] == 'complete' and len(current) == 1 and current[0]['receipts'] == state['receipts']
+             and current[0]['state'] == 'replay_verified', 'Pipeline journal/status differs')
+    return {'acceptance': 'verified', 'historical_stages': {'state': 'available', 'kind': proof['kind']},
+            'parquet_metadata': docs['convert'], 'profile_metadata': profile_doc, 'captured_images': tuple(images)}

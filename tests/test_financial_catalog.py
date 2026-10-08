@@ -131,6 +131,33 @@ class CatalogMetadataBoundaryTests(unittest.TestCase):
 
 
 class CatalogAuthorityBoundaryTests(unittest.TestCase):
+    def test_native_profile_hash_policy_is_local_to_profiles(self):
+        with tempfile.TemporaryDirectory(prefix='catalog61-profile-') as folder:
+            root = Path(folder); name = 'bank_quality/financial-reports-profiles/202406.json'
+            target = root / name; target.parent.mkdir(parents=True)
+            lf = b'{"selection":{"period":202406}}\n'
+            reference = {'path': name, 'sha256': hashlib.sha256(lf).hexdigest(),
+                         'hash_policy': 'installed_profile_native_lf'}
+            for raw in (lf, lf.replace(b'\n', b'\r\n')):
+                target.write_bytes(raw)
+                self.assertEqual(catalog._native_profile_image(root, reference).raw, raw)
+            reference['path'] = 'data/curated/manifest.json'
+            with self.assertRaises(catalog.CatalogError):
+                catalog._native_profile_image(root, reference)
+
+    def test_supplement_and_pipeline_require_their_exact_authority_pins(self):
+        with tempfile.TemporaryDirectory(prefix='catalog61-gate-pin-') as folder:
+            for kind, parser in [('accepted_supplement403_v1', '_validate_supplement_gate'),
+                                  ('pipeline57_v1', '_validate_pipeline_gate')]:
+                value = self.gate()
+                if kind == 'accepted_supplement403_v1':
+                    value['selection']['period'] = 202403
+                    value['proof'] = {'kind': kind, 'supplement': value['admission']}
+                with self.subTest(kind=kind), self.assertRaises(catalog.CatalogError) as ctx:
+                    getattr(catalog, parser)(Path(folder), value)
+                self.assertEqual(ctx.exception.code, 'integrity')
+                self.assertIn('authority pin', str(ctx.exception))
+
     def test_trusted_code_images_are_finite_and_physical(self):
         source = Path(__file__).resolve().parents[1] / 'bank_quality/financial_acquisition_batch.py'
         lf = source.read_bytes().replace(b'\r\n', b'\n')
