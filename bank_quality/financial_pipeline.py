@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import time
 
 from . import financial_report_profiles as profiles
 from . import financial_reports as admission
@@ -394,7 +395,30 @@ class _Journal:
     def _head(self):
         temporary = self.root / ('head-' + str(len(self.records)) + '.pending')
         _publish(temporary, self.projection())
-        os.replace(temporary, self.head)
+        image = _dump(self.projection())
+        deadline = time.monotonic() + .25
+        last_error = None
+        for attempt in range(5):
+            if attempt and time.monotonic() >= deadline:
+                raise last_error
+            _name(temporary)
+            _name(self.head)
+            _require(temporary.read_bytes() == image, 'Pending stage head changed before publication')
+            if attempt and time.monotonic() >= deadline:
+                raise last_error
+            try:
+                os.replace(temporary, self.head)
+                break
+            except OSError as error:
+                last_error = error
+                if (sys.platform != 'win32' or getattr(error, 'winerror', None) not in (5, 32)
+                        or attempt == 4 or time.monotonic() >= deadline):
+                    raise
+                time.sleep(min(.01 * 2 ** attempt, max(0, deadline - time.monotonic())))
+        _name(self.head)
+        with self.head.open('r+b') as stream:
+            os.fsync(stream.fileno())
+            _require(stream.read() == image, 'Published stage head differs from journal projection')
 
     def append(self, kind, member, stage, data):
         record = {'sequence': len(self.records) + 1, 'previous_hash': self.tip,

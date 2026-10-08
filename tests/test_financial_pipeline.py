@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 import unittest
 import weakref
+import tempfile
 from unittest.mock import patch
 from contextlib import contextmanager
 from contextlib import redirect_stdout
@@ -21,6 +22,86 @@ from bank_quality import financial_parquet as dispatch
 RESOURCES = {'deadline_seconds': 30, 'min_available_physical_bytes': 1,
              'min_available_commit_bytes': 1, 'min_free_disk_bytes': 1,
              'sample_interval_seconds': .01}
+
+
+class JournalHeadRecoveryTests(unittest.TestCase):
+    def test_sleep_overshoot_does_not_schedule_another_replace(self):
+        from bank_quality import financial_pipeline as api
+        with tempfile.TemporaryDirectory(dir=profiles.CHECKOUT_ROOT / '.scratch') as folder:
+            journal = api._Journal(Path(folder) / 'run', {'sha256': 'a' * 64}, create=True)
+            clock = [0.0]
+            error = PermissionError('synthetic transient denial')
+            error.winerror = 5
+            def sleep(delay):
+                clock[0] = 1.0
+            with patch.object(api.sys, 'platform', 'win32'), patch.object(api.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(api.time, 'sleep', side_effect=sleep), patch.object(api.os, 'replace', side_effect=error) as replacement:
+                with self.assertRaises(PermissionError) as caught:
+                    journal.append('start', 201003, 'admit', {})
+            self.assertIs(caught.exception, error)
+            self.assertEqual(replacement.call_count, 1)
+
+    def test_other_errors_and_non_windows_are_not_retried(self):
+        from bank_quality import financial_pipeline as api
+        for platform, code in [('win32', 87), ('linux', 5)]:
+            with self.subTest(platform=platform, code=code), tempfile.TemporaryDirectory(dir=profiles.CHECKOUT_ROOT / '.scratch') as folder:
+                journal = api._Journal(Path(folder) / 'run', {'sha256': 'a' * 64}, create=True)
+                error = PermissionError('synthetic unsupported error')
+                error.winerror = code
+                with patch.object(api.sys, 'platform', platform), patch.object(api.os, 'replace', side_effect=error) as replace:
+                    with self.assertRaises(PermissionError):
+                        journal.append('start', 201003, 'admit', {})
+                self.assertEqual(replace.call_count, 1)
+
+    def test_changed_pending_is_rejected_before_retry(self):
+        from bank_quality import financial_pipeline as api
+        with tempfile.TemporaryDirectory(dir=profiles.CHECKOUT_ROOT / '.scratch') as folder:
+            journal = api._Journal(Path(folder) / 'run', {'sha256': 'a' * 64}, create=True)
+            previous = journal.head.read_bytes()
+            def replace(source, target):
+                source.write_bytes(b'changed')
+                error = PermissionError('synthetic transient denial')
+                error.winerror = 5
+                raise error
+            with patch.object(api.sys, 'platform', 'win32'), patch.object(api.os, 'replace', side_effect=replace) as replacement:
+                with self.assertRaises(api.IntegrityError):
+                    journal.append('start', 201003, 'admit', {})
+            self.assertEqual(replacement.call_count, 1)
+            self.assertEqual(journal.head.read_bytes(), previous)
+
+    def test_transient_windows_denial_recovers_without_rewriting_journal(self):
+        from bank_quality import financial_pipeline as api
+        with tempfile.TemporaryDirectory(dir=profiles.CHECKOUT_ROOT / '.scratch') as folder:
+            root = Path(folder) / 'run'
+            journal = api._Journal(root, {'sha256': 'a' * 64}, create=True)
+            original = api.os.replace
+            calls = []
+            def replace(source, target):
+                calls.append((source, target))
+                if len(calls) == 1:
+                    error = PermissionError('synthetic transient denial')
+                    error.winerror = 5
+                    raise error
+                return original(source, target)
+            with patch.object(api.sys, 'platform', 'win32'), patch.object(api.os, 'replace', replace):
+                journal.append('start', 201003, 'admit', {})
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(journal.path.read_bytes().splitlines()), 1)
+            self.assertEqual(json.loads(journal.head.read_bytes()), journal.projection())
+
+    def test_persistent_denial_keeps_previous_head_and_pending(self):
+        from bank_quality import financial_pipeline as api
+        with tempfile.TemporaryDirectory(dir=profiles.CHECKOUT_ROOT / '.scratch') as folder:
+            journal = api._Journal(Path(folder) / 'run', {'sha256': 'a' * 64}, create=True)
+            previous = journal.head.read_bytes()
+            error = PermissionError('synthetic persistent denial')
+            error.winerror = 32
+            with patch.object(api.sys, 'platform', 'win32'), patch.object(api.os, 'replace', side_effect=error) as replace:
+                with self.assertRaises(PermissionError):
+                    journal.append('start', 201003, 'admit', {})
+            self.assertEqual(replace.call_count, 5)
+            self.assertEqual(journal.head.read_bytes(), previous)
+            self.assertTrue((journal.root / 'head-1.pending').is_file())
+            self.assertEqual(len(journal.path.read_bytes().splitlines()), 1)
 
 
 @contextmanager
