@@ -130,5 +130,96 @@ class CatalogMetadataBoundaryTests(unittest.TestCase):
         self.invalid(lambda: catalog._canonical({1: 'numeric key', '1': 'string key'}))
 
 
+class CatalogAuthorityBoundaryTests(unittest.TestCase):
+    def test_trusted_code_images_are_finite_and_physical(self):
+        source = Path(__file__).resolve().parents[1] / 'bank_quality/financial_acquisition_batch.py'
+        lf = source.read_bytes().replace(b'\r\n', b'\n')
+        with tempfile.TemporaryDirectory(prefix='catalog61-code-image-') as folder:
+            root = Path(folder); target = root / 'bank_quality/financial_acquisition_batch.py'
+            target.parent.mkdir()
+            for raw in (lf, lf.replace(b'\n', b'\r\n')):
+                target.write_bytes(raw)
+                ref = {'path': 'bank_quality/financial_acquisition_batch.py', 'sha256': hashlib.sha256(raw).hexdigest()}
+                image = catalog._trusted_code_image(root, ref)
+                self.assertEqual(image.raw, raw)
+            changed = lf + b'\n# changed image\n'
+            target.write_bytes(changed)
+            with self.assertRaises(catalog.CatalogError):
+                catalog._trusted_code_image(root, {'path': 'bank_quality/financial_acquisition_batch.py',
+                                                   'sha256': hashlib.sha256(changed).hexdigest()})
+
+    def gate(self):
+        ref = {'path': 'data/runs/example.json', 'sha256': 'a' * 64}
+        return {'contract': 'ifdata-financial-catalog-gate-v1',
+                'selection': {'period': 202312, 'perspective': 1005, 'reports': [92, 96, 101, 98]},
+                'revision': 'a' * 64, 'profile': {**ref, 'hash_policy': 'installed_profile_native_lf'},
+                'admission': ref.copy(), 'parquet': ref.copy(),
+                'proof': {'kind': 'pipeline57_v1', 'plan': ref.copy(), 'result': ref.copy(), 'head': ref.copy(),
+                          'receipts': {s: ref.copy() for s in ('admit', 'convert', 'query', 'replay-admit',
+                                                               'replay-convert', 'replay-query', 'compare')}},
+                'limitations': []}
+
+    def reject(self, value):
+        with self.assertRaises(catalog.CatalogError) as ctx:
+            catalog._handoff_shape(value)
+        self.assertEqual(ctx.exception.code, 'integrity')
+
+    def test_caller_boolean_is_not_authority(self):
+        value = self.gate(); value['proof'] = {'kind': 'caller_boolean', 'accepted': True}; self.reject(value)
+
+    def test_valid_handoff_shape_is_not_an_acceptance_flag(self):
+        value = self.gate()
+        self.assertIsNone(catalog._handoff_shape(value))
+        self.assertNotIn('acceptance', value)
+
+    def test_selection_does_not_coerce_or_deduplicate(self):
+        for selection in [None, [], {'period': True, 'perspective': 1005, 'reports': [92, 96, 101, 98]},
+                          {'period': 202312, 'perspective': True, 'reports': [92, 96, 101, 98]},
+                          {'period': 202312, 'perspective': 1005, 'reports': [92, 92, 101, 98]},
+                          {'period': 202312, 'perspective': 1005, 'reports': [92, 96, 101]},
+                          {'period': 202312, 'perspective': 1005, 'reports': [92, 96, 101, True]}]:
+            with self.subTest(selection=selection):
+                value = self.gate(); value['selection'] = selection
+                self.reject(value)
+
+    def test_closed_handoff_rejects_extra_fields_and_revision_drift(self):
+        value = self.gate(); value['accepted'] = True; self.reject(value)
+        value = self.gate(); value['revision'] = 'b' * 64; self.reject(value)
+
+    def test_unknown_future_type_does_not_expand_historical_authority(self):
+        for kind in ['pipeline60_v1', 'standalone_v1', None, True]:
+            value = self.gate(); value['proof'] = {'kind': kind}; self.reject(value)
+
+    def test_proof_references_and_receipt_map_have_closed_shape(self):
+        for reference in [None, [], {}, {'path': 'x', 'sha256': 'a' * 64, 'accepted': True}]:
+            value = self.gate(); value['proof']['head'] = reference; self.reject(value)
+        for receipts in [{}, [], {**self.gate()['proof']['receipts'], 'fake-stage': {}}]:
+            value = self.gate(); value['proof']['receipts'] = receipts; self.reject(value)
+
+    def test_historical_anchor_requires_trusted_base_before_reading_paths(self):
+        with tempfile.TemporaryDirectory(prefix='catalog61-authority-') as folder:
+            value = self.gate()
+            value['proof'] = {'kind': 'installed_historical_anchor_v1', 'trusted_base_sha': '0' * 40,
+                              'trusted_code': value['admission'], 'transport': value['admission'],
+                              'ledger': value['admission'], 'replay_admission': value['admission'],
+                              'replay_parquet': value['admission'], 'stage_evidence': {}}
+            with self.assertRaises(catalog.CatalogError) as ctx:
+                catalog._validate_historical_gate(Path(folder), value)
+            self.assertEqual(ctx.exception.code, 'integrity')
+            self.assertIn('trusted base', str(ctx.exception))
+
+    def test_historical_type_never_accepts_202403(self):
+        with tempfile.TemporaryDirectory(prefix='catalog61-authority-') as folder:
+            value = self.gate(); value['selection']['period'] = 202403
+            value['proof'] = {'kind': 'installed_historical_anchor_v1', 'trusted_base_sha': catalog._TRUSTED_BASE,
+                              'trusted_code': value['admission'], 'transport': value['admission'],
+                              'ledger': value['admission'], 'replay_admission': value['admission'],
+                              'replay_parquet': value['admission'], 'stage_evidence': {}}
+            with self.assertRaises(catalog.CatalogError) as ctx:
+                catalog._validate_historical_gate(Path(folder), value)
+            self.assertEqual(ctx.exception.code, 'integrity')
+            self.assertIn('three historical', str(ctx.exception))
+
+
 if __name__ == '__main__':
     unittest.main()
