@@ -1355,7 +1355,7 @@ def _validate_representative_measurements(measurements, *, contract, profile=Non
                     _require(sample[field] >= required, 'Pending observation below pinned resource margin')
 
 
-def _apply_phase(state, record, bundle):
+def _apply_phase(state, record, bundle, *, session_roots=None):
     base = {'contract', 'sequence', 'previous_record_sha256', 'bundle_sha256', 'bootstrap_sha256', 'kind'}
     kind = record.get('kind')
     fields = ({'phase_id', 'period', 'phase', 'session', 'job_sha256', 'member_bootstrap_sha256', 'member_sequence', 'member_record_sha256'}
@@ -1378,7 +1378,8 @@ def _apply_phase(state, record, bundle):
                  and type(record['phase_id']) is str and re.fullmatch('[0-9a-f]{32}', record['phase_id'])
                  and type(record['member_sequence']) is int and record['member_sequence'] >= 0, 'Phase member/start identity differs')
         acquisition._digest(record['member_record_sha256'])
-        session = member['session_root'] + '/' + record['phase'] + '-' + record['phase_id']
+        session_root = member['session_root'] if session_roots is None else session_roots[member['period']]
+        session = session_root + '/' + record['phase'] + '-' + record['phase_id']
         _require(record['session'] == session and record['phase_id'] not in state['pending']
                  and record['phase_id'] not in state['finished'], 'Phase session/id differs')
         previous = list(state['pending'].values()) + list(state['finished'].values())
@@ -2495,7 +2496,11 @@ def _continuation_activation_files(manifest, manifest_pin):
         'head.json': _canonical({'sequence': abort['sequence'], 'record_sha256': abort['record_sha256'],
                                 'state_sha256': _sha(_canonical(state))})}
     for tail in classification['authority_tails']:
-        head = _json(_path(tail['head']['path']).read_bytes())
+        # The authenticated preparation only admits original sequence zero.
+        # Keep this deterministic helper pure, usable by read-only replay too.
+        _same(tail['state'], acquisition._initial_state(), 'Activation requires original initial member state')
+        head = {'sequence': 0, 'record_sha256': acquisition._EMPTY_HASH,
+                'state_sha256': _sha(_canonical(tail['state']))}
         item = record(head['sequence'] + 1, head['record_sha256'], 'continuation_start',
             {key: tail[key] for key in ('period', 'job_sha256', 'bootstrap_sha256')})
         prefix = 'members/' + str(tail['period']) + '/'
@@ -2618,3 +2623,198 @@ def activate_historical_continuation(draft_path, draft_sha256, *, destination):
         return {'contract': 'financial-acquisition-continuation-activation-v1', 'status': 'activated',
             'manifest': manifest_ref, 'ready': {'path': ready_path.relative_to(_ROOT).as_posix(),
                                                'sha256': _sha(_canonical(ready))}}
+
+
+def _replay_continuation_records(records, *, manifest, bundle, member_period=None):
+    """Pure replay of anchored overlays. No claim, source acceptance or writer."""
+    acquisition._closed_data(records)
+    acquisition._closed_data(manifest)
+    acquisition._closed_data(bundle)
+    _require(type(records) is list and type(manifest) is dict and type(bundle) is dict,
+             'Invalid closed continuation replay inputs')
+    manifest_pin = _sha(_canonical(manifest))
+    initial_files = _continuation_activation_files(manifest, manifest_pin)
+    classification = manifest['classification']
+    if member_period is None:
+        prefix_name = 'journal.jsonl'
+        parent = manifest['parent_phase_tail']
+        state = _ledger_state()
+        start = copy.deepcopy(classification['phase_start'])
+        start.pop('record_sha256')
+        _apply_phase(state, start, bundle)
+        state['aborted'] = {}
+    else:
+        _require(type(member_period) is int, 'Invalid continuation member period')
+        matches = [tail for tail in classification['authority_tails'] if tail['period'] == member_period]
+        _require(len(matches) == 1, 'Member outside continuation window')
+        tail = matches[0]
+        member = next(m for m in bundle['members'] if m['period'] == member_period)
+        job = member['job']
+        state = copy.deepcopy(tail['state'])
+        parent = {'sequence': 0, 'record_sha256': acquisition._EMPTY_HASH,
+                  'state_sha256': _sha(_canonical(state))}
+        prefix_name = 'members/' + str(member_period) + '/journal.jsonl'
+        targets = {t['target_key']: t for t in
+            (acquisition._target(offer, member_period) for offer in job['descriptors'][0]['source_offers'])}
+        policy = _historical_limits(job['member']['budget_id'])
+    initial = [_json(line) for line in initial_files[prefix_name].splitlines()]
+    _require(len(records) >= len(initial) and records[:len(initial)] == initial,
+             'Continuation activation prefix missing or altered')
+    previous, sequence = parent['record_sha256'], parent['sequence']
+    states, checked = [copy.deepcopy(state)], []
+    common_fields = {'attempt_id', 'target_key', 'session_id', 'attempt_delta', 'reserved_bytes',
+        'observed_bytes', 'reserved_attempt_seconds', 'observed_attempt_seconds', 'reserved_backoff_seconds',
+        'observed_backoff_seconds', 'failure_count', 'failure_streak'}
+    member_extras = {'reserve': set(), 'backoff': set(), 'backoff_finish': set(),
+        'backoff_orphan': set(), 'recovery': set(), 'identity': {'identity', 'spec_path', 'spec_sha256'},
+        'finish': {'actual_elapsed_microseconds', 'overshoot_microseconds', 'status', 'retryable', 'source_ref',
+                   'guard', 'attempt_evidence', 'tree_extinct', 'worker_exit_code', 'deadline_reached'},
+        'orphan': {'status', 'retryable', 'source_ref', 'guard', 'diagnostic'},
+        'reuse': {'source_ref'}, 'guard_failure': {'status', 'guard', 'diagnostic'}}
+    for index, raw in enumerate(records):
+        _require(type(raw) is dict and set(raw) == {'contract', 'manifest_sha256', 'sequence',
+            'previous_record_sha256', 'kind', 'details', 'record_sha256'}
+            and raw['contract'] == 'financial-acquisition-continuation-ledger-v1'
+            and raw['manifest_sha256'] == manifest_pin and type(raw['sequence']) is int
+            and raw['sequence'] == sequence + 1 and raw['previous_record_sha256'] == previous
+            and type(raw['kind']) is str and type(raw['details']) is dict, 'Continuation envelope chain/schema differs')
+        unsigned = {key: value for key, value in raw.items() if key != 'record_sha256'}
+        _require(raw['record_sha256'] == _sha(_canonical(unsigned)), 'Continuation envelope hash differs')
+        kind, details = raw['kind'], copy.deepcopy(raw['details'])
+        if index < len(initial):
+            if member_period is None and kind == 'phase_abort_no_attempt':
+                phase_id = classification['phase_id']
+                _require(phase_id in state['pending'] and phase_id not in state['aborted'], 'Abort identity missing/duplicated')
+                state['pending'].pop(phase_id)
+                state['aborted'][phase_id] = copy.deepcopy(classification['phase_start'])
+        elif member_period is None:
+            _require(kind in ('phase_start', 'halt'), 'Continuation transition requires its own terminal proof decoder')
+            if kind == 'phase_start':
+                _require(details.get('phase_id') not in state['aborted'], 'Aborted phase identity cannot be reused')
+                _require(type(details.get('member_sequence')) is int and details['member_sequence'] >= 1,
+                         'New phase requires a continuation member prefix')
+            semantic = {'contract': 'financial-acquisition-batch-ledger-v1', 'sequence': raw['sequence'],
+                'previous_record_sha256': raw['previous_record_sha256'],
+                'bundle_sha256': manifest['predecessor_bundle']['sha256'],
+                'bootstrap_sha256': manifest['predecessor_bootstrap']['sha256'], 'kind': kind, **details}
+            _require(not set(details) & {'contract', 'sequence', 'previous_record_sha256', 'kind',
+                        'bundle_sha256', 'bootstrap_sha256'}, 'Details overwrite phase identity')
+            sessions = {m['period']: manifest['destination'] + '/members/' + str(m['period']) + '/sessions'
+                        for m in bundle['members']}
+            _apply_phase(state, semantic, bundle, session_roots=sessions)
+        else:
+            _require(kind in member_extras and set(details) == common_fields | member_extras[kind],
+                     'Invalid closed continuation member transition')
+            for key in ('attempt_delta', 'reserved_bytes', 'reserved_attempt_seconds',
+                        'reserved_backoff_seconds', 'failure_count', 'failure_streak'):
+                _require(type(details[key]) is int and details[key] >= 0, 'Invalid continuation counter type/range')
+            for key in ('observed_bytes', 'observed_attempt_seconds', 'observed_backoff_seconds'):
+                consumed = (kind == 'finish' and key != 'observed_backoff_seconds'
+                            or kind == 'backoff_finish' and key == 'observed_backoff_seconds')
+                _require(type(details[key]) is int and details[key] >= 0 if consumed else details[key] is None,
+                         'Invalid or unexpected observed counter')
+            _require(all(type(details[key]) is str for key in ('attempt_id', 'target_key', 'session_id')),
+                     'Invalid continuation attempt identifiers')
+            semantic = {'sequence': raw['sequence'], 'previous_record_sha256': raw['previous_record_sha256'],
+                        'job_sha256': job['job_sha256'], 'kind': kind, **details}
+            acquisition._apply_record(state, semantic, targets, policy, job_contract=job['contract'])
+        sequence, previous = raw['sequence'], raw['record_sha256']
+        checked.append(copy.deepcopy(raw))
+        states.append(copy.deepcopy(state))
+    return {'records': checked, 'states': states, 'state': state,
+        'head': {'sequence': sequence, 'record_sha256': previous, 'state_sha256': _sha(_canonical(state))}}
+
+
+def verify_historical_continuation(manifest_path, manifest_sha256, *, ready_sha256):
+    """Authenticate current overlay state; never activates or grants execution."""
+    path = _path(Path(manifest_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    _file(path, acquisition._digest(manifest_sha256))
+    manifest = _json(path.read_bytes())
+    _require(type(manifest) is dict and set(manifest) == {'contract', 'draft', 'predecessor_scope',
+        'predecessor_bundle', 'predecessor_bootstrap', 'current_code_pins', 'destination',
+        'parent_phase_tail', 'classification', 'effective_totals'}
+        and manifest['contract'] == 'financial-acquisition-continuation-v1'
+        and type(manifest['draft']) is dict and set(manifest['draft']) == {'path', 'sha256'},
+        'Invalid closed continuation manifest')
+    folder = acquisition._safe_destination(_ROOT / manifest['destination'])
+    _require(path == folder / 'manifest.json', 'Manifest destination/path differs')
+    draft_path = _path(manifest['draft']['path'])
+    _require(not folder.is_relative_to(draft_path.parent) and not draft_path.parent.is_relative_to(folder),
+             'Manifest overlaps preparation ownership')
+    draft = _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder)
+    original = draft['original']
+    bundle = _json(_path(original['bundle']['path']).read_bytes())
+    expected = {'contract': 'financial-acquisition-continuation-v1', 'draft': manifest['draft'],
+        'predecessor_scope': draft['scope'], 'predecessor_bundle': original['bundle'],
+        'predecessor_bootstrap': original['bootstrap'], 'current_code_pins': draft['current_code_pins'],
+        'destination': manifest['destination'],
+        'parent_phase_tail': _json(_path(bundle['destination'] + '/head.json').read_bytes()),
+        'classification': draft['classification'], 'effective_totals': draft['effective_totals']}
+    _same(manifest, expected, 'Manifest differs from authenticated predecessor replay')
+    manifest_ref = {'path': path.relative_to(_ROOT).as_posix(), 'sha256': manifest_sha256}
+    binding, _ = _batch_paths(draft['scope'])
+    cas = _path(binding.with_name(binding.name.replace('.binding.json', '.continuation.json')).relative_to(_ROOT).as_posix())
+    expected_cas = {'contract': 'financial-acquisition-continuation-binding-v1', 'scope': draft['scope'],
+        'predecessor_bundle': original['bundle'], 'predecessor_bootstrap': original['bootstrap'],
+        'predecessor_binding': original['binding'], 'draft': manifest['draft'], 'manifest': manifest_ref}
+    cas_raw = cas.read_bytes()
+    _same(_json(cas_raw), expected_cas, 'Continuation CAS differs')
+    files = _continuation_activation_files(manifest, manifest_sha256)
+    ready_path = _path((folder / 'ready.json').relative_to(_ROOT).as_posix())
+    _file(ready_path, acquisition._digest(ready_sha256))
+    expected_ready = {'contract': 'financial-acquisition-continuation-ready-v1', 'manifest': manifest_ref,
+        'activation_files': {(folder / name).relative_to(_ROOT).as_posix(): _sha(raw) for name, raw in files.items()}}
+    _same(_json(ready_path.read_bytes()), expected_ready, 'Ready initial proof differs')
+    _check_activation_tree(folder, set(files) | {'ready.json'})
+    observed = {path: manifest_sha256, cas: _sha(cas_raw), ready_path: ready_sha256}
+    def replay_folder(current, period=None):
+        journal_path = _path((current / 'journal.jsonl').relative_to(_ROOT).as_posix())
+        head_path = _path((current / 'head.json').relative_to(_ROOT).as_posix())
+        raw, head_raw = journal_path.read_bytes(), head_path.read_bytes()
+        _require(raw.endswith(b'\n'), 'Continuation journal tail partial/empty')
+        replay = _replay_continuation_records([_json(line) for line in raw.splitlines()],
+            manifest=manifest, bundle=bundle, member_period=period)
+        _same(_json(head_raw), replay['head'], 'Continuation head is stale or altered; no implicit recovery')
+        observed.update({journal_path: _sha(raw), head_path: _sha(head_raw)})
+        return replay
+    batch = replay_folder(folder)
+    members, member_replays, authenticated_sources = [], {}, []
+    for member in bundle['members']:
+        replay = replay_folder(folder / 'members' / str(member['period']), member['period'])
+        member_replays[member['period']] = replay
+        targets = _verify_historical_job(member['job'])
+        for key, source in replay['state']['sources'].items():
+            acquisition._authenticated(source, expected=targets[key])
+            authenticated_sources.append((source, targets[key]))
+        members.append({'period': member['period'], 'head': replay['head'], 'state': replay['state']})
+    phases = [record['details'] for record in batch['records'] if record['kind'] == 'phase_start']
+    for start in phases:
+        replay = member_replays[start['period']]
+        sequence = start['member_sequence']
+        _require(1 <= sequence <= replay['head']['sequence']
+            and replay['records'][sequence - 1]['record_sha256'] == start['member_record_sha256'],
+            'Phase start does not match authenticated member prefix')
+    for period, replay in member_replays.items():
+        member = next(m for m in bundle['members'] if m['period'] == period)
+        targets = _verify_historical_job(member['job'])
+        for record in replay['records'][1:]:
+            details = record['details']
+            matches = [start for start in phases if start['period'] == period
+                and Path(start['session']).name == details['session_id']]
+            _require(len(matches) == 1 and record['sequence'] > matches[0]['member_sequence'],
+                     'Member event lacks its committed continuation phase/session')
+            target = targets.get(details['target_key'])
+            if record['kind'] != 'recovery':
+                _require(target is not None and (target['role'] == 'numeric') == (matches[0]['phase'] == 'values'),
+                         'Member target outside its committed phase')
+    _reconstruct_continuation_draft(draft_path, manifest['draft']['sha256'], folder)
+    for current, pin in observed.items():
+        _file(current, pin)
+    _check_activation_tree(folder, set(files) | {'ready.json'})
+    for source, target in authenticated_sources:
+        acquisition._authenticated(source, expected=target)
+    return {'contract': 'financial-acquisition-continuation-state-v1', 'executable': False,
+        'status': 'halted' if batch['state']['halt'] else 'verified', 'manifest': manifest_ref,
+        'ready': {'path': ready_path.relative_to(_ROOT).as_posix(), 'sha256': ready_sha256},
+        'original': copy.deepcopy(original), 'batch': {'head': batch['head'], 'state': batch['state']},
+        'members': members, 'totals': {key: sum(m['state'][key] for m in members) for key in _COUNTERS}}

@@ -2542,3 +2542,237 @@ class HistoricalContinuationActivationTests(unittest.TestCase):
                     with exclusive_claim(claim):
                         self.fail('Second owner acquired the same claim')
         self.assertEqual(self.protected(), protected)
+
+
+class HistoricalContinuationReplayTests(unittest.TestCase):
+    prepare = HistoricalContinuationPreparationTests.prepare
+    setUp = HistoricalContinuationPreparationTests.setUp
+    call_prepare = HistoricalContinuationPreparationTests.call_prepare
+    prepared = HistoricalContinuationActivationTests.prepared
+    activate = HistoricalContinuationActivationTests.activate
+
+    def activated(self):
+        self.prepared()
+        self.active_refs = self.activate()
+        self.manifest = json.loads((self.root / self.active_refs['manifest']['path']).read_bytes())
+        self.original_bundle = json.loads(self.bundle.read_bytes())
+        self.batch_records = [json.loads(line) for line in (self.active_destination / 'journal.jsonl').read_bytes().splitlines()]
+        self.member_records = [json.loads(line) for line in
+            (self.active_destination / 'members/201003/journal.jsonl').read_bytes().splitlines()]
+
+    def envelope(self, records, kind, details):
+        previous = records[-1]
+        item = {'contract': 'financial-acquisition-continuation-ledger-v1',
+            'manifest_sha256': self.active_refs['manifest']['sha256'], 'sequence': previous['sequence'] + 1,
+            'previous_record_sha256': previous['record_sha256'], 'kind': kind, 'details': details}
+        return dict(item, record_sha256=sha(canonical(item)))
+
+    def replay(self, records, *, period=None):
+        return self.batch._replay_continuation_records(records, manifest=self.manifest,
+            bundle=self.original_bundle, member_period=period)
+
+    def phase_details(self, *, phase_id='c' * 32):
+        return {'phase_id': phase_id, 'period': 201003, 'phase': 'metadata',
+            'session': self.manifest['destination'] + '/members/201003/sessions/metadata-' + phase_id,
+            'job_sha256': self.member['job_sha256'], 'member_bootstrap_sha256': self.member['bootstrap_sha256'],
+            'member_sequence': 1, 'member_record_sha256': self.member_records[0]['record_sha256']}
+
+    def verify(self):
+        with patch.object(self.acquisition, '_claim', side_effect=AssertionError('Read-only verifier acquired claim')), \
+                patch.object(self.acquisition, '_open_authority', side_effect=AssertionError('Old authority opened')), \
+                patch.object(self.acquisition, '_write_exclusive', side_effect=AssertionError('Verifier wrote')), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=AssertionError('Verifier launched worker')):
+            return self.batch.verify_historical_continuation(self.root / self.active_refs['manifest']['path'],
+                self.active_refs['manifest']['sha256'], ready_sha256=self.active_refs['ready']['sha256'])
+
+    def persist_batch(self, records):
+        replay = self.replay(records)
+        (self.active_destination / 'journal.jsonl').write_bytes(b''.join(canonical(r) + b'\n' for r in records))
+        (self.active_destination / 'head.json').write_bytes(canonical(replay['head']))
+
+    def test_pure_initial_replay_and_read_only_verification_preserve_original_spend(self):
+        self.activated()
+        with patch.object(self.batch, '_path', side_effect=AssertionError('Pure replay accessed disk')):
+            replay = self.replay(self.batch_records)
+            member = self.replay(self.member_records, period=201003)
+        self.assertFalse(replay['state']['pending'])
+        self.assertIn(self.start['phase_id'], replay['state']['aborted'])
+        self.assertEqual(member['state']['attempts'], 0)
+        result = self.verify()
+        self.assertEqual(result['contract'], 'financial-acquisition-continuation-state-v1')
+        self.assertEqual(result['totals'], self.manifest['effective_totals']['totals'])
+        self.assertEqual(result['batch']['head'], replay['head'])
+        self.assertEqual(len(result['members']), 4)
+
+    def test_new_phase_uses_continuation_session_and_ready_is_initial_proof(self):
+        self.activated()
+        record = self.envelope(self.batch_records, 'phase_start', self.phase_details())
+        self.persist_batch(self.batch_records + [record])
+        result = self.verify()
+        self.assertIn('c' * 32, result['batch']['state']['pending'])
+        self.assertEqual(result['batch']['head']['sequence'], 4)
+        self.assertEqual(sha((self.root / self.active_refs['ready']['path']).read_bytes()), self.active_refs['ready']['sha256'])
+
+    def test_aborted_phase_id_cannot_be_reused_even_with_valid_chain(self):
+        self.activated()
+        record = self.envelope(self.batch_records, 'phase_start', self.phase_details(phase_id=self.start['phase_id']))
+        with self.assertRaises(ValueError):
+            self.replay(self.batch_records + [record])
+
+    def test_old_session_root_is_not_a_continuation_session(self):
+        self.activated()
+        details = self.phase_details()
+        details['session'] = self.member['session_root'] + '/metadata-' + details['phase_id']
+        with self.assertRaises(ValueError):
+            self.replay(self.batch_records + [self.envelope(self.batch_records, 'phase_start', details)])
+
+    def test_legacy_phase_finish_is_not_silently_accepted_by_new_replay(self):
+        self.activated()
+        records = self.batch_records + [self.envelope(self.batch_records, 'phase_start', self.phase_details())]
+        record = self.envelope(records, 'phase_finish', {'phase_id': 'c' * 32, 'recovered': False,
+            'result': {'contract': 'financial-acquisition-phase-result-v1', 'status': 'complete', 'guard': '',
+                       'error': '', 'receipt': {'path': 'fake/receipt', 'sha256': 'f' * 64},
+                       'checkpoint': {'path': 'fake/checkpoint', 'sha256': 'f' * 64}}})
+        with self.assertRaises(ValueError):
+            self.replay(records + [record])
+
+    def test_rehashed_extra_counter_sequence_and_incomplete_prefix_are_rejected(self):
+        self.activated()
+        for damage in ('extra', 'sequence', 'manifest', 'abort_again', 'prefix_missing'):
+            with self.subTest(damage=damage):
+                records = copy.deepcopy(self.batch_records)
+                if damage == 'prefix_missing':
+                    records = records[:1]
+                elif damage == 'abort_again':
+                    records.append(self.envelope(records, 'phase_abort_no_attempt', records[1]['details']))
+                else:
+                    record = records[-1]
+                    if damage == 'extra':
+                        record['details']['budget_reset'] = True
+                    elif damage == 'sequence':
+                        record['sequence'] += 1
+                    else:
+                        record['manifest_sha256'] = 'f' * 64
+                    record['record_sha256'] = sha(canonical({k: v for k, v in record.items() if k != 'record_sha256'}))
+                with self.assertRaises(ValueError):
+                    self.replay(records)
+
+    def member_details(self, *, kind='reserve'):
+        target = self.member['job']['targets'][0]
+        policies = self.acquisition._limits(self.member['job'])
+        details = {'attempt_id': 'd' * 32, 'target_key': target['target_key'], 'session_id': 'metadata-' + 'c' * 32,
+            'attempt_delta': 1 if kind == 'reserve' else 0,
+            'reserved_bytes': self.acquisition._body_cap(target, policies) if kind == 'reserve' else 0,
+            'observed_bytes': None, 'reserved_attempt_seconds': policies['deadline_seconds'] if kind == 'reserve' else 0,
+            'observed_attempt_seconds': None, 'reserved_backoff_seconds': 0, 'observed_backoff_seconds': None,
+            'failure_count': 0, 'failure_streak': 0}
+        return details
+
+    def test_member_reservation_replay_debits_original_policy_without_new_bootstrap(self):
+        self.activated()
+        details = self.member_details()
+        records = self.member_records + [self.envelope(self.member_records, 'reserve', details)]
+        replay = self.replay(records, period=201003)
+        self.assertEqual(replay['state']['attempts'], 1)
+        self.assertEqual(replay['state']['body_bytes'], details['reserved_bytes'])
+        self.assertEqual(replay['state']['attempt_seconds'], details['reserved_attempt_seconds'])
+        self.assertIn(details['attempt_id'], replay['state']['pending'])
+        self.assertEqual(replay['head']['sequence'], 2)
+        for key in ('attempt_delta', 'reserved_bytes', 'failure_count'):
+            mutated = copy.deepcopy(records)
+            mutated[-1]['details'][key] += 1
+            mutated[-1]['record_sha256'] = sha(canonical({k: v for k, v in mutated[-1].items() if k != 'record_sha256'}))
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.replay(mutated, period=201003)
+
+    def test_read_only_verify_rejects_stale_head_without_recovery(self):
+        self.activated()
+        original_head = (self.active_destination / 'head.json').read_bytes()
+        self.persist_batch(self.batch_records + [self.envelope(self.batch_records, 'phase_start', self.phase_details())])
+        (self.active_destination / 'head.json').write_bytes(original_head)
+        with self.assertRaises(ValueError):
+            self.verify()
+        self.assertEqual((self.active_destination / 'head.json').read_bytes(), original_head)
+
+    def test_rehashed_ready_or_cas_cannot_replace_the_initial_authority(self):
+        self.activated()
+        for target in (self.active_destination / 'ready.json', self.cas):
+            raw = target.read_bytes()
+            value = json.loads(raw)
+            value['forged'] = True
+            target.write_bytes(canonical(value))
+            if target.name == 'ready.json':
+                self.active_refs['ready']['sha256'] = sha(target.read_bytes())
+            with self.subTest(target=target.name), self.assertRaises(ValueError):
+                self.verify()
+            target.write_bytes(raw)
+            if target.name == 'ready.json':
+                self.active_refs['ready']['sha256'] = sha(raw)
+
+    def persist_member(self, records):
+        replay = self.replay(records, period=201003)
+        folder = self.active_destination / 'members/201003'
+        (folder / 'journal.jsonl').write_bytes(b''.join(canonical(r) + b'\n' for r in records))
+        (folder / 'head.json').write_bytes(canonical(replay['head']))
+
+    def test_current_member_reservation_requires_a_matching_committed_phase(self):
+        self.activated()
+        record = self.envelope(self.member_records, 'reserve', self.member_details())
+        self.persist_member(self.member_records + [record])
+        with self.assertRaises(ValueError):
+            self.verify()
+        self.persist_batch(self.batch_records + [self.envelope(self.batch_records, 'phase_start', self.phase_details())])
+        result = self.verify()
+        self.assertEqual(result['totals']['attempts'], 1)
+        self.assertEqual(result['totals']['body_bytes'], record['details']['reserved_bytes'])
+
+    def test_phase_start_member_prefix_must_match_the_physical_overlay(self):
+        self.activated()
+        details = self.phase_details()
+        details['member_record_sha256'] = 'f' * 64
+        self.persist_batch(self.batch_records + [self.envelope(self.batch_records, 'phase_start', details)])
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_member_event_cannot_precede_phase_start_prefix(self):
+        self.activated()
+        details = self.member_details()
+        records = self.member_records + [self.envelope(self.member_records, 'reserve', details)]
+        self.persist_member(records)
+        phase = self.phase_details()
+        phase['member_sequence'] = 2
+        phase['member_record_sha256'] = records[-1]['record_sha256']
+        self.persist_batch(self.batch_records + [self.envelope(self.batch_records, 'phase_start', phase)])
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_member_finish_keeps_original_accounting_but_does_not_authenticate_source(self):
+        self.activated()
+        records = self.member_records + [self.envelope(self.member_records, 'reserve', self.member_details())]
+        identity = dict(self.member_details(kind='identity'), identity={'pid': 7, 'creation_time': 9, 'contained': True},
+            spec_path='data/runs/synthetic-worker.json', spec_sha256='e' * 64)
+        records.append(self.envelope(records, 'identity', identity))
+        finish = dict(self.member_details(kind='finish'), observed_bytes=5, observed_attempt_seconds=2,
+            actual_elapsed_microseconds=2_000_000, overshoot_microseconds=0, status='source_complete',
+            retryable=False, source_ref={'manifest_path': 'missing/source.json', 'manifest_sha256': 'f' * 64},
+            guard='', attempt_evidence={}, tree_extinct=True, worker_exit_code=0, deadline_reached=False)
+        records.append(self.envelope(records, 'finish', finish))
+        replay = self.replay(records, period=201003)
+        self.assertEqual(replay['state']['attempts'], 1)
+        self.assertEqual(replay['state']['body_bytes'], 5)
+        self.assertEqual(replay['state']['attempt_seconds'], 2)
+        self.assertFalse(replay['state']['pending'])
+        self.persist_member(records)
+        self.persist_batch(self.batch_records + [self.envelope(self.batch_records, 'phase_start', self.phase_details())])
+        with self.assertRaises((ValueError, OSError)):
+            self.verify()
+
+    def test_unused_observed_counters_cannot_hide_invalid_values_in_a_reservation(self):
+        self.activated()
+        for key, value in (('observed_bytes', 'unknown'), ('observed_bytes', -1),
+                           ('observed_backoff_seconds', True), ('observed_attempt_seconds', 0)):
+            details = self.member_details()
+            details[key] = value
+            record = self.envelope(self.member_records, 'reserve', details)
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                self.replay(self.member_records + [record], period=201003)
