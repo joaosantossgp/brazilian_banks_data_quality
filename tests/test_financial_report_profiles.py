@@ -25,12 +25,16 @@ def sha(body):
 class ProfileTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(profiles, 'Task1 profile authoring implementation is absent')
+        self.addCleanup(patch.stopall)
+        self.prepare_fixture()
+
+    def prepare_fixture(self):
+        """Give independent mutations fresh physical paths, without I/O retries."""
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.pkg = self.root / 'bank_quality'
         self.pkg.mkdir()
-        self.addCleanup(patch.stopall)
         patch.object(profiles, 'CHECKOUT_ROOT', self.root).start()
         patch.object(profiles, 'PACKAGE_ROOT', self.pkg).start()
         self.selection = {'period': 201403, 'perspective': 1005, 'reports': [1, 3, 4, 5]}
@@ -147,7 +151,7 @@ class ProfileTests(unittest.TestCase):
                      'sidecar_url', 'sidecar_headers', 'duplicate_length', 'cl_te',
                      'encoding', 'terminal_mismatch', 'diagnostic', 'summary_headers')
         for mutation in mutations:
-            self.prepare(24)
+            self.prepare_fixture()
             source = self.sources[1]
             path = self.root / source['manifest_path']
             manifest = json.loads(path.read_bytes())
