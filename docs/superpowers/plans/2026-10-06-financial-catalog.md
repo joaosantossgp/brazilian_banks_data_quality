@@ -33,8 +33,8 @@ Somente checkout/host autorizado. Leitura dos módulos/perfis/registry existente
 - [x] Conferir payloads primários/replay 42/46 e embedded source correspondente à própria admissão.
 - [x] Conferir plano/result/head/49 receipts e outputs dos sete membros 57; preparar os sete wrappers fechados.
 - [x] Registrar interface prospectiva 60→61: contrato versionado/gates integrais, tipo/parser próprios revisados antes de novos membros; unknown rejeitado até extensão.
-- [ ] Revisar spec/plano públicos e registrar evidência/resultado na 61.
-- [ ] Atualizar arquitetura e claim de implementação com HEAD/base, allowlist, owner, destinos privados e recursos medidos. Prontidão positiva do software inicial 11 é distinta do corpus final 66.
+- [x] Revisar spec/plano públicos e registrar evidência/resultado na 61 (APP documentalbb77; claim6061550752).
+- [x] Atualizar arquitetura e claim de implementação com HEAD/base, allowlist, owner, destinos privados e recursos medidos. Prontidão positiva do software inicial 11 é distinta do corpus final 66.
 
 Os quatro checkpoints de entrada possuem hashes/escopos na spec. A conferência dos helpers não substitui o parser futuro nem o gate Windows 59. Autoridade confiável é derivada da base Git e pins externos, nunca de boolean fornecido pelo caller ou tabela alterada pelo candidato.
 

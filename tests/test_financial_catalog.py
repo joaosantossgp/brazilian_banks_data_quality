@@ -248,6 +248,117 @@ class CatalogAuthorityBoundaryTests(unittest.TestCase):
             self.assertIn('three historical', str(ctx.exception))
 
 
+class CatalogJournalProjectionTests(unittest.TestCase):
+    def test_pipeline_journal_authority_uses_a_canonical_local_path(self):
+        with tempfile.TemporaryDirectory(prefix='catalog61-journal-path-') as folder:
+            path = catalog._contained_path(Path(folder), catalog._PIPELINE57_JOURNAL['path'])
+            self.assertEqual(path.name, 'journal.jsonl')
+
+    def journal(self):
+        records = []
+        tip = '0' * 64
+        for stage in catalog._STAGES:
+            for kind in ('start', 'finish'):
+                sequence = len(records) + 1
+                data = ({'spec': {'path': f'data/runs/stages/{stage}/spec.json', 'sha256': 'a' * 64}}
+                        if kind == 'start' else
+                        {'start_sequence': sequence - 1,
+                         'receipt': {'path': f'data/runs/stages/{stage}/receipt.json', 'sha256': 'b' * 64}})
+                record = {'sequence': sequence, 'previous_hash': tip, 'plan_sha256': 'c' * 64,
+                          'kind': kind, 'member': 202406, 'stage': stage, 'data': data}
+                raw = catalog._canonical(record)
+                tip = hashlib.sha256(raw[:-1]).hexdigest()
+                records.append(raw)
+        raw = b''.join(records)
+        image = catalog._PinnedImage('data/runs/execution/journal.jsonl', hashlib.sha256(raw).hexdigest(), raw)
+        head = {'sequence': 14, 'journal_sha256': tip, 'plan_sha256': 'c' * 64}
+        receipts = {stage: {'path': f'data/runs/stages/{stage}/receipt.json', 'sha256': 'b' * 64}
+                    for stage in catalog._STAGES}
+        return image, head, receipts
+
+    def operation(self):
+        operation = getattr(catalog, '_journal_projection', None)
+        self.assertTrue(callable(operation), 'Missing frozen journal authority behavior')
+        def check(image, head, member, receipts, *, specs=None):
+            expected = specs if specs is not None else {
+                stage: {'path': f'data/runs/stages/{stage}/spec.json', 'sha256': 'a' * 64}
+                for stage in catalog._STAGES}
+            return operation(image, head, member, receipts, specs=expected)
+        return check
+
+    def test_journal_projection_preserves_physical_pin_chain_and_member_finish_links(self):
+        operation = self.operation()
+        image, head, receipts = self.journal()
+        projection = operation(image, head, 202406, receipts)
+        self.assertEqual(projection['journal'], {'path': image.path, 'sha256': image.sha256, 'bytes': len(image.raw)})
+        self.assertEqual(projection['head'], head)
+        self.assertEqual(len(projection['finishes']), 7)
+        self.assertEqual([f['stage'] for f in projection['finishes']], list(catalog._STAGES))
+        self.assertEqual(projection['finishes'][0]['receipt'], receipts['admit'])
+        self.assertNotIn('records', projection)
+
+    def test_journal_projection_rejects_partial_chain_stale_head_and_wrong_member_receipt(self):
+        operation = self.operation()
+        image, head, receipts = self.journal()
+        for raw, candidate_head, member, refs in [
+            (image.raw[:-1], head, 202406, receipts),
+            (image.raw, {**head, 'sequence': True}, 202406, receipts),
+            (image.raw, {**head, 'journal_sha256': 'd' * 64}, 202406, receipts),
+            (image.raw, head, 202409, receipts),
+            (image.raw, head, 202406, {**receipts, 'compare': {'path': 'data/runs/other.json', 'sha256': 'b' * 64}}),
+        ]:
+            with self.subTest(member=member, bytes=len(raw)), self.assertRaises(catalog.CatalogError) as ctx:
+                operation(catalog._PinnedImage(image.path, hashlib.sha256(raw).hexdigest(), raw),
+                          candidate_head, member, refs)
+            self.assertEqual(ctx.exception.code, 'integrity')
+
+    def test_journal_projection_rejects_forged_image_pin_and_invalid_causality(self):
+        operation = self.operation()
+        image, head, receipts = self.journal()
+        with self.assertRaises(catalog.CatalogError):
+            operation(catalog._PinnedImage(image.path, 'd' * 64, image.raw), head, 202406, receipts)
+        records = [catalog._json_bytes(line) for line in image.raw.splitlines()]
+        records[1]['data']['start_sequence'] = True
+        tip = '0' * 64; lines = []
+        for record in records:
+            record['previous_hash'] = tip
+            raw = catalog._canonical(record); lines.append(raw)
+            tip = hashlib.sha256(raw[:-1]).hexdigest()
+        raw = b''.join(lines)
+        with self.assertRaises(catalog.CatalogError):
+            operation(catalog._PinnedImage(image.path, hashlib.sha256(raw).hexdigest(), raw),
+                      {**head, 'journal_sha256': tip}, 202406, receipts)
+
+    def test_journal_start_spec_must_match_the_authenticated_receipt_spec(self):
+        operation = self.operation()
+        image, head, receipts = self.journal()
+        specs = {stage: {'path': f'data/runs/stages/{stage}/spec.json', 'sha256': 'a' * 64}
+                 for stage in catalog._STAGES}
+        specs['admit'] = {**specs['admit'], 'sha256': 'd' * 64}
+        with self.assertRaises(catalog.CatalogError) as ctx:
+            operation(image, head, 202406, receipts, specs=specs)
+        self.assertIn('spec', str(ctx.exception))
+
+    def test_journal_rechained_complete_pairs_still_require_pipeline_stage_order(self):
+        operation = self.operation()
+        image, head, receipts = self.journal()
+        records = [catalog._json_bytes(line) for line in image.raw.splitlines()]
+        # Preserve valid start/finish pairs and recompute every chain field.
+        records = records[-2:] + records[:-2]
+        tip = '0' * 64; lines = []
+        for index, record in enumerate(records, 1):
+            record['sequence'] = index; record['previous_hash'] = tip
+            if record['kind'] == 'finish':
+                record['data']['start_sequence'] = index - 1
+            raw = catalog._canonical(record); lines.append(raw)
+            tip = hashlib.sha256(raw[:-1]).hexdigest()
+        raw = b''.join(lines)
+        with self.assertRaises(catalog.CatalogError) as ctx:
+            operation(catalog._PinnedImage(image.path, hashlib.sha256(raw).hexdigest(), raw),
+                      {**head, 'journal_sha256': tip}, 202406, receipts)
+        self.assertIn('order', str(ctx.exception))
+
+
 class CatalogInputAndRegistryTests(unittest.TestCase):
     def registry(self):
         # A synthetic offer is not an accepted financial snapshot.

@@ -590,6 +590,68 @@ def _validate_supplement_gate(root, gate):
             'parquet_metadata': docs['parquet'], 'profile_metadata': docs['profile'], 'captured_images': tuple(images)}
 
 
+def _journal_projection(image, head, member, receipts, *, specs):
+    """Validate the captured full chain; freeze only member finish links and original pins."""
+    _require(type(image) is _PinnedImage and type(image.raw) is bytes, 'Expected captured journal bytes')
+    _require(hashlib.sha256(image.raw).hexdigest() == _hash(image.sha256), 'Captured journal SHA-256 differs')
+    _fields(head, ('sequence', 'journal_sha256', 'plan_sha256'))
+    _positive_integer(head['sequence']); _hash(head['journal_sha256']); _hash(head['plan_sha256'])
+    _positive_integer(member)
+    _fields(receipts, _STAGES)
+    _fields(specs, _STAGES)
+    for ref in (*receipts.values(), *specs.values()):
+        _reference_shape(ref)
+    _require(image.raw and image.raw.endswith(b'\n'), 'Journal is empty or truncated')
+    pending, finished, selected = {}, set(), {}
+    tip = '0' * 64
+    lines = image.raw.splitlines()
+    for sequence, line in enumerate(lines, 1):
+        record = _json_bytes(line)
+        _fields(record, ('sequence', 'previous_hash', 'plan_sha256', 'kind', 'member', 'stage', 'data'))
+        _require(type(record['sequence']) is int and record['sequence'] == sequence
+                 and record['previous_hash'] == tip and record['plan_sha256'] == head['plan_sha256'],
+                 'Journal chain, sequence or plan differs')
+        _positive_integer(record['member'])
+        _require(type(record['stage']) is str and record['stage'] in _STAGES
+                 and type(record['kind']) is str and record['kind'] in ('start', 'finish'),
+                 'Journal contains an unsupported or non-complete stage')
+        key = (record['member'], record['stage'])
+        data = record['data']
+        line_pin = hashlib.sha256(line).hexdigest()
+        if record['kind'] == 'start':
+            _fields(data, ('spec',)); _reference_shape(data['spec'])
+            if record['member'] == member:
+                _require(data['spec'] == specs[record['stage']], 'Journal start spec differs from receipt spec')
+            _require(key not in pending and key not in finished and not pending,
+                     'Journal stage is duplicate or concurrent')
+            next_stage = sum(1 for period, _ in finished if period == record['member'])
+            _require(next_stage < len(_STAGES) and record['stage'] == _STAGES[next_stage],
+                     'Journal stage order differs from pipeline protocol')
+            pending[key] = (sequence, data['spec'])
+        else:
+            _fields(data, ('start_sequence', 'receipt')); _reference_shape(data['receipt'])
+            _positive_integer(data['start_sequence'])
+            _require(key in pending and pending[key][0] == data['start_sequence'],
+                     'Journal finish has no matching start')
+            start_sequence, spec = pending.pop(key)
+            finished.add(key)
+            if record['member'] == member:
+                _require(data['receipt'] == receipts[record['stage']], 'Journal finish receipt differs from member')
+                selected[record['stage']] = {'stage': record['stage'], 'sequence': sequence,
+                                            'record_sha256': line_pin, 'start_sequence': start_sequence,
+                                            'spec': spec, 'receipt': data['receipt']}
+        tip = line_pin
+    _require(not pending and len(lines) == head['sequence'] and tip == head['journal_sha256']
+             and set(selected) == set(_STAGES), 'Journal head or complete member coverage differs')
+    return {'journal': {'path': image.path, 'sha256': image.sha256, 'bytes': len(image.raw)},
+            'head': _json_bytes(_canonical(head)), 'member': member,
+            'finishes': [selected[stage] for stage in _STAGES]}
+
+
+_PIPELINE57_JOURNAL = {'path': _PIPELINE57_ROOT + 'execution/journal.jsonl',
+                       'sha256': 'b14d7051fc54dd95b3f10743fdf1f688ae15335beb30c7e94086532f6bb25c7d'}
+
+
 def _validate_pipeline_gate(root, gate):
     _handoff_shape(gate)
     proof = gate['proof']
@@ -613,7 +675,7 @@ def _validate_pipeline_gate(root, gate):
              and all(state['milestones'][key] is True for key in ('admitted', 'parquet_verified', 'query_verified', 'replay_verified')),
              'Pipeline member lacks complete milestones')
     _require([proof['receipts'][s] for s in _STAGES] == state['receipts'], 'Pipeline receipt/member bindings differ')
-    outputs = {}
+    outputs, spec_refs = {}, {}
     for stage in _STAGES:
         receipt = capture(proof['receipts'][stage])
         _require(receipt.get('contract') == 'ifdata-financial-sanitization-stage-receipt-v1'
@@ -622,6 +684,7 @@ def _validate_pipeline_gate(root, gate):
                  and receipt['measurement']['deadline_reached'] is False and not receipt['measurement']['guard'],
                  'Pipeline receipt incomplete or resource guard failed')
         spec, execution = capture(receipt['spec']), capture(receipt['result'])
+        spec_refs[stage] = receipt['spec']
         capture(receipt['identity']); capture(receipt['log'])
         for record in (spec, execution):
             _require(record['document'] == proof['plan'] and record['member'] == gate['selection']['period']
@@ -661,7 +724,12 @@ def _validate_pipeline_gate(root, gate):
     _require(comparison['replay_verified'] is True and comparison['primary_admission'] == outputs['admit']
              and comparison['primary_parquet'] == outputs['convert'] and comparison['replay_admission'] == outputs['replay-admit']
              and comparison['replay_parquet'] == outputs['replay-convert'], 'Pipeline comparison links differ')
-    # Delegate journal-chain authority to the existing read-only status API.
+    # Capture the original journal under its finite external pin before freezing a projection.
+    journal = _read_reference(root, _PIPELINE57_JOURNAL, json_required=False)
+    journal_authority = _journal_projection(journal, head, gate['selection']['period'], proof['receipts'],
+                                            specs=spec_refs)
+    images.append(journal)
+    # Also retain the existing read-only API's full protocol/status checks.
     _require(Path(root).resolve() == Path(__file__).resolve().parents[1], 'Pipeline status requires the authorized checkout')
     from .financial_pipeline import read_status
     try:
@@ -672,4 +740,5 @@ def _validate_pipeline_gate(root, gate):
     _require(status['status'] == 'complete' and len(current) == 1 and current[0]['receipts'] == state['receipts']
              and current[0]['state'] == 'replay_verified', 'Pipeline journal/status differs')
     return {'acceptance': 'verified', 'historical_stages': {'state': 'available', 'kind': proof['kind']},
-            'parquet_metadata': docs['convert'], 'profile_metadata': profile_doc, 'captured_images': tuple(images)}
+            'parquet_metadata': docs['convert'], 'profile_metadata': profile_doc,
+            'journal_authority': journal_authority, 'captured_images': tuple(images)}
