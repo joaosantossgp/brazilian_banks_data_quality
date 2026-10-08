@@ -1,0 +1,171 @@
+# Catálogo financeiro local — contrato técnico da Issue 61
+
+Issue: [#61](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/61). [Plano](../plans/2026-10-06-financial-catalog.md). Preparado em 2026-10-06 e consolidado em 2026-10-08 na base `c7455f06ff2dc52a7958e300b19df01bca9b92c7`, branch `codex/financial-catalog`.
+
+## Resultado e autoridade
+
+Entregar uma entrada local para localizar e consultar 66 snapshots por período, perspectiva e relatório oficial, conservando revisão, fonte, precisão e ausências. A implementação pode iniciar com 11 aceitos após contrato/claim/checks/revisão; seu aceite final exige 66 aceitos reais. Não escolher amostra, indicadores, joins, equivalências contábeis ou anualização.
+
+O contrato reutiliza readers/adapters/registry existentes e define catálogo JSON imutável com hash externo. Não há servidor, runtime, dependência, raiz ou camada nova. Código adjacente em `bank_quality/`, CLI em `scripts/`, testes em `tests/`, artefatos privados novos em `data/runs/`; arquitetura deve registrar a responsabilidade antes da implementação. Código ainda não escrito nesta consolidação documental.
+
+## Interfaces existentes verificadas no código
+
+| Símbolo existente | Uso e limite constatado |
+|---|---|
+| `financial_report_profiles.descriptor_for_selection(selection: dict) -> dict` | Resolve uma seleção completa, ordenada, instalada de perspectiva 1005/quatro reports; fornece `descriptor_sha256`. Oferta não prova admissão. |
+| `financial_report_profiles.load_installed_context(selection: dict) -> dict` | Valida perfil instalado/pins e retorna contexto local. Perfis 202412/202503 possuem tratamento próprio; demais usam perfil histórico. Hash de perfil existente usa bytes normalizados LF, diferente de hash físico de arquivo transportado. |
+| `financial_pipeline.read_status(plan_path: Path, *, plan_sha256: str) -> dict` | Autentica plano, journal/head, receipts e pequenos resultados e relata milestones; não reabre corpus. Scoreboard da 57 é específico de sete membros, não catálogo geral 66. |
+| `financial_pipeline.verify_query(source: Path, destination: Path, *, source_manifest_sha256: str, manifest_sha256: str) -> dict` | Gate completo com células/estados/bindings/Decimal; pesado, não chamá-lo ao listar catálogo. |
+| `financial_reports_parquet.snapshot_connection(destination: Path, *, manifest_sha256: str)` | Abre snapshot integralmente validado em memória; conexão pertence ao chamador e precisa ser fechada. Views `financial_cells`, `financial_observations`, `financial_bindings`, `occurrences`; views numéricas próprias por binding. |
+| `financial_reports_parquet.iter_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id=None)` | Iterador que abre snapshot validado; `binding_id` é par `(report_id, column_id)`. Valores largos retornam Python Decimal; `.close()` no abandono. |
+
+O registry atual tem 66 ofertas. Metadados selecionados mostram IDs antigos 201003 `[1,3,4,5]`, atuais 202312 `[92,96,101,98]`, novos 202503 `[119,107,110,118]`; report está em `descriptor['reports'][i]['report']`, com nome nativo `.n`, ID `.id` e pointer próprio. Não fixar IDs de 2024 em todos os anos, nem atribuir equivalência contábil pela posição/nome.
+
+Foram lidos metadados de `read11-summary.json`, prova pequena `read11-202312.json` e manifest Parquet 202312, sem seus payloads. O summary registra 11 leituras PASS, mas não substitui os gates originais ou revalidação atual: esta preparação não executou aquelas leituras. O manifest 202312 possui contrato histórico-v2, `accepted: true`, seleção completa, link `source_manifest_sha256`, perfil e inventário fechado de arquivos; não possui path externo da admissão. O catálogo deve conservar esse path por evidência externa autenticada, sem inferi-lo por nome de diretório.
+
+## Alternativas e recomendação
+
+1. **Catálogo fechado, imutável e pinado em JSON, com descoberta leve e abertura por snapshot.** Recomendado. Usa ofertas/descritores existentes e handoffs explícitos de gate; fornece uma entrada local estável, prova/revisão selecionáveis e recursos limitados. Cada atualização cria novo catálogo, sem reescrever aceites. Custo: fechar a tradução das evidências legadas e da futura 60.
+2. **Descobrir por glob de manifests dentro de data/curated.** Fácil inicialmente, mas mistura tentativas parciais, replay, revisões e sets aceitos; um path encontrado não fornece autoridade externa do hash. Rejeitado como mecanismo de aceite/descoberta confiável.
+3. **Materializar todas as séries em DuckDB/catalogação global.** Facilita SQL conjunto, mas pressupõe comparabilidade/unidades/regimes, eleva memória e pode impor cast/UNION inadequado aos bindings largos. Fora do resultado autorizado; não usar.
+
+Escolha 1 mantém consulta técnica independente de amostra, joins, indicadores e método acadêmico. A apresentação oferece relatório oficial por ID/nome/pointer no período selecionado. A perspectiva 1005 é o único domínio ofertado nesta entrega; filtro por perspectiva é explícito, e 1001/1004 ou outras não são promovidas a cobertura financeira.
+
+## Contrato técnico
+
+### Autoridade histórica, etapas comprovadas e validação atual
+
+`ifdata-financial-catalog-v1` é índice de dados/proveniência, nunca tracker de tarefas. É criado em destino novo `data/runs/financial-catalog-<run>/`, com `catalog.json` publicado por último, cópia exata `metadata/registry.json` e cópias pequenas de handoffs/gates referenciados que precisam sobreviver a atualizações. Ler exige `catalog_sha256` externo. Paths são canônicos relativos ao checkout, com âncora fixa; nenhum path do chamador escolhe contexto arbitrário.
+
+Profiles usam apenas paths permitidos no pacote; admissão em `data/derived/`, Parquet em `data/curated/`, provas em `data/runs/` ou destinos privados expressamente aprovados no índice de bootstrap. Dados brutos/archives/keys nunca são destino de catálogo. A allowlist inicial deve enumerar refs privadas legadas necessárias, e cópias sanitizadas/pinadas devem substituí-las antes da entrega local estável. Campos raiz exatos do catálogo: `contract`, `inputs`, `registry`, `parent_catalog`, `entries`, `coverage`, `files`, `limitations`. `files` é inventário fechado dos pequenos companions com path/bytes/sha256 relativos ao próprio destino; a leitura exige o mesmo inventário físico, sem extras ou symlinks. `coverage` registra offered/accepted/unavailable/revision_count calculados das entries, sem contagens financeiras artificiais.
+
+Separar quatro informações por entrada: **oferta** no registry congelado, **aceite histórico** demonstrado por autoridade fechada, **disponibilidade/prova das etapas históricas** e **validação/saúde local atual**. Campos de oferta/perfil instalado não autorizam `accepted`. Existência de `manifest.json` ou seu `accepted: true` isolado também não basta. A âncora instalada de um manifest exato já aceito é autoridade histórica distinta do gate de nova sanitização. Leitura/consulta atual revalida snapshot; receipt antigo não promete payload saudável agora, e reader/read11/compat54 atuais não fabricam receipt histórico ausente.
+
+`coverage.accepted` conta seleções distintas com **ao menos uma revision cuja prova de autoridade tenha `acceptance='verified'`**, independentemente de `active_revision` e da saúde local atual. Nos novos 60 essa prova exige gate completo; nos três legados finitos pode vir da âncora histórica instalada exata. `coverage.unavailable` conta as seleções ofertadas sem nenhuma revision verified; offered = accepted + unavailable. Revision_count conta revisões, não trimestres. Ambiguidade, contexto stale ou artefato local ausente impedem a consulta correspondente, mas não apagam o aceite histórico comprovado nem movem essa seleção para unavailable. A listagem mantém flags separadas de `acceptance`, `historical_stages`, `query_selection` e `local_health`; `ambiguous_revision` nunca significa `no_accepted_revision`.
+
+O índice de entradas proposto, `ifdata-financial-catalog-inputs-v1`, tem campos exatos `contract`, `registry`, `gates`, `active_revisions`, `parent_catalog`. `registry` e `parent_catalog` são refs `{path, sha256}`; parent admite null para catálogo inicial. `gates` contém refs de handoffs revisados, sem corpo bruto, chave, header de resposta ou arquivo de coordenação reconstruído. `active_revisions` associa cada seleção completa a um hash Parquet preciso, ou null quando não há aceite ou quando a escolha permanece ambígua explicitamente. Null não desfaz o aceite de revisões verified. Rejeitar membros/chaves/ref duplicados antes de ordenação/normalização. A contagem alvo deriva das seleções únicas do registry pinado, comparada ao conjunto finito autorizado 66, sem sintetizar trimestre aceito.
+
+Cada handoff aceito é tradução pequena, fechada e pinada de autoridade real: `ifdata-financial-catalog-gate-v1`, campos exatos `contract`, `selection`, `revision`, `profile`, `admission`, `parquet`, `proof`, `limitations`. `revision` é o SHA-256 do manifest Parquet. `profile` mantém nome do perfil e hash no regime nativo; `admission` e `parquet` são refs de manifest externos. Nos 11 atuais, `proof` é união finita de **três** tipos: `installed_historical_anchor_v1` para exatamente 202312/202412/202503; `accepted_supplement403_v1` para 202403; `pipeline57_v1` para os sete membros da 57. Parser deriva aceite da autoridade correspondente, sem aceitar status boolean fornecido pelo caller. Não chamar todos os legados de standalone-v1 ou interpretar ausência de receipt como falha da sanitização histórica.
+
+Campos exatos aninhados: `profile` = `path`, `sha256`, `hash_policy`, com policy única `installed_profile_native_lf` conforme reader existente. `proof.pipeline57_v1` = `kind`, `plan`, `result`, `head`, `receipts`; plan/result/head são refs e receipts é mapa com exatamente `admit`, `convert`, `query`, `replay-admit`, `replay-convert`, `replay-query`, `compare`, cada qual ref. `proof.accepted_supplement403_v1` = `kind`, `supplement`; ref do supplement autentica internamente profile/admission/parquet/query/replay-query/compare/replay-admission/replay-parquet existentes. O parser conserva/verifica essas oito refs, sem aceitar caminho alternativo ao pin registrado. `active_revisions` é lista de objetos exatos `{selection, revision_id}`, sem chaves JSON derivadas de labels. Revisão pode ser null somente sem aceite ou em ambiguidade explicitamente preservada; aceita selection uma vez por input.
+
+**Gate 0 observado:** `_TRUSTED_REUSE` em `financial_acquisition_batch.py:40-76` fixa três manifests físicos aceitos, contratos, admissão/perfil/source-index. `_parquet` em 208-244 autentica seleção, cross-pins/inventários/lineage; não roda query ou replay. `_anchored_bundle` em `financial_acquisition_compat.py:186-232` compara reuse com âncora instalada. `financial_pipeline.py:501` registra `batch_accepted_before=3`, períodos 202312/202412/202503 e supplement 403; sua validação em 719-721 conserva essa autoridade histórica. O catálogo não deve exigir reprocessar esses 11 nem recuperar receipts inexistentes para reconhecer o aceite histórico instalado.
+
+### Contrato finito da âncora instalada dos três legados
+
+`proof.installed_historical_anchor_v1` possui campos exatos `kind`, `trusted_base_sha`, `trusted_code`, `transport`, `ledger`, `replay_admission`, `replay_parquet`, `stage_evidence`. Trusted_code/transport/ledger e replay manifests são refs externas pinadas. `trusted_base_sha` deve ser o SHA da base confiável já conferida pelo root, não um SHA autoatestável vindo apenas do índice do caller. `trusted_code` deve corresponder à imagem da base confiável de `financial_acquisition_batch.py`, cujo `_TRUSTED_REUSE` é somente leitura; arquivo da branch candidata não autentica a si mesmo. Não executar/importar código histórico transportado. O parser resolve a tabela finita confiável e exige igualdade exata de seleção, manifest path/hash, source contract/hash, perfil físico/nativo e source-index. Fonte de autoridade externa confiável é condição do claim; um novo pin do caller nunca amplia essa tabela.
+
+| Seleção financeira | Path Parquet aceito instalado | SHA-256 aceito exato |
+|---|---|---|
+|202312/1005/[92, 96, 101, 98]|`data/curated/financial-historical-202312-20261004/manifest.json`|`facbc0b6a1d06c10879caa6744e9bb573b29b827dd81d45753477b12ca45d8e6`|
+|202412/1005/[92, 96, 101, 98]|`data/curated/financial-four-reports-202412-20261004-run2/manifest.json`|`c9d58a9a6cd105fa1b73b711ba167e6a8909e56e695f16e414e96e6e0e14cd41`|
+|202503/1005/[119, 107, 110, 118]|`data/curated/financial-four-reports-202503-20261004-run2/manifest.json`|`64d09fbaf7a40ff279cfc23e3fc002b671979585b22425c561af9138af013d6e`|
+
+O tipo não aceita 202403, outros períodos, outro hash da mesma seleção, tentativa parcial, replay como revisão primária ou futuro 60. Não é fallback quando outro proof falha. Os 55 novos 60 exigirão admissão/Parquet/query/accessor/replay completos por seu contrato próprio; a 60 pode usar o executor comum com extensão revisada, mas não será admitida por uma whitelist histórica ampliada pelo caller.
+
+`stage_evidence` tem campos exatos `state`, `schema`, `query`, `replay_query`, `compare`. Para 202312 state=`available`, schema=`legacy202312_exact_metadata_v1` (nome do parser 61 proposto, não contract nativo inventado), refs não nulas e pins conferidos no transporte. Para 202412/202503 state=`absent_from_transport`, schema/query/replay_query/compare todos null. Esse estado significa ausência dos recibos transportados, não negativo histórico nem falha do snapshot. Claims do ledger de query/replay permanecem documentais com ref/localizador próprios. Nunca produzir `query_verified=True` ou `replay_verified=True` a partir de `absent_from_transport`; `acceptance='verified'` refere-se à autoridade histórica exata, não ao transporte dessas etapas.
+
+Schema real 202312 fechado: query/replay-query têm exatamente `stage`, `manifest_sha256`, `grade_columns`, `grade_all_varchar`, `cells`, `observations`, `binding_nodes`, `cadaster_records`, `presence_counts`, `value_state_counts`, `typed_views_checked`, `all_original_csvs_origins_and_decimal_rows_validated_by_adapter`, `exact_python_decimal_rows_checked`, `accessor_snapshots_opened`, `wide_text_bindings`. Stage respectivamente query/replay-query; hash aponta para o manifest correspondente; grade 32/allVARCHAR; counts/views/encodings/accessor são cruzados com seus manifests/perfil. Cada typed_view tem campos `view`, `type`, `encoding`, `rows`, `nonnull_sample_present`. Compare tem exatamente `stage`, `comparisons`, `protected_equal`, `http_requests`, `accepted_sources_unchanged`; comparisons tem admission/parquet, cada qual `byte_equal`, `excluded_execution_metadata`. Exceções declaradas são admission `[manifest.json]` e Parquet `[manifest.json, metadata/source-manifest.json]`, sem tratar esse nome legado como certificação adicional das exceções. Não exigir `contract`, `baseline_sha256`, `execution_head` ou `all_manifest_payloads_authenticated` inexistentes; hashes externos/âncora/transport limitam a autoridade dos metadados originais. A validação atual dos manifests/embedded source link é separada e obrigatória quando abrir dados.
+
+Refs reais 202312 em `data/runs/financial-historical-admission-202312-20261004/`: query `gate-query.json` SHA `3d9209ab975ae605d66fcb5e1520fd54eb3e52558ad7ab586ba0174fc4374d1c`; replay-query `gate-replay-query.json` SHA `f96c6fb8aeb8df6c45f240ee1e4296040c723eb9a8fbff9ecb88433b63c8cf31`; compare `gate-compare.json` SHA `839b24bd4d256ad33d783101fa23b9083005e6f1b35d5a7aa3ed30761c94bd7a`. O transporte `.scratch/migration-snapshot-ifdata-11-20261006/restored/SNAPSHOT-MANIFEST.json` SHA `28d2cd92e3f6caff4b59c36db1b18c7a25658c6dee9d26ffe875b1275a5d515e` pinou esses arquivos e os manifests/replay 42/46; não contém query/replay/compare 42/46. Os dois source-index originais estão presentes/reconstituídos pelos hashes exatos em seus destinos privados, sem restauração de receipts de coordenação.
+
+Manifests replay 42/46 existem:202412 admissão `data/derived/financial-four-reports-202412-20261004-replay/manifest.json` SHA `2ad72f397e69f08fb119c1292c47b5579500b7424aa6f3ee9e388c5cf4d534ac` e Parquet `data/curated/financial-four-reports-202412-20261004-run2-replay/manifest.json` SHA `4307ce09133d1f4c816dc01acd5f2d2d12d7c225c1a7cac40bc6c40926b93a71`; 202503 admissão `data/derived/financial-four-reports-202503-20261004-replay/manifest.json` SHA `a1bc7c5c5ab4ab5254864c06f5d357be95f0a2e65e60d0b8f8c7214f83b8a9fb` e Parquet `data/curated/financial-four-reports-202503-20261004-run2-replay/manifest.json` SHA `7d93aa95518d7e4609992fca4d86f2b08f95592378de4fbdca5dfda3c5d6f6f6`. Ledgers reais `docs/engineering/financial-four-reports-202412-execution-20261004.md:61-68` e `financial-four-reports-202503-execution-20261004.md:53-62` registram hashes e queries/replay históricos.
+
+Confronto físico atual 42/46: 414 referências autenticadas pelo transporte e manifests próprios, cinco payloads por admissão e 81/112 por Parquet incluindo embedded source (80/111 sem ele). Payloads primários/replay coincidem, exceto embedded source operacional; cada embedded source coincide com sua própria admissão. Esse checkpoint foi revisado antes/depois de executar e não reexecutou query/replay. A prova física é distinta dos receipts históricos ausentes.
+
+202403 tem suplemento real `data/runs/financial-batch-sanitization-inputs-20261005/accepted-supplement.json` SHA `a4295c26925be5ef771f3fea8cd8a52b37bf03ed89cade32ed188e1a4409c2e2`, contract `ifdata-financial-accepted-supplement-v1`, com as oito refs de gate/manifest/profile. `_validate_supplement` em `financial_pipeline.py:289-351` confere `root-offline-financial-gate-stage-v1`, links/replay/counts; `_TRUSTED_REUSE[202403]` original é accepted_sources e não concede sozinho aceite financeiro. 57 tem plano real `data/runs/financial-batch-sanitization-202312-202606-20261005-attempt2/plan.json` SHA `86d6432c3238699947b4c5d1dc63d367848ec225eb80fb30cf94234a736569f5`, journal/receipts de seus sete membros; status/scoreboard agregados não substituem a prova por membro.
+
+**Entrada para implementação:** as três autoridades históricas e o suplemento 403 tiveram 33 refs/quatro imagens Git conferidas contra a base confiável; os sete wrappers 57 tiveram 298 refs/49 receipts autenticados. As provas estão na seção de evidência abaixo. O futuro parser reautentica cada autoridade, sem confiar no status dos helpers. Revisão da spec/plano e claim de implementação com paths/base/recursos antecedem o código; preparação de entradas não prova software ou final 66.
+
+Cada entrada do catálogo tem campos exatos `selection`, `descriptor_sha256`, `reports`, `revisions`, `active_revision`, `limitations`. A seleção é a seleção completa do registry, quatro relatórios em ordem canônica; filtro de report é apenas projeção de leitura. Report possui `report_id`, `native_name`, `catalog_pointer`, extraídos de metadata autenticada. Revision conserva `revision_id`, `profile`, `admission`, `parquet`, `proof`, `acceptance`, `historical_stages`, `counts`, `precision_encodings`, `limitations`; `acceptance` somente `verified` ou `unverified`, derivado do parser da autoridade. `historical_stages` expõe estado/prova das etapas disponíveis, sem false flags para 42/46. Validação atual reader/read11/compat54 fica em saída health da abertura, com ref/método/escopo próprios, sem alterar catálogo ou alegação histórica. Sem revision aceita, listagem mostra `unavailable` com motivo `no_accepted_revision`, contagens de dados null e não zero.
+
+Não copiar todo o conteúdo nativo/árvore para índice duplicado. Perfis e `financial-variables.json` autenticados continuam responsáveis por árvores, fórmula opaca, janela, unidade, versão/perímetro/regime. Índice mostra refs e limitations; `bindings` abre reader ou metadados autenticados correspondentes e devolve essas informações próprias. Nenhum regime é inferido apenas pelo ano.
+
+### Determinismo, revisões e atualização
+
+Serialização: JSON UTF-8, `sort_keys=True`, separadores `(',', ':')`, `ensure_ascii=False`, `allow_nan=False`, newline final única; parser rejeita duplicate JSON keys e constantes não finitas. Ordem: entradas por `(period,perspective,tuple(reports))`, revisões por hash e reports na ordem canônica da seleção. Sem relógio/time/random no conteúdo determinístico. Mesmos bytes de entradas/ref/policies geram mesmos bytes de catálogo. `parent_catalog` pinado vincula atualização, preservando o catálogo anterior.
+
+Atualização 61 consome um ou mais novos handoffs 60 numa mesma preparação; sem pipeline novo por trimestre, glob, coleta ou ativação de perfil pelo catálogo. O integrador instala perfis/registry na 60; 61 somente resolve oferta instalada e constrói índice novo. Nenhum refresh silencioso: um novo gate recebe ref/hash exatos e revision explicitamente ativa. Revisões antigas permanecem selecionáveis. Dois aceites do mesmo período não permitem escolher por mtime, maior data, ordenação de path ou último arquivo: o input declara `active_revisions`, e conflito/ausência causa `ambiguous_revision` na seleção padrão.
+
+O catálogo conserva sua cópia pinada do registry e continua listável após instalação de novos perfis 60. Drift físico do registry corrente é informado sem invalidar metadados congelados. Antes de abrir dado, conferir descritor da seleção e perfil atuais contra os pinados; drift de membro/perfil ou seleção incompatível impede query (`stale_context`). Atualização de outro membro não deve tornar 11 aceitos antigos ilegíveis. Diferenças CRLF/LF obedecem hash nativo de perfil somente onde o reader já declara a regra; o hash físico do catálogo e manifests nunca normaliza bytes.
+
+### Seleção e APIs propostas
+
+Módulo adjacente novo `bank_quality/financial_catalog.py`; interfaces propostas, **não existentes hoje**:
+
+```python
+@dataclass(frozen=True)
+class Catalog:
+    path: Path
+    sha256: str
+    # Authenticated immutable internals, built only by load_catalog.
+
+class CatalogError(ValueError):
+    code: str
+
+def prepare_catalog(inputs_path: Path, destination: Path, *, inputs_sha256: str) -> dict: ...
+def load_catalog(path: Path, *, catalog_sha256: str) -> Catalog: ...
+def discover(catalog: Catalog, *, period: int | None = None,
+             perspective: int | None = None, report_id: int | None = None) -> list[dict]: ...
+def resolve_snapshot(catalog: Catalog, *, period: int, perspective: int,
+                     report_id: int | None = None, revision_id: str | None = None) -> dict: ...
+def snapshot_connection(catalog: Catalog, *, period: int, perspective: int,
+                        report_id: int | None = None, revision_id: str | None = None): ...
+def iter_numeric_decimals(catalog: Catalog, *, period: int, perspective: int,
+                         report_id: int, column_id: int, revision_id: str | None = None): ...
+```
+
+APIs recebem somente objeto/contexto autenticado opaco produzido por `load_catalog`, com internals imutáveis; não confiar em dict alterável ou permitir novo objeto forjado com paths/hash arbitrários. `discover` usa metadata somente; período desconhecido retorna lista vazia explicada, não população zero. `resolve_snapshot` exige exatamente uma revisão elegível e devolve snapshot inteiro/hash/selector; não muda a seleção do profile para um report único. `snapshot_connection` delega ao adapter nativo e devolve conexão de um snapshot; filtro de report continua explícito no SQL parametrizado. `iter_numeric_decimals` resolve par e delega ao accessor exato; rejeita grupo/texto ou ID inexistente como `unknown_binding`.
+
+CLI nova `scripts/query-financial.py`: commands `catalog-prepare`, `list`, `show`, `counts`, `bindings`, `cells`, `decimals`. Ler requer `--catalog` + `--catalog-sha256`; consultar também período e perspectiva, report nativo conforme command, opcional `--revision`. `show` fornece seleção/paths/hashes/aceite/saúde leve/policy sem abrir DuckDB; `list` retorna rows + coverage global congelada. `counts/bindings/cells/decimals` usam seleção única e templates SQL fixos; nada de SQL arbitrário ou casts globais. `cells` default limit 100, máximo 10000; filtros `--institution`/report são parametrizados. `decimals` exige report+column; serializa Decimal como texto exato, preserva None/null. Contagens e metadados antes de rows; jamais imprimir chave/header/arquivo bruto.
+
+### Falhas, ausências e saúde
+
+| Condição | Semântica exigida |
+|---|---|
+| Hash externo ausente/inválido, mismatch, key/ref/input duplicado, schema desconhecido, path escape/reparse | `CatalogError(code='integrity')`; rejeitar criação/leitura inteira, sem saída aceita. |
+| Período não ofertado/perspectiva fora do catálogo/report ausente naquele período | `unknown_selection`; lista de descoberta vazia, selector falha com seleção e motivo. |
+| Oferta sem gate aceito | `unavailable`; contagens null. Não NI, NA, zero ou falha de aquisição inventada. |
+| Revisão múltipla sem escolha ativa/explícita | `ambiguous_revision`; sem escolher latest automaticamente. |
+| Manifest/part/companion obrigatório do snapshot removido | `missing_local_artifact`; manter aceite histórico distinto de saúde unavailable; impedir query. |
+| Metadata/gate local alterado ou snapshot bytes alterados | `integrity`; bloquear seleção afetada/query; não rebaixar silenciosamente a outra revisão. |
+| Descritor/perfil atual diverge | `stale_context`; catálogo congelado continua listável, query bloqueada até reconciliar versão. |
+| Snapshot metadata íntegro e aceito, payload não reaberto | saúde `metadata_verified`, `payload_validation='not_run'`; sem promessa de healthy. |
+| Reader valida snapshot inteiro nesta consulta | `payload_verified` apenas para esta abertura; não atualizar aceites/catálogo em disco. |
+| Binding largo | preservar `decimal_text_v1`, texto exato e Python Decimal; não SQL DECIMAL>38/DOUBLE/arredondamento. |
+
+CLI: exit 0 sucesso; exit 2 indisponível/ambiguidade/seleção ou binding desconhecido; exit 3 integridade/stale/I/O/unexpected, JSON com código/motivo. Falha de objeto global encerra command; listagem de refs indisponíveis pode expor rows com erro e exit 2, sem excluir seletivamente o trimestre da cobertura alvo. Mensagens não contêm payloads financeiros completos. Ausências estruturais, NI/NA/null/vazio/unobserved/zero conservam classificações nativas de cells/bindings; nenhum join histórico, annualização ou imputation entra.
+
+Catalog/companions internos alterados ou removidos impedem `load_catalog` como erro global de integridade. Listagem saudável depende da cópia interna de provas/registry, não da sobrevivência de raw, output externo de admissão ou coordenação antiga. O Parquet existente é autocontido: admissão original e raw podem estar ausentes depois do builder, se `metadata/source-manifest.json` e companions próprios continuam íntegros; isso não bloqueia query do reader. Path/hash externos permanecem como proveniência histórica, com indisponibilidade explícita quando alguém solicitar conferir o original. Preparação aceita refs externas somente quando presentes e autenticadas; nunca copia placeholder em seu lugar. `show` verifica manifest/inventário/metadata pequenos e presença declarada, sem prometer hash dos payloads não reabertos.
+
+## Recursos, aceite e fronteira
+
+Descoberta e status lêem apenas registry/catalog/manifests/receipts pequenos; não importam DuckDB ou acquisition launcher antecipadamente. Imports de readers/pipeline devem ser lazy no comando que precisa deles; listar não executa profile authoring. Consultas abrem um snapshot por vez, fecham antes de outro, iterator fecha no cancelamento. Gates integrais rodam com janela de memória medida nesta máquina, sequencialmente com software 59 se recurso compartilhado; sem teto universal de RAM ou nova instalação/runtime.
+
+Aceite do checkpoint de código: testes adversariais/fixtures causais PASS, 11 reais descobertos e queries/exact Decimal reproduzidos em janela própria, revisão independente do diff final e documentação coerente. Aceite final 61:66 seleções distintas, cada uma com quatro reports oficiais/allvariables e autoridade própria comprovada, composta pelos **11 aceites históricos na união finita descrita +55 novos aceites da 60 com gate completo real obrigatório**. Não exigir gate 60 nem reprocessamento pela 60 dos 11 já aceitos ou receipts 42/46 que não foram transportados. A 61 confere descoberta 66 e consulta/counts/bindings/accessor correspondente ao corpus real 66, evidência por membro e hashes protegidos; essa validação da entrada local não substitui/refaz sanitização histórica nem cria recibo antigo. Sucesso de fixture 66, oferta 66 ou profile 66 nunca substitui 66 aceitos reais. Conferência de domínio lê janelas/regimes/perímetros/fontes/limitações e continua distinta de teste de software.
+
+A implementação 61 tem ownership separado de 59/60 e não escreve em aquisição, sanitização ou dados aceitos. A pesquisa 16 possui destinos próprios e pode avançar em paralelo. 59 continua condicionada ao gate Windows; 60 aguarda seu primeiro handoff. 62/63 mantêm decisão humana de conteúdo. Root conserva documentos compartilhados, Git e mapa 2.
+
+## Inventário e limites de escrita
+
+Implementação 61: criar `bank_quality/financial_catalog.py`, `scripts/query-financial.py`, `tests/test_financial_catalog.py`, `tests/test_financial_catalog_query.py`; read-only readers/profiles/pipeline e fixtures existentes. Root: publicar desenho em `docs/superpowers/specs/2026-10-06-financial-catalog-design.md`, plano em `docs/superpowers/plans/2026-10-06-financial-catalog.md`, ledger em `docs/engineering/financial-catalog-20261006.md`, integrar `README.md` e `docs/architecture.md`. Novos artefatos locais só em destinos novos `data/runs/financial-catalog-<run>/`; input handoffs ficam sob ownership root/60. Nenhum rename/delete.
+
+Exclusões explícitas: acquisition/compat/batch/launchers 59, pipeline 60, registry/perfis instalados, converters/readers aceitos, raw/derived/curated/runs anteriores, protected data, archives, keys, runtime/requirements, AGENTS/GLOSSARY/tracker/CI/proteções, Project 3, outros hosts/projetos, coleta, deploy, indicadores/joins/amostra. Se a interface 60 exigir mudar 57/pipeline, root fecha allowlist e handoff separado; módulo 61 não expande escrita por conveniência.
+
+
+## Evidência do Gate 0 e interface futura
+
+Os arquivos de evidência são privados e ignorados; seus hashes e escopos são publicados para conferência, sem dados ou credenciais:
+
+| Checkpoint | SHA-256 da evidência | Escopo verificado |
+|---|---|---|
+| Autoridades históricas e suplemento 403 | `3f97546b7ed0103d7a9ee456db00d364a0459fe11d37310ffbb02b7ea71aa87c` |33 refs, quatro imagens Git, seleção/perfil/índice/admissão/Parquet/replay e provas originais disponíveis |
+| Payloads 42/46 | `423fae36f491dae830a4ca658e407f11d3c151acdba123101c38bfeedf118fbc` |414 refs físicas e embedded source correspondente à própria admissão |
+| Wrappers 57 | `d559fdc1c6761b94c866eefaaffabe876d30c5b3da4d48be8d534f1f55a3c418` |Sete membros, 49 receipts, 298 refs e vínculos dos outputs |
+| Transporte | `28d2cd92e3f6caff4b59c36db1b18c7a25658c6dee9d26ffe875b1275a5d515e` |Manifest externo autenticado da restauração |
+
+Cada helper e seu resultado teve revisão independente. Esses checkpoints comprovam integridade/vínculos das entradas; não são implementação do parser, nova query/replay, resolução do erro Windows ou aceite final 66. [Registro 61](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/61#issuecomment-6061282887) e [interface 60](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/60#issuecomment-6061294307).
+
+A união inicial admite somente os 11 atuais. Para 55 novos, 60 fecha contrato versionado com schemas/pins/links reais de perfil, fonte, admissão, Parquet, query/accessor e replay integral por janela. Sete receipts por membro são desenho previsto, nunca prova suficiente por contagem. Não reutilizar `pipeline57_v1` para 60 nem ampliar whitelist histórica. 61 implementa e revisa parser/tipo próprios antes de incorporar esses handoffs. Até haver extensão, tipos/inputs desconhecidos são rejeitados explicitamente. A dependência de 60 continua para o aceite final 66; nenhuma escolha metodológica ou coleta decorre deste documento.
+
+A revisão parcial é obrigatória entre checkpoints. A PR pode ter o tamanho necessário; revisar também composição final/SHA/checks antes da integração.
