@@ -11,10 +11,97 @@ import threading
 import time
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 
 class WindowsAcquisitionTests(unittest.TestCase):
+    def test_resource_tree_excludes_stale_parent_pid_and_its_branch(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        coordinator = {'pid': 10, 'creation_time': 100}
+        parents = {10: 1, 20: 10, 30: 20, 40: 10, 50: 40}
+        identities = {10: coordinator,
+                      20: {'pid': 20, 'creation_time': 110},
+                      30: {'pid': 30, 'creation_time': 120},
+                      40: {'pid': 40, 'creation_time': 5},
+                      50: {'pid': 50, 'creation_time': 130}}
+        self.assertEqual(api._owned_process_ids(coordinator, parents, identities, observed_before=1000), {10, 20, 30})
+
+    def test_resource_tree_rejects_changed_coordinator_identity(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with self.assertRaisesRegex(RuntimeError, 'Coordinator'):
+            api._owned_process_ids({'pid': 10, 'creation_time': 100}, {10: 1},
+                                   {10: {'pid': 10, 'creation_time': 101}}, observed_before=1000)
+
+    def test_resource_tree_rejects_pid_recycled_after_snapshot(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        coordinator = {'pid': 10, 'creation_time': 100}
+        with self.assertRaisesRegex(RuntimeError, 'snapshot'):
+            api._owned_process_ids(coordinator, {10: 1, 20: 10},
+                                   {10: coordinator, 20: {'pid': 20, 'creation_time': 110}},
+                                   observed_before=105)
+
+    def test_resource_sample_never_measures_stale_pid_branch(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        coordinator = {'pid': 10, 'creation_time': 100}
+        parents = {10: 1, 20: 10, 30: 20, 40: 10, 50: 40}
+        identities = {pid: {'pid': pid, 'creation_time': born} for pid, born in
+                      [(10, 100), (20, 110), (30, 120), (40, 5), (50, 130)]}
+        entries = iter(parents.items())
+        kernel, psapi = Mock(), Mock()
+        def enumerate_processes(snapshot, pointer):
+            try:
+                pid, parent = next(entries)
+            except StopIteration:
+                return False
+            pointer._obj.th32ProcessID, pointer._obj.th32ParentProcessID = pid, parent
+            return True
+        kernel.CreateToolhelp32Snapshot.return_value = 77
+        def snapshot_time(pointer):
+            pointer._obj.dwLowDateTime = 1000
+            pointer._obj.dwHighDateTime = 0
+        kernel.GetSystemTimeAsFileTime.side_effect = snapshot_time
+        kernel.Process32FirstW.side_effect = enumerate_processes
+        kernel.Process32NextW.side_effect = enumerate_processes
+        kernel.OpenProcess.side_effect = lambda access, inherit, pid: pid
+        def process_memory(handle, pointer, size):
+            pointer._obj.working_set, pointer._obj.private_bytes = handle * 2, handle * 3
+            return True
+        psapi.GetProcessMemoryInfo.side_effect = process_memory
+        with patch.object(api, '_kernel', return_value=kernel), \
+                patch.object(api, '_identity', side_effect=lambda k, h, pid: identities[pid]), \
+                patch.object(api.C, 'WinDLL', return_value=psapi, create=True), \
+                patch.object(api.C, 'get_last_error', return_value=18, create=True):
+            result = api._resource_sample(Path('.'), coordinator)
+        self.assertEqual([call.args[0] for call in psapi.GetProcessMemoryInfo.call_args_list], [10, 20, 30])
+        self.assertEqual(result['tree_working_set_bytes'], 120)
+        self.assertEqual(result['tree_private_bytes'], 180)
+        self.assertEqual({call.args[0] for call in kernel.CloseHandle.call_args_list}, {77, 10, 20, 30, 40, 50})
+
+        for failure in ('identity', 'memory', 'recycled'):
+            with self.subTest(failure=failure):
+                entries = iter(parents.items())
+                kernel.CloseHandle.reset_mock()
+                psapi.GetProcessMemoryInfo.reset_mock()
+                def identify(k, handle, pid):
+                    if failure == 'identity' and pid == 30:
+                        raise OSError('identity fixture')
+                    if failure == 'recycled' and pid == 20:
+                        return {'pid': pid, 'creation_time': 1001}
+                    return identities[pid]
+                psapi.GetProcessMemoryInfo.side_effect = (
+                    OSError('memory fixture') if failure == 'memory' else process_memory)
+                expected_error = RuntimeError if failure == 'recycled' else OSError
+                with patch.object(api, '_kernel', return_value=kernel), \
+                        patch.object(api, '_identity', side_effect=identify), \
+                        patch.object(api.C, 'WinDLL', return_value=psapi, create=True), \
+                        patch.object(api.C, 'get_last_error', return_value=18, create=True), \
+                        self.assertRaises(expected_error):
+                    api._resource_sample(Path('.'), coordinator)
+                expected_handles = [77, 10, 20, 30] if failure == 'identity' else [77, 10, 20, 30, 40, 50]
+                self.assertEqual([call.args[0] for call in kernel.CloseHandle.call_args_list], expected_handles)
+                self.assertEqual([call.args[0] for call in psapi.GetProcessMemoryInfo.call_args_list],
+                                 [10] if failure == 'memory' else [])
+
     def test_resource_profile_is_closed_serial_and_machine_specific(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         profile = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',

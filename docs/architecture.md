@@ -1,5 +1,7 @@
 # Arquitetura e contratos
 
+Correção de ownership na [Issue59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59), 2026-10-08: `windows_acquisition.py` mantém a medição da árvore do coordenador, com identidades PID/instante de criação e ordem de nascimento em cada vínculo pai–filho. O número do pai pode pertencer a um processo encerrado e ser reutilizado; ele sozinho não prova descendência. A medição exclui processos anteriores ao pai e seu ramo, valida o coordenador e rejeita identidades posteriores ao limite capturado antes do snapshot. Handles ficam abertos durante a validação e são fechados inclusive em erro. Testes permanecem em `tests/test_windows_acquisition.py`; sem novo módulo, dependência, raiz ou alteração do Job Object, permissões ou contratos financeiros. O supervisor privado adota a mesma conferência antes de observar extinção.
+
 Correção focal operacional da [Issue59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59), 2026-10-08: `financial_pipeline.py` conserva a responsabilidade do journal/head e recebe recuperação limitada de negação transitória Windows no writer existente, com regressões em `tests/test_financial_pipeline.py`. A extensão não altera contratos/planos/receipts históricos, aquisição, perfis ou dados, nem cria módulo, raiz ou dependência. Allowlist e aceite estão na Issue; execução de planos antigos continua condicionada aos pins, leitura autenticada mantém seu contrato.
 
 ## Referência de decisões
