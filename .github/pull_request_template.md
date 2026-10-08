@@ -16,7 +16,7 @@ Declare conflitos e alterações em CI, política/checker, templates ou contrato
 O PR não amplia sua própria autorização; compare com política e validator da base.
 
 ## Checkpoints de revisão e testes parciais
-Identifique a fatia integrável entregue e suas dependências/handoffs. Se várias fatias permanecerem na mesma PR, justificar a transição indivisível; não guardar a primeira revisão para o conjunto inteiro. Seguir o [workflow](https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/main/docs/agents/workflow.md#revisões-e-testes-por-fatias).
+Identifique as fatias entregues e suas dependências/handoffs. A PR pode ter o tamanho necessário ao escopo autorizado e reunir várias fatias, sem justificar seu tamanho ou uma transição indivisível. Exigir revisões parciais durante a implementação; não guardar a primeira revisão para o conjunto inteiro. Seguir o [workflow](https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/main/docs/agents/workflow.md#revisões-e-testes-por-fatias).
 
 | Fatia / resultado | Base e head ou snapshot/hashes revisados | Checks / resultado / limitações | Revisor / verdict / achados resolvidos | Evidência na Issue ou handoff |
 |---|---|---|---|---|
