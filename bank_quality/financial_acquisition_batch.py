@@ -1126,7 +1126,8 @@ def _current_code_identity_v2():
     return identity
 
 
-def _code_identity_v2(pins):
+def _capture_code_pins_v2(pins):
+    """Validate captured identity as data; this never authorizes execution."""
     acquisition._closed_data(pins)
     _require(type(pins) is dict and set(pins) == {'contract', 'reviewed_commit', 'files', 'runtime', 'policy_sha256'}
              and pins['contract'] == 'financial-acquisition-code-pins-v2', 'Invalid closed v2 code pins')
@@ -1141,6 +1142,10 @@ def _code_identity_v2(pins):
     acquisition._digest(pins['runtime']['sha256'])
     _historical_policy(_HISTORICAL_POLICY_V1)
     _require(acquisition._digest(pins['policy_sha256']) == _HISTORICAL_POLICY_SHA256, 'Policy identity mismatch')
+
+
+def _code_identity_v2(pins):
+    _capture_code_pins_v2(pins)
     _same({key: pins[key] for key in ('reviewed_commit', 'files', 'runtime')},
           _current_code_identity_v2(), 'Current code/runtime/HEAD differs from reviewed six pins')
 
@@ -2168,6 +2173,233 @@ def run_historical_batch(bundle_path, bundle_sha256, *, bootstrap_sha256,
         return _run_scheduler(bundle_path, bundle_sha256, bootstrap_sha256=bootstrap_sha256,
                               metadata_workers=1, phase_callable=_run_phase, resource_profile=profile,
                               resource_profile_ref=_reference(name, resource_profile_sha256), stage_mode=stage_mode)
+
+
+def verify_historical_capture(bundle_path, handoff_path, *, bundle_sha256,
+                              bootstrap_sha256, handoff_sha256):
+    """Authenticate completed historical evidence without a claim or old runtime."""
+    inventory = {}
+
+    def read(name, pin=None, *, document=True):
+        name = _relative_name(name)
+        raw = _path(name).read_bytes()
+        digest = _sha(raw)
+        if pin is not None:
+            _require(digest == acquisition._digest(pin), 'Captured file hash differs: ' + name)
+        _require(name not in inventory or inventory[name] == digest, 'Captured file changed: ' + name)
+        inventory[name] = digest
+        return _json(raw) if document else raw
+
+    def reference(ref):
+        _require(type(ref) is dict and set(ref) == {'path', 'sha256'}, 'Invalid captured reference')
+        return read(ref['path'], ref['sha256'])
+
+    def journal(name):
+        raw = read(name, document=False)
+        _require(not raw or raw.endswith(b'\n'), 'Partial captured journal tail')
+        return [_json(line) for line in raw.splitlines()]
+
+    def require_no_halt():
+        try:
+            (_ROOT / bundle['destination'] / 'halt.json').lstat()
+        except FileNotFoundError:
+            return
+        raise ValueError('Captured halt marker present')
+
+    def native_files(source, target):
+        acquisition._authenticated(source, expected=target)
+        manifest = read(source['manifest_path'], source['manifest_sha256'])
+        parent = Path(source['manifest_path']).parent
+        read((parent / manifest['body_path']).as_posix(), source['body_sha256'], document=False)
+        if manifest.get('response_metadata_path'):
+            read((parent / manifest['response_metadata_path']).as_posix(), manifest['response_metadata_sha256'])
+
+    bundle_name = Path(bundle_path).absolute().relative_to(_ROOT.absolute()).as_posix()
+    handoff_name = Path(handoff_path).absolute().relative_to(_ROOT.absolute()).as_posix()
+    bundle = read(bundle_name, bundle_sha256)
+    handoff = read(handoff_name, handoff_sha256)
+    fields = {'contract', 'scope', 'selection', 'acquire_periods', 'reuse_periods', 'catalogs',
+              'members', 'reuse', 'policies', 'caps', 'executable', 'destination', 'code_pins',
+              'window_id', 'policy_sha256'}
+    _require(type(bundle) is dict and set(bundle) == fields
+             and bundle['contract'] == 'financial-acquisition-batch-v2', 'Invalid captured historical bundle')
+    _require(type(bundle['window_id']) is str
+             and bundle['window_id'] in {window['window_id'] for window in _HISTORICAL_POLICY_V1['windows']},
+             'Captured variant requires its own read-only derivation proof')
+    _capture_code_pins_v2(bundle['code_pins'])
+    member_fields = {'period', 'job', 'job_sha256', 'session_root', 'job_path',
+                     'job_file_sha256', 'authority_path', 'bootstrap_sha256'}
+    _require(type(bundle['members']) is list and all(type(m) is dict and set(m) == member_fields
+             for m in bundle['members']), 'Invalid captured members')
+    draft = {key: copy.deepcopy(bundle[key]) for key in fields - {'code_pins'}}
+    draft.update(contract='financial-acquisition-batch-draft-v2', executable=False,
+                 members=[{key: m[key] for key in ('period', 'job', 'job_sha256', 'session_root')}
+                          for m in bundle['members']])
+    draft = _verify_draft(draft)
+    _same(bundle, _build_bundle(draft, bundle['destination'], bundle['code_pins']), 'Captured bundle identity differs')
+    _require(bundle_name == bundle['destination'] + '/bundle.json', 'Captured bundle path differs')
+    binding = _binding(bundle, bundle_sha256, bootstrap_sha256)
+    binding_path, _ = _batch_paths(bundle['scope'])
+    _same(read(binding_path.relative_to(_ROOT).as_posix()), binding, 'Captured batch binding differs')
+    _same(read(bundle['destination'] + '/bootstrap.json', bootstrap_sha256),
+          _batch_bootstrap(bundle, bundle_sha256), 'Captured batch bootstrap differs')
+    for catalog in bundle['catalogs'].values():
+        manifest = read(catalog['manifest_path'], catalog['manifest_sha256'])
+        read((Path(catalog['manifest_path']).parent / manifest['body_path']).as_posix(),
+             catalog['body_sha256'], document=False)
+    replay = _replay_phase_records(journal(bundle['destination'] + '/journal.jsonl'),
+        anchored_bundle={'bundle': bundle, 'bundle_sha256': bundle_sha256, 'bootstrap_sha256': bootstrap_sha256})
+    _same(read(bundle['destination'] + '/head.json'), replay['head'], 'Captured batch head differs')
+    state = replay['state']
+    _require(not state['pending'] and not state['halt'] and len(state['finished']) == 2 * len(bundle['members'])
+             and {(p['period'], p['phase']) for p in state['finished'].values()} ==
+                 {(m['period'], phase) for m in bundle['members'] for phase in ('metadata', 'values')}
+             and all(p['result']['status'] == 'complete' for p in state['finished'].values()),
+             'Captured historical phases incomplete or halted')
+    require_no_halt()
+    counters, exported, member_replays = [], [], {}
+    for member in bundle['members']:
+        job = member['job']
+        _same(read(member['job_path'], member['job_file_sha256']), job, 'Captured member job differs')
+        folder, member_binding, _ = acquisition._authority_paths(job)
+        folder = folder.relative_to(_ROOT).as_posix()
+        _same(read(member_binding.relative_to(_ROOT).as_posix()),
+              {'acquisition_scope': job['acquisition_scope'], 'job_sha256': member['job_sha256'],
+               'bootstrap_sha256': member['bootstrap_sha256']}, 'Captured member binding differs')
+        _same(read(folder + '/bootstrap.json', member['bootstrap_sha256']), _member_bootstrap(job),
+              'Captured member bootstrap differs')
+        targets, policy = acquisition._execution_job(job), acquisition._limits(job)
+        member_replay = acquisition._replay_member_records(journal(folder + '/journal.jsonl'),
+            job_identity=member['job_sha256'], targets=targets, policy=policy, job_contract=job['contract'])
+        member_replays[member['period']] = member_replay
+        _same(read(folder + '/head.json'), member_replay['head'], 'Captured member head differs')
+        _require(not member_replay['state']['pending'], 'Captured member pending')
+        specs = {}
+        for record in member_replay['records']:
+            if record['kind'] == 'identity':
+                spec = read(record['spec_path'], record['spec_sha256'])
+                _require(spec['contract'] == 'financial-acquisition-worker-v3'
+                         and spec['attempt_id'] == record['attempt_id']
+                         and spec['target_key'] == record['target_key']
+                         and spec['job_sha256'] == member['job_sha256']
+                         and spec['bootstrap_sha256'] == member['bootstrap_sha256'],
+                         'Captured worker specification differs')
+                specs[record['attempt_id']] = record['spec_sha256']
+            elif record['kind'] == 'finish' and record.get('attempt_evidence'):
+                evidence = record['attempt_evidence']
+                worker = read(evidence['worker_receipt_path'], evidence['worker_receipt_sha256'])
+                _require(worker['attempt_id'] == record['attempt_id']
+                         and worker['spec_sha256'] == specs.get(record['attempt_id'])
+                         and worker['manifest_path'] == evidence['manifest_path']
+                         and worker['manifest_sha256'] == evidence['manifest_sha256'],
+                         'Captured worker receipt differs')
+                manifest = read(evidence['manifest_path'], evidence['manifest_sha256'])
+                parent = Path(evidence['manifest_path']).parent
+                read((parent / manifest['body_path']).as_posix(), manifest['sha256'], document=False)
+                if manifest.get('response_metadata_path'):
+                    read((parent / manifest['response_metadata_path']).as_posix(),
+                         manifest['response_metadata_sha256'])
+                if record['status'] != 'source_complete':
+                    acquisition._failed_attempt_evidence(manifest, _path(evidence['manifest_path']))
+        phases = {p['phase']: p for p in state['finished'].values() if p['period'] == member['period']}
+        a, b = phases['metadata']['result'], phases['values']['result']
+        sources = member_replay['state']['sources']
+        metadata_sources = {target['target_key']: sources[target['target_key']]
+                            for target in job['targets'] if target['target_key'] in sources}
+        _require(len(metadata_sources) == 2, 'Captured metadata incomplete')
+        for key, source in metadata_sources.items():
+            native_files(source, targets[key])
+        resolved = acquisition.resolve_sources(job, metadata_sources)
+        resolution_ref = _reference(phases['metadata']['session'] + '/resolution.json', _sha(_canonical(resolved)))
+        _same(reference(resolution_ref), resolved, 'Captured resolution differs')
+        for target in resolved['numeric_targets']:
+            _require(target['target_key'] in sources, 'Captured numeric source missing')
+            source = sources[target['target_key']]
+            native_files(source, target)
+            body, _ = acquisition._authenticated(source, expected=target)
+            origins = [n['origin'] for report in resolved['resolutions'] for n in report['nodes']
+                       if n['kind'] == 'numeric' and n['origin']['area'] == target['area']]
+            acquisition.validate_numeric_source(body, area=target['area'], required_origins=origins)
+        a_body, b_body = reference(a['checkpoint']), reference(b['checkpoint'])
+        for phase in ('metadata', 'values'):
+            terminal = phases[phase]
+            _prove_phase_sources({'start': terminal, 'result': terminal['result'],
+                'receipt': reference(terminal['result']['receipt']),
+                'checkpoint': a_body if phase == 'metadata' else b_body, 'resolved': resolved,
+                'metadata_checkpoint_ref': a['checkpoint'], 'metadata_checkpoint': a_body},
+                {**member_replay, 'targets': targets, 'policy': policy}, anchored_member=member)
+        counters.append({'period': member['period'], 'sequence': len(member_replay['records']),
+            'pending_attempts': 0, **{key: member_replay['state'][key] for key in _COUNTERS}})
+        exported.append({'period': member['period'], 'selection': job['descriptors'][0]['selection'],
+            'job_path': member['job_path'], 'job_file_sha256': member['job_file_sha256'],
+            'job_sha256': member['job_sha256'], 'bootstrap_sha256': member['bootstrap_sha256'],
+            'checkpoint_a': a['checkpoint'], 'checkpoint_b': b['checkpoint'],
+            'metadata_receipt': a['receipt'], 'receipt': b['receipt'], 'resolution': resolution_ref,
+            'sources': b_body['sources'], 'phases': phases})
+    checkpoint = state.get('representative_checkpoint')
+    _require(checkpoint is not None, 'Captured representative checkpoint missing')
+    anchor = state.get('representative_measurement')
+    _require(anchor is not None and anchor['phase_id'] == checkpoint['phase_id'],
+             'Captured representative measurement missing')
+    terminal = state['finished'][checkpoint['phase_id']]
+    proof = reference(anchor['resource_measurement'])
+    receipt = reference(terminal['result']['receipt'])
+    attempts = [record for record in member_replays[terminal['period']]['records']
+                [terminal['member_sequence']:receipt['sequence']]
+                if record['kind'] in ('reserve', 'identity', 'finish')]
+    reserved = {record['attempt_id'] for record in attempts if record['kind'] == 'reserve'}
+    _require(reserved and reserved == {r['attempt_id'] for r in attempts if r['kind'] == 'identity'}
+             and reserved == {r['attempt_id'] for r in attempts if r['kind'] == 'finish'}
+             and all(r['session_id'] == Path(terminal['session']).name for r in attempts)
+             and all(r['tree_extinct'] is True for r in attempts if r['kind'] == 'finish'),
+             'Captured representative reservation/worker/extinction proof incomplete')
+    expected = {'contract': proof.get('contract'), 'bundle_sha256': bundle_sha256,
+        'bootstrap_sha256': bootstrap_sha256, 'code_pins': bundle['code_pins'],
+        'phase': {key: terminal[key] for key in ('phase_id', 'period', 'phase', 'session', 'job_sha256',
+            'member_bootstrap_sha256', 'member_sequence', 'member_record_sha256')},
+        'result': terminal['result'], 'attempt_records': attempts}
+    _require(set(proof) == set(expected) | {'resource_profile', 'measurements'},
+             'Captured representative measurement schema differs')
+    _same({key: proof[key] for key in expected}, expected, 'Captured representative proof differs')
+    _same(checkpoint['resource_measurement'], anchor['resource_measurement'], 'Captured measurement anchor differs')
+    _same(checkpoint['resource_profile'], proof['resource_profile'], 'Captured resource profile differs')
+    _same(checkpoint['measurements'], proof['measurements'], 'Captured measurements differ')
+    _same(checkpoint.get('measurement_contract', 'financial-acquisition-representative-measurement-v1'),
+          proof['contract'], 'Captured measurement version differs')
+    profile = reference(proof['resource_profile'])
+    _require(type(profile) is dict and set(profile) == {'contract', 'machine_id', 'metadata_workers',
+        'values_workers', 'active_windows', 'min_free_physical_bytes', 'min_free_commit_bytes',
+        'min_free_disk_bytes', 'sampling_interval_ms'}
+        and profile['contract'] == 'financial-acquisition-resource-profile-v1'
+        and type(profile['machine_id']) is str and bool(profile['machine_id'])
+        and all(type(profile[key]) is int and profile[key] == 1
+                for key in ('metadata_workers', 'values_workers', 'active_windows'))
+        and all(type(profile[key]) is int and profile[key] > 0
+                for key in ('min_free_physical_bytes', 'min_free_commit_bytes', 'min_free_disk_bytes'))
+        and type(profile['sampling_interval_ms']) is int and profile['sampling_interval_ms'] == 250,
+        'Captured serial resource profile required')
+    _validate_representative_measurements(proof['measurements'], contract=proof['contract'], profile=profile)
+    for key in ('physical', 'commit', 'disk'):
+        _require(proof['measurements']['minimum_free']['free_' + key + '_bytes'] >= profile['min_free_' + key + '_bytes'],
+                 'Captured measurement below resource margin')
+    summary = {'contract': 'financial-acquisition-batch-run-v1', 'status': 'complete', 'halt': '',
+        'bundle_sha256': bundle_sha256, 'bootstrap_sha256': bootstrap_sha256, 'sequence': len(replay['records']),
+        'members': counters, 'totals': {key: sum(m[key] for m in counters) for key in _COUNTERS},
+        'pending_phases': [], 'finished_phases': list(state['finished']),
+        'missing_periods': [], 'complete_periods': sorted(bundle['acquire_periods']),
+        'representative_checkpoint': checkpoint}
+    _same(handoff, {'contract': acquisition.SOURCES_CONTRACT, 'phase': 'complete', 'scope': bundle['scope'],
+        'window_id': bundle['window_id'], 'policy_sha256': bundle['policy_sha256'], 'members': exported,
+        'execution': {'bundle': binding, 'head': replay['head'], 'summary': summary, 'code_pins': bundle['code_pins']}},
+        'Captured export differs from authenticated evidence')
+    for name, pin in inventory.items():
+        _require(_sha(_path(name).read_bytes()) == pin, 'Captured input changed during verification: ' + name)
+    require_no_halt()
+    return {'contract': 'financial-historical-capture-proof-v1', 'periods': sorted(bundle['acquire_periods']),
+        'window_id': bundle['window_id'], 'policy_sha256': bundle['policy_sha256'],
+        'code_pins': copy.deepcopy(bundle['code_pins']), 'members': exported, 'source_state': summary,
+        'source_state_files': [_reference(name, pin) for name, pin in sorted(inventory.items())],
+        'source_state_absent': [bundle['destination'] + '/halt.json']}
 
 
 def export_historical_sources(bundle_path, bundle_sha256, *, bootstrap_sha256, output):

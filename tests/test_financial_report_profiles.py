@@ -762,6 +762,241 @@ def acquisition_batch_bridge():
         f.doCleanups()
 
 
+@contextmanager
+def historical_acquisition_bridge():
+    from tests.test_financial_acquisition_batch import HistoricalPreparationTests
+    f = HistoricalPreparationTests('test_initialization_is_exact_new_and_verifiable_without_sources')
+    try:
+        f.setUp()
+        # Give the synthetic official catalog the provenance required by the
+        # authoring reader before capturing any jobs or descriptors.
+        index = json.loads(f.index.read_bytes())
+        frozen = {}
+        for name, ref in index['catalogs'].items():
+            path = f.root / ref['manifest_path']
+            manifest = json.loads(path.read_bytes())
+            body_path = path.parent / manifest['body_path']
+            catalog = json.loads(body_path.read_bytes())
+            for entry in catalog:
+                for offer in entry['files']:
+                    if 'trel' in offer:
+                        for column in offer['trel']['c']:
+                            column['fid'] = 8
+            body_path.write_bytes(dump(catalog))
+            manifest.update(bytes=len(body_path.read_bytes()), sha256=sha(body_path.read_bytes()))
+            manifest.update(diagnostics=[], retrieved_at_utc='2026-10-01T12:00:00Z',
+                response_headers={'Content-Length': str(manifest['bytes'])},
+                context={'purpose': 'official source discovery'})
+            path.write_bytes(dump(manifest))
+            ref.update(manifest_sha256=sha(path.read_bytes()), provenance_sha256=sha(path.read_bytes()),
+                       body_sha256=manifest['sha256'])
+            frozen[name] = (ref['manifest_sha256'], ref['body_sha256'], manifest['url'])
+        f.index.write_bytes(dump(index))
+        patcher = patch.object(f.acquisition, '_FROZEN', frozen)
+        patcher.start()
+        f.addCleanup(patcher.stop)
+        pins = {'contract': 'financial-acquisition-code-pins-v2', 'reviewed_commit': '1' * 40,
+            'files': {name: 'a' * 64 for name in f.batch._CODE_FILES_V2},
+            'runtime': {'path': '.venv/Scripts/python.exe', 'sha256': 'b' * 64},
+            'policy_sha256': f.batch._HISTORICAL_POLICY_SHA256}
+        initialize = f.batch.initialize_historical_batch
+        bounded_source = f.bounded_source
+
+        def named_source(target, payload):
+            if target['role'] == 'dictionary':
+                payload = [dict(definition, n='synthetic binding') for definition in payload]
+            source = bounded_source(target, payload)
+            path = f.root / source['manifest_path']
+            manifest = json.loads(path.read_bytes())
+            manifest.update(retrieved_at_utc='2026-10-01T12:00:00Z',
+                            response_headers=dict(manifest['response_headers_raw']))
+            sidecar_path = path.parent / manifest['response_metadata_path']
+            sidecar = {key: manifest[key] for key in
+                       ('url', 'method', 'context', 'http_status', 'final_url', 'response_headers_raw')}
+            sidecar_path.write_bytes(dump(sidecar))
+            manifest['response_metadata_sha256'] = sha(sidecar_path.read_bytes())
+            path.write_bytes(dump(manifest))
+            source.update(manifest_sha256=sha(path.read_bytes()), provenance_sha256=sha(path.read_bytes()))
+            return source
+
+        f.bounded_source = named_source
+        with patch.object(f.batch, 'initialize_historical_batch',
+                          side_effect=lambda *a, **kw: initialize(*a, **dict(kw, reviewed_code_pins=pins))):
+            f._v3_roundtrip()
+        f.pkg = f.root / 'bank_quality'
+        f.pkg.mkdir(exist_ok=True)
+        for name, value in (('CHECKOUT_ROOT', f.root), ('PACKAGE_ROOT', f.pkg)):
+            patcher = patch.object(profiles, name, value)
+            patcher.start()
+            f.addCleanup(patcher.stop)
+        f.bundle_path = f.root / f.batch._historical_window('F1-01')['destination'] / 'bundle.json'
+        f.bundle = json.loads(f.bundle_path.read_bytes())
+        f.handoff_path = f.root / 'data/runs/handoff.json'
+        f.handoff = json.loads(f.handoff_path.read_bytes())
+        folder = f.root / 'data/raw/portal'
+        folder.mkdir(parents=True)
+        body = b'synthetic formatter'
+        (folder / 'portal.bin').write_bytes(body)
+        manifest = {'method': 'GET', 'http_status': 200, 'outcome': 'ok', 'truncated': False,
+            'diagnostics': [], 'bytes': len(body), 'sha256': sha(body), 'body_path': 'portal.bin',
+            'url': 'https://www3.bcb.gov.br/ifdata/index.html',
+            'final_url': 'https://www3.bcb.gov.br/ifdata/index.html',
+            'retrieved_at_utc': '2026-10-01T12:00:00Z',
+            'response_headers': {'Content-Length': str(len(body))},
+            'context': {'purpose': 'official source discovery'}}
+        (folder / 'portal.json').write_bytes(dump(manifest))
+        f.portal = {'source_id': 'portal', 'role': 'portal', 'area': None, 'native_file': None,
+            'catalog_pointer': None, 'manifest_path': 'data/raw/portal/portal.json',
+            'manifest_sha256': sha(dump(manifest)), 'body_sha256': sha(body),
+            'provenance_sha256': sha(dump(manifest))}
+        registry = {'contract': profiles.REGISTRY_CONTRACT,
+            'members': [member['job']['descriptors'][0] for member in f.bundle['members']],
+            'legacy_202312_sources': {'portal': f.portal}}
+        (f.pkg / 'financial-reports-registry.json').write_bytes(dump(registry))
+        yield f
+    finally:
+        f.doCleanups()
+
+
+class HistoricalAcquisitionBridgeTests(unittest.TestCase):
+    def test_completed_historical_capture_projects_to_common_profile_authoring(self):
+        with historical_acquisition_bridge() as f:
+            def compose():
+                return profiles.compose_historical_acquisition_handoffs(f.bundle_path, f.handoff_path,
+                    bundle_sha256=sha(f.bundle_path.read_bytes()),
+                    bootstrap_sha256=sha((f.bundle_path.parent / 'bootstrap.json').read_bytes()),
+                    handoff_sha256=sha(f.handoff_path.read_bytes()))
+
+            before = {p.relative_to(f.root).as_posix(): sha(p.read_bytes())
+                      for p in f.root.rglob('*') if p.is_file()}
+            with patch.object(f.batch, '_open_batch', side_effect=AssertionError('active authority')), \
+                    patch.object(f.batch, '_code_identity_v2', side_effect=AssertionError('old executable')):
+                result = compose()
+            self.assertEqual(result['contract'], 'ifdata-financial-acquisition-batch-bridge-v2')
+            self.assertEqual([m['selection']['period'] for m in result['members']], [201003, 201006, 201009, 201012])
+            self.assertEqual(result['batch']['window_id'], 'F1-01')
+            self.assertEqual(result['source_state_absent'],
+                             [f.bundle['destination'] + '/halt.json'])
+            for member in result['members']:
+                self.assertEqual(member['metadata_handoff_sha256'], sha(dump(member['metadata_handoff'])))
+                self.assertEqual(member['final_handoff']['checkpoint_a_sha256'], member['metadata_handoff_sha256'])
+                self.assertEqual(member['final_handoff_sha256'], sha(dump(member['final_handoff'])))
+                self.assertFalse(member['acquisition_evidence']['financial_admission'])
+                self.assertFalse(member['acquisition_evidence']['parquet_admission'])
+                self.assertEqual({s['source_id'] for s in member['final_handoff']['sources']},
+                                 {'catalog', 'portal', 'cadaster', 'dictionary', 'numeric:3'})
+            for ref in result['source_state_files']:
+                raw = (f.root / ref['path']).read_bytes()
+                self.assertEqual((len(raw), sha(raw)), (ref['bytes'], ref['sha256']))
+            self.assertEqual(before, {p.relative_to(f.root).as_posix(): sha(p.read_bytes())
+                                     for p in f.root.rglob('*') if p.is_file()})
+            registry_path = f.pkg / 'financial-reports-registry.json'
+            portal_path = f.root / 'data/raw/portal/portal.bin'
+            original_registry, original_portal = registry_path.read_bytes(), portal_path.read_bytes()
+            halt = f.bundle_path.parent / 'halt.json'
+            projection = profiles._project_acquisition_handoffs
+            for damage in ('descriptor', 'portal', 'late_registry', 'late_portal', 'late_halt'):
+                def changed_projection(*args):
+                    value = projection(*args)
+                    if damage == 'late_registry':
+                        registry_path.write_bytes(original_registry + b' ')
+                    elif damage == 'late_portal':
+                        portal_path.write_bytes(original_portal + b' ')
+                    elif damage == 'late_halt':
+                        halt.write_bytes(b'{}')
+                    return value
+
+                try:
+                    if damage == 'descriptor':
+                        registry = json.loads(original_registry)
+                        registry['members'][0]['selection']['reports'].reverse()
+                        registry_path.write_bytes(dump(registry))
+                    elif damage == 'portal':
+                        portal_path.write_bytes(original_portal + b' ')
+                    with self.subTest(damage=damage), \
+                            patch.object(profiles, '_project_acquisition_handoffs', side_effect=changed_projection):
+                        with self.assertRaises(ValueError):
+                            compose()
+                finally:
+                    registry_path.write_bytes(original_registry)
+                    portal_path.write_bytes(original_portal)
+                    if halt.exists():
+                        halt.unlink()
+            # Exercise the actual common compiler/freeze, not only envelope shape.
+            for member in result['members']:
+                folder = f.root / 'data/runs/projected' / str(member['selection']['period'])
+                folder.mkdir(parents=True)
+                a, b, candidate_path = folder / 'a.json', folder / 'b.json', folder / 'candidate.json'
+                a.write_bytes(dump(member['metadata_handoff']))
+                b.write_bytes(dump(member['final_handoff']))
+                candidate = profiles.compile_metadata_candidate(a, handoff_sha256=sha(a.read_bytes()))
+                candidate_path.write_bytes(dump(candidate))
+                frozen = profiles.freeze_profile(candidate_path, b,
+                    candidate_sha256=sha(candidate_path.read_bytes()), final_handoff_sha256=sha(b.read_bytes()))
+                self.assertEqual(frozen['selection'], member['selection'])
+                self.assertEqual(frozen['cadaster_columns'], ['c0', 'c1'])
+
+    def test_bridge_projects_all_policy_windows_from_verified_proof_seam(self):
+        """Dispatch coverage only; complete native capture/authoring is tested above."""
+        with historical_acquisition_bridge() as f:
+            proof = f.batch.verify_historical_capture(f.bundle_path, f.handoff_path,
+                bundle_sha256=sha(f.bundle_path.read_bytes()),
+                bootstrap_sha256=sha((f.bundle_path.parent / 'bootstrap.json').read_bytes()),
+                handoff_sha256=sha(f.handoff_path.read_bytes()))
+            template = proof['members'][0]
+            descriptors, drafts = [], []
+            for window in f.batch._HISTORICAL_POLICY_V1['windows']:
+                draft = f.prepare(window['window_id'])
+                drafts.append(draft)
+                descriptors.extend(m['job']['descriptors'][0] for m in draft['members'])
+            registry_path = f.pkg / 'financial-reports-registry.json'
+            registry = json.loads(registry_path.read_bytes())
+            registry['members'] = descriptors
+            registry_path.write_bytes(dump(registry))
+            seen = []
+            for draft in drafts:
+                selection_proof = copy.deepcopy(proof)
+                selection_proof.update(window_id=draft['window_id'], members=[],
+                                       source_state_files=[], source_state_absent=[])
+                counters = []
+                for member in draft['members']:
+                    descriptor = member['job']['descriptors'][0]
+                    captured = dict(copy.deepcopy(template), period=member['period'], selection=descriptor['selection'])
+                    for key in ('checkpoint_a', 'checkpoint_b'):
+                        path = f.root / 'data/runs/dispatch' / str(member['period']) / (key + '.json')
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        original = json.loads((f.root / template[key]['path']).read_bytes())
+                        original.update(selection=descriptor['selection'], catalog=descriptor['catalog'],
+                                        descriptor_sha256=descriptor['descriptor_sha256'])
+                        path.write_bytes(dump(original))
+                        captured[key] = {'path': path.relative_to(f.root).as_posix(), 'sha256': sha(path.read_bytes())}
+                    selection_proof['members'].append(captured)
+                    counters.append(dict(proof['source_state']['members'][0], period=member['period']))
+                selection_proof['source_state']['members'] = counters
+
+                def projected(originals, descriptor):
+                    self.assertEqual(originals['metadata']['selection'], descriptor['selection'])
+                    value = copy.deepcopy(originals)
+                    value['complete']['checkpoint_a_sha256'] = sha(dump(value['metadata']))
+                    return value
+
+                with self.subTest(window=draft['window_id']), \
+                        patch.object(f.batch, 'verify_historical_capture', return_value=selection_proof), \
+                        patch.object(profiles, '_project_acquisition_handoffs', side_effect=projected):
+                    result = profiles.compose_historical_acquisition_handoffs(f.bundle_path, f.handoff_path,
+                        bundle_sha256=sha(f.bundle_path.read_bytes()),
+                        bootstrap_sha256=sha((f.bundle_path.parent / 'bootstrap.json').read_bytes()),
+                        handoff_sha256=sha(f.handoff_path.read_bytes()))
+                    periods = [m['selection']['period'] for m in result['members']]
+                    self.assertEqual(periods, draft['acquire_periods'])
+                    self.assertEqual([m['selection']['reports'] for m in result['members']],
+                                     [m['job']['member']['reports'] for m in draft['members']])
+                    self.assertEqual(result['batch']['window_id'], draft['window_id'])
+                    seen.extend(periods)
+            self.assertEqual(len(seen), 55)
+            self.assertEqual(len(set(seen)), 55)
+
+
 class BatchAcquisitionBridgeTests(unittest.TestCase):
     snapshot = lambda self, f: {p.relative_to(f.root).as_posix(): sha(p.read_bytes())
                                for p in f.root.rglob('*') if p.is_file()}

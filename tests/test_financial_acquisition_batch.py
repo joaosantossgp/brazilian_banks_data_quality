@@ -1970,6 +1970,154 @@ class HistoricalPreparationTests(unittest.TestCase):
             self.batch.export_historical_sources(self.root / refs['bundle_path'], refs['bundle_sha256'],
                 bootstrap_sha256=refs['bootstrap_sha256'], output=output)
 
+    def test_completed_capture_reads_prior_code_without_claim_or_execution(self):
+        """A pinned completed capture is evidence, not permission to run it."""
+        original_identity = self.batch._code_identity_v2
+        original_initialize = self.batch.initialize_historical_batch
+        captured_pins = {
+            'contract': 'financial-acquisition-code-pins-v2', 'reviewed_commit': '1' * 40,
+            'files': {name: 'a' * 64 for name in self.batch._CODE_FILES_V2},
+            'runtime': {'path': '.venv/Scripts/python.exe', 'sha256': 'b' * 64},
+            'policy_sha256': self.batch._HISTORICAL_POLICY_SHA256}
+
+        def initialize(*args, **kwargs):
+            return original_initialize(*args, **dict(kwargs, reviewed_code_pins=captured_pins))
+
+        with patch.object(self.batch, 'initialize_historical_batch', side_effect=initialize):
+            self._v3_roundtrip()
+        destination = self.root / self.batch._historical_window('F1-01')['destination']
+        bundle_path, handoff_path = destination / 'bundle.json', self.root / 'data/runs/handoff.json'
+        bundle_pin = sha(bundle_path.read_bytes())
+        bootstrap_pin = sha((destination / 'bootstrap.json').read_bytes())
+        handoff_pin = sha(handoff_path.read_bytes())
+        before = {p.relative_to(self.root).as_posix(): sha(p.read_bytes())
+                  for p in self.root.rglob('*') if p.is_file()}
+        forbidden = AssertionError('Capture reader attempted executable authority')
+        with patch.object(self.batch, '_code_identity_v2', side_effect=forbidden), \
+                patch.object(self.batch, '_open_batch', side_effect=forbidden), \
+                patch.object(self.acquisition, '_claim', side_effect=forbidden), \
+                patch.object(self.acquisition, 'run_contained_attempt', side_effect=forbidden), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=forbidden):
+            result = self.batch.verify_historical_capture(bundle_path, handoff_path,
+                bundle_sha256=bundle_pin, bootstrap_sha256=bootstrap_pin,
+                handoff_sha256=handoff_pin)
+        self.assertEqual(result['periods'], [201003, 201006, 201009, 201012])
+        self.assertEqual(result['code_pins'], captured_pins)
+        self.assertEqual(len(result['members']), 4)
+        self.assertTrue(result['source_state_files'])
+        self.assertEqual({p.relative_to(self.root).as_posix(): sha(p.read_bytes())
+                          for p in self.root.rglob('*') if p.is_file()}, before)
+        # The new evidence-reading seam must not change the executable gate.
+        current = dict(captured_pins, reviewed_commit='2' * 40)
+        with patch.object(self.batch, '_code_identity_v2', original_identity), \
+                patch.object(self.batch, '_current_code_identity_v2', return_value=current):
+            with self.assertRaisesRegex(ValueError, 'Current code/runtime/HEAD'):
+                self.batch.verify_historical_batch(bundle_path, bundle_pin,
+                    bootstrap_sha256=bootstrap_pin)
+
+        def verify():
+            return self.batch.verify_historical_capture(bundle_path, handoff_path,
+                bundle_sha256=bundle_pin, bootstrap_sha256=bootstrap_pin,
+                handoff_sha256=handoff_pin)
+
+        original_bundle = bundle_path.read_bytes()
+        try:
+            variant = dict(json.loads(original_bundle), window_id='F1-01-R1')
+            bundle_path.write_bytes(canonical(variant))
+            bundle_pin = sha(bundle_path.read_bytes())
+            with patch.object(self.batch, '_replacement_state',
+                              side_effect=AssertionError('Variant reached executable predecessor gate')):
+                with self.assertRaisesRegex(ValueError, 'variant requires.*read-only'):
+                    verify()
+        finally:
+            bundle_path.write_bytes(original_bundle)
+            bundle_pin = sha(original_bundle)
+
+        # Each physical link must be checked even though the external export
+        # and bundle remain authentic. Restore every input before the next case.
+        handoff = json.loads(handoff_path.read_bytes())
+        first = handoff['members'][0]
+        checkpoint = handoff['execution']['summary']['representative_checkpoint']
+        candidates = [destination / 'journal.jsonl', destination / 'head.json',
+            destination / 'bootstrap.json', self.root / first['job_path'],
+            self.root / first['checkpoint_a']['path'], self.root / first['checkpoint_b']['path'],
+            self.root / first['metadata_receipt']['path'], self.root / first['receipt']['path'],
+            self.root / first['resolution']['path'],
+            self.root / checkpoint['resource_measurement']['path'],
+            self.root / checkpoint['resource_profile']['path']]
+        manifest_path = self.root / first['sources'][0]['manifest_path']
+        manifest = json.loads(manifest_path.read_bytes())
+        candidates.extend([manifest_path, manifest_path.parent / manifest['body_path']])
+        candidates.append(manifest_path.parent / manifest['response_metadata_path'])
+        candidates.extend(self.root / ref['path'] for ref in result['source_state_files']
+                          if Path(ref['path']).name == 'worker-receipt.json'
+                          or Path(ref['path']).name.startswith('worker-')
+                          or ref['path'].endswith('/journal.jsonl') and ref['path'] !=
+                          (destination / 'journal.jsonl').relative_to(self.root).as_posix())
+        for path in candidates:
+            with self.subTest(damaged=path.relative_to(self.root).as_posix()):
+                original = path.read_bytes()
+                try:
+                    if path == destination / 'head.json':
+                        head = json.loads(original)
+                        path.write_bytes(canonical(dict(head, sequence=head['sequence'] + 1)))
+                    else:
+                        path.write_bytes(original + b' ')
+                    with self.assertRaises(ValueError):
+                        verify()
+                finally:
+                    path.write_bytes(original)
+        halt = destination / 'halt.json'
+        try:
+            halt.write_bytes(b'{}')
+            with self.assertRaisesRegex(ValueError, 'halt marker'):
+                verify()
+        finally:
+            halt.unlink()
+        # A caller who pins a modified export still cannot invent membership.
+        original = handoff_path.read_bytes()
+        try:
+            for members in (handoff['members'][:-1], handoff['members'] + [first],
+                            [dict(first, period=202606)] + handoff['members'][1:]):
+                with self.subTest(export_members=[m['period'] for m in members]):
+                    handoff_path.write_bytes(canonical(dict(handoff, members=members)))
+                    handoff_pin = sha(handoff_path.read_bytes())
+                    with self.assertRaisesRegex(ValueError, 'export differs'):
+                        verify()
+        finally:
+            handoff_path.write_bytes(original)
+            handoff_pin = sha(original)
+
+        original_path = self.batch._path
+        head = destination / 'head.json'
+        head_bytes = head.read_bytes()
+        for late_halt in (False, True):
+            accesses = 0
+
+            def changing_path(name):
+                nonlocal accesses
+                path = original_path(name)
+                if path == head:
+                    accesses += 1
+                    if accesses == 2:
+                        if late_halt:
+                            halt.write_bytes(b'{}')
+                        else:
+                            path.write_bytes(head_bytes + b' ')
+                return path
+
+            try:
+                with self.subTest(change_during_read='halt' if late_halt else 'input'), \
+                        patch.object(self.batch, '_path', side_effect=changing_path):
+                    with self.assertRaisesRegex(ValueError, 'halt marker|changed during verification'):
+                        verify()
+            finally:
+                head.write_bytes(head_bytes)
+                if halt.exists():
+                    halt.unlink()
+        self.assertEqual({p.relative_to(self.root).as_posix(): sha(p.read_bytes())
+                          for p in self.root.rglob('*') if p.is_file()}, before)
+
     def test_legacy_run_entry_cannot_execute_historical_without_resource_gate(self):
         refs = self.initialize()
         with self.assertRaisesRegex(ValueError, 'resource'):

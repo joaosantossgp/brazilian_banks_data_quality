@@ -163,6 +163,196 @@ def offline_launch(api, spec_path, spec_hash, *, resources, before_resume):
             'observed_identities': [{'pid': 999999999, 'creation_time': 1}]}
 
 
+class HistoricalPipelineTests(unittest.TestCase):
+    def test_batch_integrity_halt_quarantines_completed_window(self):
+        api = importlib.import_module('bank_quality.financial_pipeline')
+        with tempfile.TemporaryDirectory() as folder, patch.object(profiles, 'CHECKOUT_ROOT', Path(folder)), \
+                patch.object(profiles, 'PACKAGE_ROOT', Path(folder) / 'bank_quality'):
+            member = {'selection': {'period': 201003}, 'installed_profile_path': 'absent.json',
+                      'profile': {'sha256': 'a' * 64}, **{key: 0 for key in
+                      ('nodes', 'leaves', 'groups', 'kinds', 'cadastro_columns', 'required_sources')}}
+            doc = {'contract': api.PLAN_V2, 'members': [member],
+                   'source_state': {'accepted_before': 0}, 'registry_proposed': {'sha256': 'b' * 64}}
+            journal = api._Journal(Path(folder) / 'run', {'sha256': 'c' * 64}, create=True)
+            journal.append('start', 201003, 'compare', {'spec': {'sha256': 'd' * 64}})
+            journal.append('finish', 201003, 'compare', {'start_sequence': 1,
+                           'receipt': {'path': 'receipt.json', 'sha256': 'e' * 64}})
+            with patch.object(api, '_validate_receipt', return_value={'status': 'complete', 'summary': {}}):
+                self.assertEqual(api._score(doc, journal)['scoreboard']['window_accepted'], 1)
+                journal.append('halt', 'batch', 'compare', {'code': 'integrity', 'message': 'changed bundle'})
+                result = api._score(doc, journal)
+            self.assertEqual(result['status'], 'halted')
+            self.assertEqual(result['scoreboard']['window_accepted'], 0)
+            self.assertEqual(result['members'][0]['terminal_state'], 'quarantined')
+            self.assertEqual(result['members'][0]['errors'][0]['message'], 'changed bundle')
+
+    def test_final_integrity_failure_prevents_complete_result(self):
+        api = importlib.import_module('bank_quality.financial_pipeline')
+
+        @contextmanager
+        def claim(path):
+            path.touch(exist_ok=True)
+            yield
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(profiles, 'CHECKOUT_ROOT', Path(folder)):
+            root = Path(folder)
+            document = {'contract': api.PLAN_V2, 'destinations': {'execution': 'data/runs/final-gate'},
+                        'members': [], 'limitations': [], 'source_state': {'accepted_before': 0},
+                        'batch': {'bundle': {'path': 'missing-bundle.json', 'sha256': 'f' * 64}}}
+            (root / 'data/runs').mkdir(parents=True)
+            path = root / 'plan.json'
+            path.write_bytes(dump(document))
+            # Isolate the closure boundary; payload integrity itself is exercised
+            # by the causal owner/sibling corruption test below.
+            with patch.object(api, '_verify_plan_document',
+                    side_effect=[None, api.IntegrityError('changed completed sibling body')]) as validation, \
+                    patch.object(api.native, 'exclusive_claim', claim):
+                result = api.run_pipeline(path, plan_sha256=sha(path.read_bytes()), resources=RESOURCES)
+            self.assertEqual(result['status'], 'halted')
+            self.assertEqual(result['scoreboard']['window_accepted'], 0)
+            self.assertEqual(api.read_status(path, plan_sha256=sha(path.read_bytes()))['status'], 'halted')
+            self.assertEqual(validation.call_count, 2)
+            self.assertTrue(all(call.kwargs['verify_native'] is True for call in validation.call_args_list))
+            records = [json.loads(line) for line in (root / 'data/runs/final-gate/journal.jsonl').read_bytes().splitlines()]
+            self.assertEqual(records[-1]['kind'], 'halt')
+            self.assertEqual(records[-1]['data']['code'], 'integrity')
+            self.assertIn('changed completed sibling body', records[-1]['data']['message'])
+
+    def test_global_checks_derive_payloads_without_reopening_sibling_bodies(self):
+        api = importlib.import_module('bank_quality.financial_pipeline')
+        with tempfile.TemporaryDirectory() as folder, patch.object(profiles, 'CHECKOUT_ROOT', Path(folder)):
+            root = Path(folder)
+            images, handoffs = [], []
+            for period in (201003, 201006):
+                parent = root / 'data/raw' / str(period)
+                parent.mkdir(parents=True)
+                body = parent / 'body.json'
+                body.write_bytes(dump({'native': period}))
+                manifest = parent / 'manifest.json'
+                manifest.write_bytes(dump({'body_path': body.name, 'sha256': sha(body.read_bytes()),
+                                          'bytes': len(body.read_bytes())}))
+                handoffs.append({'sources': [{'manifest_path': api._name(manifest),
+                    'manifest_sha256': sha(manifest.read_bytes()), 'body_sha256': sha(body.read_bytes())}]})
+                images.extend({'path': api._name(path), 'sha256': sha(path.read_bytes()), 'bytes': len(path.read_bytes())}
+                              for path in (body, manifest))
+            journal = root / 'data/journal.jsonl'
+            journal.write_bytes(b'{}\n')
+            images.append({'path': api._name(journal), 'sha256': sha(journal.read_bytes()), 'bytes': 3})
+            small = api._global_source_images(images, handoffs)
+            self.assertEqual({image['path'] for image in small},
+                             {'data/raw/201003/manifest.json', 'data/raw/201006/manifest.json', 'data/journal.jsonl'})
+            opened = []
+            original = api._stream_sha
+
+            def observed(path):
+                opened.append(api._name(path))
+                return original(path)
+
+            with patch.object(api, '_stream_sha', side_effect=observed):
+                api._authenticate_files(small)
+                api._source_bodies(handoffs[0])
+            self.assertIn('data/raw/201003/body.json', opened)
+            self.assertNotIn('data/raw/201006/body.json', opened)
+            self.assertIn('data/journal.jsonl', opened)
+            changed = copy.deepcopy(images)
+            changed[0]['sha256'] = 'f' * 64
+            with self.assertRaisesRegex(api.IntegrityError, 'payload inventory'):
+                api._global_source_images(changed, handoffs)
+            (root / 'data/raw/201003/body.json').write_bytes(b'changed')
+            with self.assertRaises(api.IntegrityError):
+                api._source_bodies(handoffs[0])
+            (root / 'data/raw/201006/body.json').write_bytes(b'changed sibling')
+            with self.assertRaises(api.IntegrityError):
+                api._authenticate_files(images)
+
+    def test_historical_window_reuses_preparation_and_all_seven_stages(self):
+        api = importlib.import_module('bank_quality.financial_pipeline')
+
+        @contextmanager
+        def claim(path):
+            path.touch(exist_ok=True)
+            yield
+
+        with fixtures.historical_acquisition_bridge() as f, \
+                patch('bank_quality.windows_acquisition.exclusive_claim', claim), \
+                patch('bank_quality.windows_acquisition._current_identity',
+                      return_value={'pid': 999999998, 'creation_time': 1}), \
+                patch.object(api.contained, 'run_contained_stage',
+                             lambda *a, **kw: offline_launch(api, *a, **kw)):
+            registry_path = f.pkg / 'financial-reports-registry.json'
+            registry = json.loads(registry_path.read_bytes())
+            selected = {m['selection']['period'] for m in registry['members']}
+            for year in range(2010, 2027):
+                for quarter in (3, 6, 9, 12):
+                    period = year * 100 + quarter
+                    if period <= 202606 and period not in selected:
+                        sentinel = copy.deepcopy(registry['members'][0])
+                        sentinel['selection']['period'] = period
+                        sentinel['limitations'] = ['Inactive preservation sentinel; not accepted native data']
+                        registry['members'].append(sentinel)
+            registry_path.write_bytes(dump(registry))
+            before = registry_path.read_bytes()
+            output = f.root / 'data/runs/historical-pipeline'
+            with self.assertRaisesRegex(api.IntegrityError, 'rejects legacy accepted supplement'):
+                api.prepare_profiles(f.bundle_path, f.handoff_path, output,
+                    bundle_sha256=sha(f.bundle_path.read_bytes()),
+                    bootstrap_sha256=sha((f.bundle_path.parent / 'bootstrap.json').read_bytes()),
+                    handoff_sha256=sha(f.handoff_path.read_bytes()), resources=RESOURCES,
+                    accepted_supplement_path=f.handoff_path,
+                    accepted_supplement_sha256=sha(f.handoff_path.read_bytes()))
+            self.assertFalse(output.exists())
+            original_bundle = json.loads(f.bundle_path.read_bytes())
+            forged_bundle = f.root / 'data/runs/forged-window.json'
+            for mutation in ({'window_id': 'F1-01-R1'}, {'acquire_periods': [201003, 202606]},
+                             {'policy_sha256': 'f' * 64}):
+                forged_bundle.write_bytes(dump(dict(original_bundle, **mutation)))
+                with self.subTest(bundle=mutation), self.assertRaises(api.IntegrityError):
+                    api._periods({'contract': api.PREPARE_V2,
+                        'batch': {'bundle': {'path': api._name(forged_bundle),
+                                             'sha256': sha(forged_bundle.read_bytes())}}})
+            result = api.prepare_profiles(f.bundle_path, f.handoff_path, output,
+                bundle_sha256=sha(f.bundle_path.read_bytes()),
+                bootstrap_sha256=sha((f.bundle_path.parent / 'bootstrap.json').read_bytes()),
+                handoff_sha256=sha(f.handoff_path.read_bytes()), resources=RESOURCES)
+            self.assertEqual(result['status'], 'prepared', result)
+            plan_path = f.root / result['plan']['path']
+            plan = json.loads(plan_path.read_bytes())
+            self.assertEqual(plan['contract'], 'ifdata-financial-sanitization-plan-v2')
+            self.assertEqual(result['profile_generated'], [201003, 201006, 201009, 201012])
+            self.assertEqual(registry_path.read_bytes(), before)
+            for mutation in ({'contract': api.PLAN}, {'members': plan['members'][:-1]},
+                             {'members': plan['members'] + [plan['members'][0]]},
+                             {'members': [dict(plan['members'][0], selection={
+                                 **plan['members'][0]['selection'], 'period': 202606})] + plan['members'][1:]}):
+                with self.subTest(plan=list(mutation)), self.assertRaises(api.IntegrityError):
+                    api._verify_plan_document(dict(plan, **mutation), RESOURCES, installed=False)
+            spec_path = next(path for path in (output / 'preparation/stages').glob('*/spec.json')
+                             if json.loads(path.read_bytes())['member'] != 'batch')
+            spec = json.loads(spec_path.read_bytes())
+            with self.assertRaisesRegex(api.IntegrityError, 'Invalid CPU member/stage'):
+                api._execute_spec(dict(spec, member=202606))
+            halt = f.bundle_path.parent / 'halt.json'
+            try:
+                halt.write_bytes(b'{}')
+                with self.assertRaisesRegex(api.IntegrityError, 'halt marker'):
+                    api._verify_plan_document(plan, RESOURCES, installed=False)
+            finally:
+                halt.unlink()
+            for member in plan['members']:
+                target = f.pkg / member['installed_profile_path']
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((f.root / member['profile']['path']).read_bytes())
+            registry_path.write_bytes((f.root / plan['registry_proposed']['path']).read_bytes())
+            run = api.run_pipeline(plan_path, plan_sha256=result['plan']['sha256'], resources=RESOURCES)
+            self.assertEqual(run['status'], 'complete', run)
+            self.assertEqual(run['scoreboard'], {'coverage_scope': 'authenticated_window',
+                'window': 4, 'window_accepted': 4, 'window_remaining': 0})
+            self.assertTrue(all(m['milestones']['replay_verified'] for m in run['members']))
+            self.assertEqual(len(run['members']), 4)
+            status = api.read_status(plan_path, plan_sha256=result['plan']['sha256'])
+            self.assertEqual(status['scoreboard'], run['scoreboard'])
+
+
 class PipelineTests(unittest.TestCase):
     def api(self):
         self.assertIsNotNone(importlib.util.find_spec('bank_quality.financial_pipeline'),
