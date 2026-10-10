@@ -271,7 +271,7 @@ def _authenticate_source(source, descriptor, *, _individual=False):
              and ((role == 'numeric' and type(area) is int and area > 0) or (role != 'numeric' and area is None)),
              'Wrong source identity, role or area')
     if _individual:
-        _same(source, _individual_sources().get(sid), 'Individual source differs from exact reviewed pins')
+        _same(source, _individual_sources(descriptor['selection']).get(sid), 'Individual source differs from exact reviewed pins')
     elif descriptor['selection']['period'] == 202312:
         _authenticate_legacy_member(source)
     path = _contained(CHECKOUT_ROOT, source.get('manifest_path'), source=True)
@@ -281,17 +281,22 @@ def _authenticate_source(source, descriptor, *, _individual=False):
              and type(manifest.get('http_status')) is int and manifest['http_status'] == 200
              and manifest.get('outcome') == 'ok', 'Source manifest failed or incomplete')
     legacy_exception = None
-    if descriptor['selection']['period'] == 202312 and role in ('dictionary', 'numeric') and area in (None, 1):
+    if _individual and descriptor['selection']['period'] != 202412:
+        policy = individual_descriptor_for_selection(descriptor['selection'])['source_policy'][sid]
+        _require(_individual_capture_matches(manifest, policy), 'Unreviewed individual capture policy')
+        if not policy['truncated_present']:
+            legacy_exception = {'individual': True}
+    elif not _individual and descriptor['selection']['period'] == 202312 and role in ('dictionary', 'numeric') and area in (None, 1):
         legacy_profile = _json(_contained(PACKAGE_ROOT, 'financial-profile-202312.json').read_bytes())
         legacy_exception = legacy_profile['legacy_sources'][role]
         if source['manifest_sha256'] != legacy_exception['manifest_sha256']:
             legacy_exception = None
-    if legacy_exception:
+    if legacy_exception and not legacy_exception.get('individual'):
         _require(manifest.get('sha256') == legacy_exception['body_sha256'] and 'truncated' not in manifest
                  and manifest.get('diagnostics') == legacy_exception['diagnostics']
                  and isinstance(manifest.get('context'), dict)
                  and manifest['context'].get('body_capture') == legacy_exception['body_capture'], 'Unreviewed legacy exception')
-    else:
+    elif not legacy_exception:
         _require(manifest.get('truncated') is False and manifest.get('diagnostics') == [], 'Source completeness is not proven')
     _require(isinstance(manifest.get('context'), dict), 'Source context missing')
     utc = manifest.get('retrieved_at_utc')
@@ -876,7 +881,11 @@ def _individual_utc(literal):
         raise ValueError('Individual retrieval requires timezone') from exc
 
 
-def _individual_sources():
+def _individual_sources(selection=None):
+    if selection is not None and selection != _INDIVIDUAL_SELECTION:
+        descriptor = individual_descriptor_for_selection(selection)
+        _require(type(descriptor.get('sources')) is dict, 'Individual archived bundle is absent')
+        return copy.deepcopy(descriptor['sources'])
     result = {}
     for sid, pin in _INDIVIDUAL_PINS.items():
         _, manifest = _read_hashed(_contained(CHECKOUT_ROOT, pin['manifest_path'], source=True), pin['manifest_sha256'])
@@ -889,14 +898,18 @@ def _individual_sources():
     return result
 
 
-def _authenticate_individual_source(source):
-    body, record = _authenticate_source(source, {'selection':_INDIVIDUAL_SELECTION}, _individual=True)
-    _require(len(body) == _INDIVIDUAL_PINS[source['source_id']]['bytes'], 'Individual physical size differs')
+def _authenticate_individual_source(source, selection=None):
+    selection = _INDIVIDUAL_SELECTION if selection is None else selection
+    body, record = _authenticate_source(source, {'selection':selection}, _individual=True)
+    policy = (_INDIVIDUAL_PINS if selection == _INDIVIDUAL_SELECTION else individual_descriptor_for_selection(selection)['source_policy'])
+    _require(len(body) == policy[source['source_id']]['bytes'], 'Individual physical size differs')
     _require('source_complete' not in record['manifest'] and 'contract' not in record['manifest'], 'Legacy framing cannot become bounded')
     return body, record
 
 
 def _individual_descriptor(selection=None):
+    if selection is not None and selection != _INDIVIDUAL_SELECTION:
+        return individual_descriptor_for_selection(selection)
     _same(_INDIVIDUAL_SELECTION if selection is None else selection, _INDIVIDUAL_SELECTION, 'Noncanonical individual selection')
     sources = _individual_sources()
     body, _ = _authenticate_individual_source(sources['catalog'])
@@ -912,7 +925,9 @@ def _individual_descriptor(selection=None):
     return result
 
 
-def author_individual_profile():
+def author_individual_profile(selection=None):
+    if selection is not None and selection != _INDIVIDUAL_SELECTION:
+        return _author_historical_individual_profile(selection)
     """Return a candidate reconstructed only from the exact archived bundle."""
     descriptor = _individual_descriptor()
     handoff = {'contract':SOURCES_CONTRACT,'phase':'complete','selection':descriptor['selection'],
@@ -952,6 +967,8 @@ def author_individual_profile():
 
 
 def load_individual_context(selection=None):
+    if selection is not None and selection != _INDIVIDUAL_SELECTION:
+        return _load_historical_individual_context(selection)
     """Only the integrator-installed closed individual selection is accepted."""
     _same(_INDIVIDUAL_SELECTION if selection is None else selection,_INDIVIDUAL_SELECTION,'Noncanonical individual selection')
     body = _contained(PACKAGE_ROOT,'individual-reports-profile-202412.json').read_bytes()
@@ -965,3 +982,113 @@ def load_individual_context(selection=None):
         'profile':profile,'profile_body':body,'profile_sha256':_INDIVIDUAL_PROFILE_SHA256,
         'cadaster_columns':profile['cadaster_columns'],'cad_csv_fields':profile['cad_csv_fields'],
         'source_members':profile['source_members'],'limitations':profile['limitations']}
+
+
+def _individual_registry():
+    value = _json(_contained(PACKAGE_ROOT, 'individual-reports-registry.json').read_bytes())
+    _require(type(value) is dict and value.get('contract') == 'ifdata-individual-reports-registry-v1'
+             and type(value.get('members')) is list, 'Invalid individual registry')
+    selections = [_canonical(m.get('selection')) for m in value['members']]
+    _require(len(selections) == len(set(selections)), 'Duplicate individual registry selection')
+    return value
+
+
+def individual_descriptor_for_selection(selection):
+    """Resolve one finite native offer from public metadata, without raw inputs."""
+    _require(type(selection) is dict and set(selection) == {'period', 'perspective', 'reports'}
+             and type(selection['period']) is int and type(selection['perspective']) is int
+             and selection['perspective'] == 1006 and type(selection['reports']) is list
+             and len(selection['reports']) == 4 and all(type(n) is int for n in selection['reports'])
+             and len(set(selection['reports'])) == 4, 'Noncanonical individual selection')
+    matches = [m for m in _individual_registry()['members'] if _canonical(m.get('selection')) == _canonical(selection)]
+    _require(len(matches) == 1, 'Selection is not a unique individual offer')
+    member = copy.deepcopy(matches[0])
+    _require(member.get('descriptor_sha256') == _digest(_offer_payload(member)), 'Individual descriptor digest mismatch')
+    offers = member.get('source_offers')
+    _require(type(offers) is list and all(type(o) is dict for o in offers), 'Invalid individual source offers')
+    identities, pointers = set(), set()
+    for offer in offers:
+        sid, role, area = offer.get('source_id'), offer.get('role'), offer.get('area')
+        _require(role in ('cadaster', 'dictionary', 'numeric')
+                 and sid == (f'numeric:{area}' if role == 'numeric' else role)
+                 and ((role == 'numeric' and type(area) is int and area > 0) or (role != 'numeric' and area is None))
+                 and sid not in identities and offer.get('catalog_pointer') not in pointers,
+                 'Individual source offer identity is ambiguous')
+        identities.add(sid)
+        pointers.add(offer.get('catalog_pointer'))
+    _require({'cadaster', 'dictionary'} <= identities, 'Individual metadata offers missing')
+    _same([r['report']['id'] for r in member['reports']], selection['reports'], 'Individual report order differs')
+    return member
+
+
+def _individual_capture_matches(manifest, policy):
+    """The exact manifest pin grants only its reviewed capture form."""
+    return (manifest.get('bytes') == policy['bytes']
+            and manifest.get('diagnostics') == policy['diagnostics']
+            and ('truncated' in manifest) == policy['truncated_present']
+            and manifest.get('truncated') == policy['truncated']
+            and type(manifest.get('context')) is dict
+            and manifest['context'].get('body_capture') == policy['body_capture']
+            and 'source_complete' not in manifest and 'contract' not in manifest)
+
+
+def _project_individual_source_record(record):
+    projected = _project_source_record(record)
+    projected['retrieved_at_original'] = projected['retrieved_at_utc']
+    projected['retrieved_at_utc_derived'] = _individual_utc(projected['retrieved_at_original'])
+    projected['completion_evidence'] = (
+        'Exact decoded legacy GET/200; truncation undeclared; original diagnostics preserved; EOF unobserved'
+        if record['truncation_state'] == 'undeclared_legacy' else
+        'Exact legacy GET/200; truncated=false; empty diagnostics; physical/manifest/Content-Length agree; Content-Encoding absent; EOF unobserved')
+    return projected
+
+
+def _author_historical_individual_profile(selection):
+    descriptor = individual_descriptor_for_selection(selection)
+    sources = _individual_sources(selection)
+    handoff = {'contract': SOURCES_CONTRACT, 'phase': 'complete', 'selection': descriptor['selection'],
+               'descriptor_sha256': descriptor['descriptor_sha256'], 'catalog': descriptor['catalog'],
+               'sources': list(sources.values())}
+    profile = _compile(handoff, _digest(handoff), _individual=True)
+    shape = descriptor['cadaster_shape']
+    body, _ = _authenticate_individual_source(sources['cadaster'], selection)
+    _same(profile['cadaster_columns'], [f'c{i}' for i in range(shape['columns'])], 'Individual historical width differs')
+    _require(len(_json(body)) == shape['rows'], 'Individual historical population differs')
+    _require(profile['missing_sources'] == [], 'Individual historical bundle is incomplete')
+    profile.update(contract='ifdata-individual-reports-historical-profile-v1', cadaster_fields=shape['columns'])
+    for sid, record in profile['source_members'].items():
+        projected = _project_individual_source_record(record)
+        profile['source_members'][sid] = projected
+        profile['source_pins'][sid]['projection_sha256'] = _digest(projected)
+    _validate_installed_profile(profile, descriptor)
+    return profile
+
+
+def _load_historical_individual_context(selection):
+    descriptor = individual_descriptor_for_selection(selection)
+    period = selection['period']
+    name, digest = descriptor.get('profile_path'), descriptor.get('profile_sha256')
+    _require(name == f'individual-reports-profiles/{period}.json' and type(digest) is str,
+             'Individual active profile is absent or path is invalid')
+    body = _contained(PACKAGE_ROOT, name).read_bytes()
+    _require(_sha(body.replace(b'\r\n', b'\n')) == _hash(digest), 'Individual historical profile hash differs')
+    profile = _json(body)
+    _require(profile.get('contract') == 'ifdata-individual-reports-historical-profile-v1'
+             and profile.get('descriptor_sha256') == descriptor['descriptor_sha256'], 'Individual historical profile mismatch')
+    _same(profile.get('selection'), selection, 'Individual historical selection differs')
+    _same([r['report']['id'] for r in profile['reports']], selection['reports'], 'Individual historical reports differ')
+    _require(profile.get('missing_sources') == [] and set(profile.get('source_pins', {})) == set(profile['required_sources']),
+             'Individual historical sources incomplete')
+    _validate_installed_profile(profile, descriptor)
+    _same(sorted(profile['source_members']), sorted(descriptor['sources']), 'Individual historical bundle differs')
+    for sid, record in profile['source_members'].items():
+        _same({k: record.get(k) for k in descriptor['sources'][sid]}, descriptor['sources'][sid], 'Individual installed source policy differs')
+        _require(_individual_capture_matches(record, descriptor['source_policy'][sid]), 'Individual installed capture policy differs')
+    contract = 'ifdata-individual-reports-historical-snapshot-v1'
+    return {'period': period, 'selection': copy.deepcopy(selection), 'contract': contract,
+            'envelope': {'contract': contract, 'period': period, 'perspective': 'individual', 'perspective_id': 1006},
+            'part': f'parts/individual-cells-{period}.parquet',
+            'parquet_contract': 'ifdata-individual-reports-historical-parquet-v1',
+            'profile': profile, 'profile_body': body, 'profile_sha256': digest,
+            'cadaster_columns': profile['cadaster_columns'], 'cad_csv_fields': profile['cad_csv_fields'],
+            'source_members': profile['source_members'], 'limitations': profile['limitations']}
