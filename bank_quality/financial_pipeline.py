@@ -1,4 +1,4 @@
-"""Offline seven-member authoring and measured, resumable financial execution.
+"""Offline window authoring and measured, resumable financial execution.
 
 Profiles are candidates until an external integrator installs the exact proposal.
 No network, acquisition recovery, install, review flag or numeric harmonization.
@@ -24,6 +24,9 @@ from . import windows_acquisition as native
 from . import windows_financial_pipeline as contained
 
 PLAN = 'ifdata-financial-sanitization-plan-v1'
+PLAN_V2 = 'ifdata-financial-sanitization-plan-v2'
+PREPARE_V1 = 'ifdata-financial-sanitization-prepare-v1'
+PREPARE_V2 = 'ifdata-financial-sanitization-prepare-v2'
 RESULT = 'ifdata-financial-sanitization-result-v1'
 STAGE_RESULT = 'ifdata-financial-sanitization-stage-result-v1'
 _CODE_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +34,44 @@ _WINDOW = (202406, 202409, 202506, 202509, 202512, 202603, 202606)
 _STAGES = ('admit', 'convert', 'query', 'replay-admit', 'replay-convert', 'replay-query', 'compare')
 _RESOURCE_KEYS = {'deadline_seconds', 'min_available_physical_bytes', 'min_available_commit_bytes',
                   'min_free_disk_bytes', 'sample_interval_seconds'}
+
+
+def _is_plan(doc):
+    return doc.get('contract') in (PLAN, PLAN_V2)
+
+
+def _historical_periods(batch):
+    from . import financial_acquisition_batch as acquisition
+    bundle = _read(batch['bundle'])
+    _require(bundle.get('contract') == 'financial-acquisition-batch-v2'
+             and bundle.get('policy_sha256') == acquisition._HISTORICAL_POLICY_SHA256,
+             'Historical pipeline requires authenticated policy bundle')
+    windows = [w for w in acquisition._HISTORICAL_POLICY_V1['windows']
+               if w['window_id'] == bundle.get('window_id')]
+    _require(len(windows) == 1, 'Historical pipeline window requires canonical policy derivation')
+    window = windows[0]
+    _require(bundle['acquire_periods'] == window['periods'] and bundle['scope'] == window['scope']
+             and bundle['destination'] == window['destination'], 'Historical bundle window differs from policy')
+    if 'window_id' in batch or 'policy_sha256' in batch:
+        _require(batch.get('window_id') == window['window_id']
+                 and batch.get('policy_sha256') == bundle['policy_sha256'], 'Historical plan window identity differs')
+    return list(window['periods'])
+
+
+def _periods(doc):
+    if doc.get('contract') in (PREPARE_V2, PLAN_V2):
+        return _historical_periods(doc['batch'])
+    _require(doc.get('contract') in (PREPARE_V1, PLAN), 'Unsupported pipeline document')
+    return list(_WINDOW)
+
+
+def _authenticate_absent(names):
+    for name in names:
+        try:
+            _path(name).lstat()
+        except FileNotFoundError:
+            continue
+        raise IntegrityError('Historical capture halt marker present: ' + name)
 
 
 class IntegrityError(ValueError):
@@ -263,13 +304,18 @@ def _registry_name():
 
 def _source_checks(plan, *, installed):
     images = []
-    for image in plan['source_state_files']:
+    source_images = plan['source_state_files']
+    if plan['contract'] == PLAN_V2:
+        source_images = _global_source_images(source_images, [_read(m['final_handoff']) for m in plan['members']])
+    for image in source_images:
         if image['path'] == _registry_name():
             expected = plan['registry_proposed']['sha256'] if installed else plan['registry_before_sha256']
             images.append({'path': image['path'], 'sha256': expected})
         else:
             images.append(image)
     _authenticate_files(images)
+    if plan['contract'] == PLAN_V2:
+        _authenticate_absent(plan['source_state_absent'])
     if plan.get('accepted_supplement'):
         supplement = _read(plan['accepted_supplement'])
         _authenticate_files([ref for member in supplement['members'] for ref in member['evidence'].values()])
@@ -460,7 +506,7 @@ def _outputs(doc, member, stage):
         return {'envelope': doc['output'] + '/batch-envelope.json',
                 'registry_before': doc['output'] + '/registry-before.json',
                 'accepted_inventory': doc['output'] + '/accepted-inventory.json'}
-    paths = _member_paths(doc['output'], member) if doc.get('contract') != PLAN else next(
+    paths = _member_paths(doc['output'], member) if not _is_plan(doc) else next(
         m['destinations'] for m in doc['members'] if m['selection']['period'] == member)
     if stage == 'prepare-member':
         return {k: paths[k] for k in ('metadata_handoff', 'final_handoff', 'candidate', 'profile', 'summary')}
@@ -504,13 +550,41 @@ def _source_bodies(handoff):
     _authenticate_files(_native_images(handoff))
 
 
+def _global_source_images(images, handoffs):
+    """Keep global state checks small; native bodies are checked by their owner."""
+    inventory = {image['path']: image for image in images}
+    _require(len(inventory) == len(images), 'Duplicate source inventory image')
+    bodies = set()
+    for handoff in handoffs:
+        for native_image in _native_images(handoff):
+            if 'bytes' not in native_image:  # Sidecars remain global state inputs.
+                continue
+            expected = inventory.get(native_image['path'])
+            _require(expected is not None and all(expected.get(key) == native_image[key]
+                     for key in ('path', 'sha256', 'bytes')), 'Native payload inventory differs from pinned handoff')
+            bodies.add(native_image['path'])
+    return [image for image in images if image['path'] not in bodies]
+
+
+def _bridge_source_checks(envelope):
+    images = envelope['source_state_files']
+    if envelope['contract'] == 'ifdata-financial-acquisition-batch-bridge-v2':
+        images = _global_source_images(images, [m['final_handoff'] for m in envelope['members']])
+        _authenticate_absent(envelope['source_state_absent'])
+    _authenticate_files(images)
+
+
 def _stage_action(spec, doc):
     member, stage, outputs = spec['member'], spec['stage'], spec['outputs']
     if stage == 'prepare-batch':
-        envelope = profiles.compose_batch_acquisition_handoffs(_path(doc['batch']['bundle']['path']),
+        historical = doc['contract'] == PREPARE_V2
+        composer = profiles.compose_historical_acquisition_handoffs if historical else profiles.compose_batch_acquisition_handoffs
+        envelope = composer(_path(doc['batch']['bundle']['path']),
             _path(doc['batch']['handoff']['path']), bundle_sha256=doc['batch']['bundle']['sha256'],
             bootstrap_sha256=doc['batch']['bootstrap_sha256'], handoff_sha256=doc['batch']['handoff']['sha256'])
-        _require([m['selection']['period'] for m in envelope['members']] == list(_WINDOW), 'Preparation must contain the seven literal members')
+        periods = _periods(doc)
+        _require([m['selection']['period'] for m in envelope['members']] == periods, 'Preparation members differ from authenticated window')
+        _require(not historical or doc['accepted_supplement'] is None, 'Historical preparation rejects legacy accepted supplement')
         supplement = _validate_supplement(doc['accepted_supplement'])
         refs = {'envelope': _publish(_path(outputs['envelope']), envelope)}
         registry_body = _path(_registry_name()).read_bytes()
@@ -522,12 +596,14 @@ def _stage_action(spec, doc):
             os.fsync(stream.fileno())
         refs['registry_before'] = _ref(registry_path)
         refs['accepted_inventory'] = _publish(_path(outputs['accepted_inventory']),
-            {'accepted_before': 3 + supplement['additional_accepted'], 'batch_accepted_before': 3,
-             'batch_periods': [202312, 202412, 202503], 'supplement': doc['accepted_supplement'], 'files': supplement['files']})
-        return {'outputs': refs, 'artifacts': list(refs.values()), 'summary': {'members': 7}}
+            {'accepted_before': 0 if historical else 3 + supplement['additional_accepted'],
+             'batch_accepted_before': 0 if historical else 3,
+             'batch_periods': [] if historical else [202312, 202412, 202503],
+             'supplement': doc['accepted_supplement'], 'files': supplement['files']})
+        return {'outputs': refs, 'artifacts': list(refs.values()), 'summary': {'members': len(periods)}}
     if stage == 'prepare-member':
         envelope = _read(spec['inputs']['envelope'])
-        _authenticate_files(envelope['source_state_files'])
+        _bridge_source_checks(envelope)
         original = next(m for m in envelope['members'] if m['selection']['period'] == member)
         refs = {}
         for key in ('metadata_handoff', 'final_handoff'):
@@ -587,7 +663,7 @@ def _authenticate_stage_inputs(spec, doc):
     _check_code(doc['code_pins'], spec['resources'])
     for ref in spec['inputs'].values():
         _read(ref)
-    if doc['contract'] == PLAN:
+    if _is_plan(doc):
         _verify_plan_document(doc, spec['resources'], installed=True)
         info = next(m for m in doc['members'] if m['selection']['period'] == spec['member'])
         _source_bodies(_read(info['final_handoff']))
@@ -597,7 +673,7 @@ def _authenticate_stage_inputs(spec, doc):
                 _payloads(_path(ref['path']).parent, _read(ref))
     elif spec['stage'] == 'prepare-member':
         envelope = _read(spec['inputs']['envelope'])
-        _authenticate_files(envelope['source_state_files'])
+        _bridge_source_checks(envelope)
         original = next(m for m in envelope['members'] if m['selection']['period'] == spec['member'])
         _source_bodies(original['final_handoff'])
 
@@ -614,10 +690,10 @@ def _execute_spec(spec):
                                               if e['path'] == 'bank_quality/financial_pipeline.py'), 'CPU spec pins differ from document')
     stage, member = spec['stage'], spec['member']
     _require(stage in ('prepare-batch', 'prepare-member', *_STAGES)
-             and member in ('batch', *_WINDOW), 'Invalid CPU member/stage')
+             and member in ('batch', *_periods(doc)), 'Invalid CPU member/stage')
     _require((stage == 'prepare-batch') == (member == 'batch'), 'Invalid batch stage identity')
-    _require((doc.get('contract') == PLAN) == (stage in _STAGES), 'Stage is incompatible with the immutable document')
-    journal_root = (doc['destinations']['execution'] if doc['contract'] == PLAN else doc['output'] + '/preparation')
+    _require(_is_plan(doc) == (stage in _STAGES), 'Stage is incompatible with the immutable document')
+    journal_root = (doc['destinations']['execution'] if _is_plan(doc) else doc['output'] + '/preparation')
     journal = _Journal(_path(journal_root), spec['document'])
     pending, finished, _, halted = journal.state()
     _require(not halted and len(pending) == 1 and (member, stage) in pending, 'Worker is outside its sole pending journal stage')
@@ -632,9 +708,9 @@ def _execute_spec(spec):
     _require(spec['outputs'] == _outputs(doc, member, stage), 'CPU output paths differ from immutable document')
     for name in (*spec['outputs'].values(), spec['identity_path'], spec['log_path'], spec['result_path']):
         _path(name)
-    if doc['contract'] != PLAN:
+    if not _is_plan(doc):
         _require(set(doc) == {'contract', 'batch', 'accepted_supplement', 'code_pins', 'resources', 'output'}
-                 and doc['contract'] == 'ifdata-financial-sanitization-prepare-v1'
+                 and doc['contract'] in (PREPARE_V1, PREPARE_V2)
                  and doc['resources'] == spec['resources'], 'Unsupported closed CPU preparation document')
     _authenticate_stage_inputs(spec, doc)
     # Only parser/schema failures inside known calls are local. Unexpected errors halt.
@@ -712,10 +788,13 @@ def _dispatch(journal, doc, member, stage, resources):
 def _verify_plan_document(doc, resources, *, installed, verify_native=False):
     fields = {'contract', 'batch', 'source_state', 'source_state_files', 'code_pins', 'registry_before_sha256',
               'registry_proposed', 'members', 'destinations', 'limitations', 'accepted_supplement'}
-    _require(type(doc) is dict and set(doc) == fields and doc['contract'] == PLAN, 'Invalid closed sanitization plan')
+    historical = type(doc) is dict and doc.get('contract') == PLAN_V2
+    if historical:
+        fields.add('source_state_absent')
+    _require(type(doc) is dict and set(doc) == fields and _is_plan(doc), 'Invalid closed sanitization plan')
     _check_code(doc['code_pins'], resources)
-    _require(type(doc['members']) is list and [m['selection']['period'] for m in doc['members']] == list(_WINDOW),
-             'Plan must contain all seven ordered native selections')
+    _require(type(doc['members']) is list and [m['selection']['period'] for m in doc['members']] == _periods(doc),
+             'Plan must contain all ordered native selections of its authenticated window')
     output = doc['destinations']['preparation']
     _require(doc['destinations'] == {'preparation': output, 'execution': output + '/execution'}, 'Plan execution destination changed')
     proposed = _read(doc['registry_proposed'])
@@ -724,7 +803,9 @@ def _verify_plan_document(doc, resources, *, installed, verify_native=False):
              'The first pipeline contract requires the finite 66-offer registry')
     preparation = _Journal(_path(output + '/preparation'), _ref(_path(output + '/prepare-request.json')))
     request = _read(preparation.document)
-    _require(request['batch'] == doc['batch'] and request['code_pins'] == doc['code_pins']
+    _require(request['contract'] == (PREPARE_V2 if historical else PREPARE_V1)
+             and request['batch'] == {key: doc['batch'][key] for key in ('bundle', 'handoff', 'bootstrap_sha256')}
+             and request['code_pins'] == doc['code_pins']
              and request['accepted_supplement'] == doc['accepted_supplement'] and request['output'] == output,
              'Plan differs from its immutable preparation inputs')
     batch_record = preparation.state()[1].get(('batch', 'prepare-batch'))
@@ -732,6 +813,13 @@ def _verify_plan_document(doc, resources, *, installed, verify_native=False):
     batch_receipt = _validate_receipt(batch_record, preparation.document, payloads=False)
     _require(batch_receipt['status'] == 'complete', 'Batch preparation did not complete')
     envelope = _read(batch_receipt['outputs']['envelope'])
+    _require(envelope['contract'] == ('ifdata-financial-acquisition-batch-bridge-v2' if historical
+                                     else 'ifdata-financial-acquisition-batch-bridge-v1')
+             and envelope['batch'] == doc['batch'], 'Plan bridge version or batch identity differs')
+    if historical:
+        _require(doc['accepted_supplement'] is None
+                 and doc['source_state_absent'] == envelope['source_state_absent'],
+                 'Historical plan absence/supplement differs from authenticated bridge')
     inventory_ref = batch_receipt['outputs']['accepted_inventory']
     inventory = _read(inventory_ref)
     _require(type(doc['source_state']) is dict
@@ -740,8 +828,9 @@ def _verify_plan_document(doc, resources, *, installed, verify_native=False):
              and doc['source_state_files'] == envelope['source_state_files']
              and doc['source_state']['accepted_inventory'] == inventory_ref
              and doc['source_state']['accepted_before'] == inventory['accepted_before']
-             and inventory['batch_accepted_before'] == 3 and inventory['batch_periods'] == [202312, 202412, 202503]
-             and inventory['accepted_before'] == (4 if doc['accepted_supplement'] else 3)
+             and inventory['batch_accepted_before'] == (0 if historical else 3)
+             and inventory['batch_periods'] == ([] if historical else [202312, 202412, 202503])
+             and inventory['accepted_before'] == (0 if historical else 4 if doc['accepted_supplement'] else 3)
              and inventory['supplement'] == doc['accepted_supplement'], 'Plan accepted inventory/source authority differs')
     expected = copy.deepcopy(before)
     native_images = {}
@@ -774,7 +863,7 @@ def _verify_plan_document(doc, resources, *, installed, verify_native=False):
             for image in _native_images(_read(member['final_handoff'])):
                 previous = native_images.setdefault(image['path'], image)
                 _require(previous == image, 'Shared native source has divergent pins')
-    _require(expected == proposed, 'Registry proposal changes more than the seven profile activations')
+    _require(expected == proposed, 'Registry proposal changes more than the window profile activations')
     if installed:
         _require(_stream_sha(_path(_registry_name())) == doc['registry_proposed']['sha256'], 'Proposed registry is not installed exactly')
     _source_checks(doc, installed=installed)
@@ -795,11 +884,13 @@ def prepare_profiles(bundle_path: Path, handoff_path: Path, output: Path, *, bun
              'handoff': {'path': _name(handoff_path), 'sha256': handoff_sha256}, 'bootstrap_sha256': bootstrap_sha256}
     for ref in (batch['bundle'], batch['handoff']):
         _read(ref)
+    historical = _read(batch['bundle']).get('contract') == 'financial-acquisition-batch-v2'
+    _require(not historical or accepted_supplement_path is None, 'Historical preparation rejects legacy accepted supplement')
     profiles._hash(bootstrap_sha256)
     supplement = None if accepted_supplement_path is None else {'path': _name(accepted_supplement_path), 'sha256': accepted_supplement_sha256}
     if supplement:
         _read(supplement)
-    request = {'contract': 'ifdata-financial-sanitization-prepare-v1', 'batch': batch, 'accepted_supplement': supplement,
+    request = {'contract': PREPARE_V2 if historical else PREPARE_V1, 'batch': batch, 'accepted_supplement': supplement,
                'code_pins': _code_pins(resources), 'resources': resources, 'output': name}
     output.mkdir(parents=True, exist_ok=False)
     request_ref = _publish(output / 'prepare-request.json', request)
@@ -809,7 +900,8 @@ def prepare_profiles(bundle_path: Path, handoff_path: Path, output: Path, *, bun
         if receipt is None or receipt['status'] != 'complete':
             return {'status': 'halted', 'request': request_ref, 'plan': None}
         members = []
-        for period in _WINDOW:
+        periods = _periods(request)
+        for period in periods:
             receipt = _dispatch(journal, request, period, 'prepare-member', resources)
             if receipt is None or receipt['status'] == 'halted':
                 break
@@ -817,7 +909,7 @@ def prepare_profiles(bundle_path: Path, handoff_path: Path, output: Path, *, bun
                 summary = receipt['summary']
                 members.append({**summary, **receipt['outputs'], 'installed_profile_path': f'financial-reports-profiles/{period}.json',
                                 'destinations': _member_paths(name, period)})
-        if len(members) != 7:
+        if len(members) != len(periods):
             result = {'status': 'halted' if journal.state()[3] else 'partial', 'request': request_ref,
                       'plan': None, 'profile_generated': [m['selection']['period'] for m in members]}
             _publish(output / 'prepare-result.json', result)
@@ -831,7 +923,7 @@ def prepare_profiles(bundle_path: Path, handoff_path: Path, output: Path, *, bun
             matches[0].update(profile_path=member['installed_profile_path'], profile_sha256=member['profile']['sha256'])
         proposed_ref = _publish(output / 'registry-proposed.json', proposed)
         accepted = _read(_ref(output / 'accepted-inventory.json'))
-        plan = {'contract': PLAN, 'batch': envelope['batch'], 'source_state': {'acquisition': envelope['source_state'],
+        plan = {'contract': PLAN_V2 if historical else PLAN, 'batch': envelope['batch'], 'source_state': {'acquisition': envelope['source_state'],
                 'accepted_before': accepted['accepted_before'], 'accepted_inventory': _ref(output / 'accepted-inventory.json')},
                 'source_state_files': envelope['source_state_files'], 'code_pins': request['code_pins'],
                 'registry_before_sha256': _sha((output / 'registry-before.json').read_bytes()),
@@ -839,9 +931,13 @@ def prepare_profiles(bundle_path: Path, handoff_path: Path, output: Path, *, bun
                 'destinations': {'preparation': name, 'execution': name + '/execution'},
                 'limitations': envelope['limitations'] + ['Exact external profile/registry installation is required.',
                     'Software checks do not certify economic comparability or independent review.'], 'accepted_supplement': supplement}
+        if historical:
+            plan['source_state_absent'] = envelope['source_state_absent']
+            _authenticate_files(envelope['source_state_files'])
+            _authenticate_absent(envelope['source_state_absent'])
         _verify_plan_document(plan, resources, installed=False)
-        plan_ref = _publish(output / 'plan.json', plan)  # Published after all seven candidates and integrity checks.
-        result = {'status': 'prepared', 'request': request_ref, 'plan': plan_ref, 'profile_generated': list(_WINDOW)}
+        plan_ref = _publish(output / 'plan.json', plan)  # Published after all window candidates and integrity checks.
+        result = {'status': 'prepared', 'request': request_ref, 'plan': plan_ref, 'profile_generated': periods}
         _publish(output / 'prepare-result.json', result)
         return result
 
@@ -905,7 +1001,7 @@ def _score(doc, journal=None):
             terminal = 'quarantined'
         if journal:
             for record in journal.records:
-                if record['member'] == period and record['kind'] == 'halt':
+                if record['member'] in (period, 'batch') and record['kind'] == 'halt':
                     terminal = 'quarantined'
                     if record['data'] not in errors:
                         errors.append(record['data'])
@@ -916,6 +1012,11 @@ def _score(doc, journal=None):
                        'milestones': flags, 'receipts': receipts, 'errors': errors, 'counts': counts})
     accepted = sum(s['milestones']['replay_verified'] and not s['state'] in ('failed', 'quarantined') for s in states)
     before = doc['source_state']['accepted_before']
+    if doc['contract'] == PLAN_V2:
+        count = len(doc['members'])
+        return {'members': states, 'scoreboard': {'coverage_scope': 'authenticated_window', 'window': count,
+            'window_accepted': accepted, 'window_remaining': count - accepted},
+            'status': 'halted' if halted else 'complete' if accepted == count else 'partial'}
     return {'members': states, 'scoreboard': {'offered': 66, 'window': 7, 'accepted_before': before,
               'window_accepted': accepted, 'accepted_after': before + accepted, 'remaining_after': 66 - before - accepted},
             'status': 'halted' if halted else 'complete' if accepted == 7 else 'partial'}
@@ -924,11 +1025,11 @@ def _score(doc, journal=None):
 def read_status(plan_path: Path, *, plan_sha256: str) -> dict:
     ref = {'path': _name(plan_path), 'sha256': plan_sha256}
     doc = _read(ref)
-    _require(doc.get('contract') == PLAN, 'Unsupported status plan')
+    _require(_is_plan(doc), 'Unsupported status plan')
     root = _path(doc['destinations']['execution'])
     journal = _Journal(root, ref) if root.exists() else None
     result = _score(doc, journal)
-    result.update(contract=RESULT, plan=ref,
+    result.update(contract='ifdata-financial-sanitization-result-v2' if doc['contract'] == PLAN_V2 else RESULT, plan=ref,
                   validation_scope='Pinned plan, small journal/receipts/results and installed profile hashes; corpus not reopened')
     return result
 
@@ -991,7 +1092,14 @@ def run_pipeline(plan_path: Path, *, plan_sha256: str, resources: dict, resume: 
                 if receipt is None or receipt['status'] != 'complete':
                     break
         result = _score(doc, journal)
-        result.update(contract=RESULT, plan=ref, head=journal.projection(), resources=resources,
+        if doc['contract'] == PLAN_V2 and result['status'] == 'complete':
+            try:
+                _verify_plan_document(doc, resources, installed=True, verify_native=True)
+            except Exception as error:
+                journal.append('halt', 'batch', 'compare', _global_error(error))
+                result = _score(doc, journal)
+        result.update(contract='ifdata-financial-sanitization-result-v2' if doc['contract'] == PLAN_V2 else RESULT,
+                      plan=ref, head=journal.projection(), resources=resources,
                       limitations=doc['limitations'],
                       measured_elapsed_seconds=sum(_read(r['data']['receipt'])['measurement']['elapsed_seconds']
                                                    for r in journal.state()[1].values()))
@@ -1011,7 +1119,7 @@ def _worker_main(path, pin):
              and identity.get('job_handle_inherited') is False, 'CPU worker lacks durable contained identity')
     native.verify_worker_ancestry(identity['launcher'], identity['parent'])
     doc = _read(spec['document'])
-    journal_root = doc['destinations']['execution'] if doc['contract'] == PLAN else doc['output'] + '/preparation'
+    journal_root = doc['destinations']['execution'] if _is_plan(doc) else doc['output'] + '/preparation'
     kernel = native._kernel()
     # The coordinator owns the noninherited, exclusive OS claim while this worker runs.
     handle = kernel.CreateFileW(str(_path(journal_root + '/claim')), 0x80000000, 0, None, 3, 0x80, None)

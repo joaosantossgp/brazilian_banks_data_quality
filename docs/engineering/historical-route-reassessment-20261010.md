@@ -147,3 +147,12 @@ Antes da mudança,42arquivos da tentativa R1 e seis imagens de código inertes f
 ## Método e limitações
 
 Instruções locais de grill-with-docs aplicadas por leitura de grilling e domain-modeling; pesquisa de fatos delegada ao revisor existente, somente leitura. Não há ferramenta Skill nesta interface: não alegar slash command executado. Revisão independente sustenta o diagnóstico e a plausibilidade da alternativa, não comprova seu custo, prazo ou funcionamento. A rodada de decisões foi concluída; próximo passo é o checkpointA da rota escolhida, com detalhamento técnico e validação proporcionais.
+
+
+### Diagnóstico encerrado como não reproduzido offline e preparo60
+
+Após a integração75, a tentativa real de2011 recebeu quatro HTTP502 e ficou com journal/head incoerentes, specs ausentes e sem resultado terminal verificável. Seus48 arquivos permanecem congelados; não houve aceite novo. A causa não foi identificada. Não atribuir a memória, proteção do computador ou código sem evidência.
+
+A sequência offline foi encerrada após verificar: persistência/launcher simples; executor+monitor real, incluindo candidato87 resolvido em76,4ms; núcleo financeiro com502; coordenador histórico com502; e uma fase v3 com quatro filhos nativos, ancestry real e502 gerado localmente sem socket. O último experimento preservou journal/head16, batch2, quatro comprovantes/logs e55 amostras sem erro do monitor; inventário63 conferido independentemente, resultado privado SHA256 `786fb1ad10bf9c1ef15153aaee97ecea6724354c82e26232b07c271c85c51e90`. Isso não corrige nem reproduz a inconsistência real e não libera GET/recovery/reconstrução de saldo. [Evidência59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6099602976).
+
+Para avançar no software útil ao objetivo enquanto falta o handoff real, a60 prepara a interface comum prevista nesta rota: verificação de captura concluída por leitura, ponte versionada e pipeline por janela da policy. O [plano60](../superpowers/plans/2026-10-10-financial-historical-sanitization.md) delimita contrato, ownership, testes e revisões parciais. Não refaz readers/adapters nem cria pipeline por trimestre. Software pode ser preparado com fixtures; execução/aceite real continuam bloqueados pela captura59. Os55, incluindo2010, permanecem no objetivo.

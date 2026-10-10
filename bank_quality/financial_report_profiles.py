@@ -730,6 +730,89 @@ def compose_batch_acquisition_handoffs(bundle_path: Path, handoff_path: Path, *,
                                 'Readers must authenticate native bodies on use; no historical comparability is asserted.']}
 
 
+def compose_historical_acquisition_handoffs(bundle_path: Path, handoff_path: Path, *,
+        bundle_sha256: str, bootstrap_sha256: str, handoff_sha256: str) -> dict:
+    """Project a completed policy window using captured evidence, without claims."""
+    from . import financial_acquisition_batch as api
+
+    proof = api.verify_historical_capture(bundle_path, handoff_path,
+        bundle_sha256=bundle_sha256, bootstrap_sha256=bootstrap_sha256, handoff_sha256=handoff_sha256)
+    images = {ref['path']: copy.deepcopy(ref) for ref in proof['source_state_files']}
+
+    def image(name):
+        body = _contained(CHECKOUT_ROOT, name).read_bytes()
+        pin = _sha(body)
+        _require(name not in images or images[name]['sha256'] == pin, 'Historical bridge input changed: ' + name)
+        images[name] = {'path': name, 'sha256': pin, 'bytes': len(body)}
+        return body
+
+    def document(ref):
+        body = image(ref['path'])
+        _require(_sha(body) == ref['sha256'], 'Historical bridge reference differs')
+        return _json(body)
+
+    registry_name = (PACKAGE_ROOT / 'financial-reports-registry.json').relative_to(CHECKOUT_ROOT).as_posix()
+    registry = _json(image(registry_name))
+    portal = registry.get('legacy_202312_sources', {}).get('portal')
+    _require(type(portal) is dict, 'Historical bridge requires installed portal source')
+    portal_manifest = document({'path': portal['manifest_path'], 'sha256': portal['manifest_sha256']})
+    portal_body = (Path(portal['manifest_path']).parent / portal_manifest['body_path']).as_posix()
+    _require(_sha(image(portal_body)) == portal['body_sha256'], 'Historical portal body differs')
+    if portal_manifest.get('response_metadata_path'):
+        document({'path': (Path(portal['manifest_path']).parent / portal_manifest['response_metadata_path']).as_posix(),
+                  'sha256': portal_manifest['response_metadata_sha256']})
+    members = []
+    for captured in proof['members']:
+        descriptor = descriptor_for_selection(captured['selection'])
+        originals = {phase: document(captured[key]) for phase, key in
+                     (('metadata', 'checkpoint_a'), ('complete', 'checkpoint_b'))}
+        projected = _project_acquisition_handoffs(originals, descriptor)
+        counters = next(m for m in proof['source_state']['members'] if m['period'] == captured['period'])
+        metadata_receipt = document(captured['metadata_receipt'])
+        values_receipt = document(captured['receipt'])
+        evidence = {'period': captured['period'], 'state': 'acquired_validated_sources',
+            'selection': descriptor['selection'], 'descriptor_sha256': descriptor['descriptor_sha256'],
+            'job': {'path': captured['job_path'], 'sha256': captured['job_file_sha256'],
+                    'canonical_sha256': captured['job_sha256']},
+            'bootstrap_sha256': captured['bootstrap_sha256'],
+            'metadata_receipt': captured['metadata_receipt'], 'values_receipt': captured['receipt'],
+            'checkpoint_a': captured['checkpoint_a'], 'checkpoint_b': captured['checkpoint_b'],
+            'sources': captured['sources'], 'counters': counters,
+            'financial_admission': False, 'parquet_admission': False}
+        authority = {'status': 'verified', 'sequence': counters['sequence'],
+            'job_sha256': captured['job_sha256'], 'bootstrap_sha256': captured['bootstrap_sha256'],
+            'counters': copy.deepcopy(counters), 'metadata_receipt_sequence': metadata_receipt['sequence'],
+            'values_receipt_sequence': values_receipt['sequence'],
+            'metadata_receipt_is_historical': metadata_receipt['sequence'] != counters['sequence'],
+            'values_receipt_is_historical': values_receipt['sequence'] != counters['sequence']}
+        members.append({'selection': copy.deepcopy(descriptor['selection']),
+            'descriptor_sha256': descriptor['descriptor_sha256'], 'acquisition_evidence': copy.deepcopy(evidence),
+            'authority': authority, 'metadata_handoff': projected['metadata'],
+            'metadata_handoff_sha256': _digest(projected['metadata']), 'final_handoff': projected['complete'],
+            'final_handoff_sha256': _digest(projected['complete'])})
+    for name in list(images):
+        image(name)
+    for name in proof['source_state_absent']:
+        try:
+            (CHECKOUT_ROOT / name).lstat()
+        except FileNotFoundError:
+            continue
+        raise ValueError('Historical bridge halt marker present')
+    return {'contract': 'ifdata-financial-acquisition-batch-bridge-v2',
+        'batch': {'bundle': {'path': Path(bundle_path).absolute().relative_to(CHECKOUT_ROOT).as_posix(),
+                             'sha256': bundle_sha256},
+                  'handoff': {'path': Path(handoff_path).absolute().relative_to(CHECKOUT_ROOT).as_posix(),
+                              'sha256': handoff_sha256}, 'bootstrap_sha256': bootstrap_sha256,
+                  'window_id': proof['window_id'], 'policy_sha256': proof['policy_sha256']},
+        'source_state': copy.deepcopy(proof['source_state']),
+        'source_state_files': [images[name] for name in sorted(images)],
+        'source_state_absent': copy.deepcopy(proof['source_state_absent']), 'members': members,
+        'limitations': ['Native source completion only; no financial or Parquet admission.',
+            'Captured code identity is evidence only; execution uses current reviewed software.',
+            'Preparation/runner must reauthenticate inputs and absence preconditions.',
+            'Native financial periods and concepts remain separate; no historical comparability is asserted.']}
+
+
 def wrap_legacy_202312_index(index_path: Path, *, index_sha256: str) -> dict:
     body, index = _read_hashed(index_path, index_sha256)
     _same(index.get('selection'), {'period': 202312, 'perspective': 1005, 'report': 92}, 'Wrong legacy Summary selection')
