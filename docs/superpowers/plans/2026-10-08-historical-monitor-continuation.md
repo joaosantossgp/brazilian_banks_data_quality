@@ -1,5 +1,7 @@
 # Monitor histórico e continuação: plano de implementação
 
+> **Rota operacional substituída em 2026-10-10:** João aprovou priorizar o primeiro lote útil e substituir explicitamente a execução interrompida, preservando histórico, contabilidade e exclusividade. O [replanejamento](../../engineering/historical-route-reassessment-20261010.md#rota-escolhida-e-plano-de-execução) passa a orientar a implementação. Não continuar Worker4/overlay como requisito de F1-01. As correções úteis do monitor e a prova do predecessor permanecem reutilizáveis após conferência de composição; o conteúdo abaixo preserva o plano/evidência anteriores, sem liberar execução incompleta.
+
 > Para o executor: aplicar executing-plans, tarefa a tarefa, com TDD e revisão independente parcial conforme a instrução de João. Não criar agente implementador nem pausar para confirmações rotineiras já cobertas pela autonomia técnica. Revisão final de composição continua obrigatória.
 
 **Goal:** corrigir a execução da aquisição59 e retomar F1-01 pela mesma autoridade/saldo, para adquirir as 55 referências e entregar fontes à60.

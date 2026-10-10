@@ -1,5 +1,7 @@
 # Monitor histórico e continuação autenticada da autoridade
 
+> **Atualização de 2026-10-10:** João escolheu substituição operacional explícita e primeiro lote útil, conforme o [replanejamento](../../engineering/historical-route-reassessment-20261010.md#rota-escolhida-e-plano-de-execução). Este desenho de overlay deixa de ser a rota de execução de F1-01. Preservam-se evidência histórica e componentes úteis revisados; não ampliar Worker4 nem interpretar esta spec como obrigação de terminar uma segunda máquina de execução.
+
 Proposta técnica da [Issue 59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59), base `ca63ee9674f58f9a80221af721fe6ebfc00025d3`. Complementa o [plano de aquisição](../plans/2026-10-05-financial-historical-acquisition-remaining.md); não substitui sua política finita nem os contratos de dados. A revisão deste desenho precede implementação e retomada.
 
 ## Resultado e evidência
