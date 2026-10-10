@@ -5,7 +5,7 @@ writes the installed package or activates a selection. Source contexts remain
 those of the original archived requests, including the two exact legacy pins.
 """
 import copy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 from pathlib import Path, PurePosixPath
 import re
@@ -263,14 +263,16 @@ def _bounded_source_completion(manifest, path):
     _require((basis == 'chunked_eof') == bool(transfers), 'Completion basis/header mismatch')
 
 
-def _authenticate_source(source, descriptor):
+def _authenticate_source(source, descriptor, *, _individual=False):
     _require(isinstance(source, dict), 'Invalid source member')
     role, sid, area = source.get('role'), source.get('source_id'), source.get('area')
     _require(role in ('catalog', 'cadaster', 'dictionary', 'portal', 'numeric')
              and sid == (f'numeric:{area}' if role == 'numeric' else role)
              and ((role == 'numeric' and type(area) is int and area > 0) or (role != 'numeric' and area is None)),
              'Wrong source identity, role or area')
-    if descriptor['selection']['period'] == 202312:
+    if _individual:
+        _same(source, _individual_sources().get(sid), 'Individual source differs from exact reviewed pins')
+    elif descriptor['selection']['period'] == 202312:
         _authenticate_legacy_member(source)
     path = _contained(CHECKOUT_ROOT, source.get('manifest_path'), source=True)
     manifest_body, manifest = _read_hashed(path, source.get('manifest_sha256'))
@@ -294,7 +296,7 @@ def _authenticate_source(source, descriptor):
     _require(isinstance(manifest.get('context'), dict), 'Source context missing')
     utc = manifest.get('retrieved_at_utc')
     try:
-        valid_utc = type(utc) is str and datetime.fromisoformat(utc).utcoffset() == timedelta(0)
+        valid_utc = bool(_individual_utc(utc)) if _individual else type(utc) is str and datetime.fromisoformat(utc).utcoffset() == timedelta(0)
     except ValueError:
         valid_utc = False
     _require(valid_utc, 'Source retrieval must be UTC')
@@ -316,12 +318,12 @@ def _authenticate_source(source, descriptor):
     body = body_path.read_bytes()
     _require(len(body) == manifest['bytes'] and _sha(body) == manifest.get('sha256') == _hash(source.get('body_sha256')),
              'Source body integrity mismatch')
-    if descriptor['selection']['period'] != 202312 and role in ('cadaster', 'dictionary', 'numeric'):
+    if not _individual and descriptor['selection']['period'] != 202312 and role in ('cadaster', 'dictionary', 'numeric'):
         _bounded_source_completion(manifest, path)
     headers = manifest.get('response_headers')
     _require(isinstance(headers, dict), 'Source framing evidence missing')
     folded = {k.lower(): v for k, v in headers.items()}
-    if not legacy_exception and (descriptor['selection']['period'] == 202312 or role in ('catalog', 'portal')):
+    if not legacy_exception and (_individual or descriptor['selection']['period'] == 202312 or role in ('catalog', 'portal')):
         encoding = folded.get('content-encoding', 'identity').lower()
         _require(encoding in ('', 'identity'), 'Encoded body requires an explicit reviewed capture contract')
         if 'content-length' in folded:
@@ -396,11 +398,11 @@ def _validate_numeric(body, area):
             legacy._value(cell['v'])
 
 
-def _compile(handoff, handoff_sha256):
+def _compile(handoff, handoff_sha256, *, _individual=False):
     _require(isinstance(handoff, dict) and handoff.get('contract') == SOURCES_CONTRACT
              and handoff.get('phase') in ('metadata', 'complete'), 'Invalid historical handoff contract/phase')
     _require(not any(k in handoff for k in ('root', 'base', 'profile_path', 'profile_sha256', 'accepted')), 'Caller override is forbidden')
-    descriptor = descriptor_for_selection(handoff.get('selection'))
+    descriptor = _individual_descriptor(handoff.get('selection')) if _individual else descriptor_for_selection(handoff.get('selection'))
     _require(handoff.get('descriptor_sha256') == descriptor['descriptor_sha256'], 'Handoff descriptor mismatch')
     _same(handoff.get('catalog'), descriptor['catalog'], 'Handoff catalog pins/pointer mismatch')
     source_list = handoff.get('sources')
@@ -418,7 +420,7 @@ def _compile(handoff, handoff_sha256):
         if sid == 'catalog':
             _same({k: source.get(k) for k in ('manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')},
                   {k: descriptor['catalog'][k] for k in ('manifest_path', 'manifest_sha256', 'body_sha256', 'provenance_sha256')}, 'Catalog source differs from installed pins')
-        bodies[sid], members[sid] = _authenticate_source(source, descriptor)
+        bodies[sid], members[sid] = _authenticate_source(source, descriptor, _individual=_individual)
     _require(all(s in members for s in ('catalog', 'cadaster', 'dictionary')), 'C/D/O metadata sources missing')
     catalog = _json(bodies['catalog'])
     entry = _pointer(catalog, descriptor['catalog']['reference_pointer'])
@@ -448,7 +450,7 @@ def _compile(handoff, handoff_sha256):
         perspectives = native_report.get('s')
         _require(isinstance(perspectives, list) and all(isinstance(p, dict) and type(p.get('id')) is int for p in perspectives)
                  and len({p['id'] for p in perspectives}) == len(perspectives)
-                 and sum(p['id'] == 1005 for p in perspectives) == 1, 'Native financial report membership invalid')
+                 and sum(p['id'] == descriptor['selection']['perspective'] for p in perspectives) == 1, 'Native financial report membership invalid')
         nodes, ids = [], set()
         for column, pointer, parent in reports._walk(native_report['c'], expected['catalog_pointer'] + '/c'):
             _require(column['id'] not in ids and column['ifd'] in infos, 'Duplicate column or missing definition')
@@ -859,3 +861,107 @@ def wrap_legacy_202312_index(index_path: Path, *, index_sha256: str) -> dict:
             'descriptor_sha256': descriptor['descriptor_sha256'], 'catalog': descriptor['catalog'], 'sources': source_list,
             'legacy_index': {'body_utf8': body.decode('utf-8'), 'body_sha256': index_sha256,
                              'selection': copy.deepcopy(index['selection']), 'index_path': str(Path(index_path).resolve())}}
+
+_INDIVIDUAL_SELECTION = {'period': 202412, 'perspective': 1006, 'reports': [93, 77, 100, 94]}
+_INDIVIDUAL_PINS = {'cadaster': {'manifest_path': 'data/raw/discovery-20261001/20261001T013234426740Z_portal_cadastro_202412_c363a9e39165404aa08831eaa26dd2f5.json', 'manifest_sha256': 'ebed46f73f39b31f450ea995abd53e5414663c169eedb7b2a4aa135a70143589', 'body_sha256': '5200301d6dabad5240b2d65aada6cb2179d75d497999c9b08d6c011a74043685', 'bytes': 824810}, 'dictionary': {'manifest_path': 'data/raw/discovery-20261001/20261001T013235163159Z_portal_info_202412_4b180f95c53d44d4b5f3a4444c586e20.json', 'manifest_sha256': '45b12d698f2b6bcaae34ebf09f8d051f7fab1e3036e27ef1a147eee979b9192e', 'body_sha256': '9c09219eeb7aa558e0ac74e32b905ba940ec00b0bc01f761b1d086aef86cca28', 'bytes': 188690}, 'numeric:1': {'manifest_path': 'data/raw/discovery-20261001/20261001T021818677646Z_portal_numeric_input_202412_1_786886e0790146b5ad208e8f86f0fdd6.json', 'manifest_sha256': '2e782a8c6b9fc02ad109921550a4f9ebde49cfd534a26e851e368840abbfaa07', 'body_sha256': 'c0f14556464dfd191df00d6867023fa894174b0eeb007a2bd5f5714187fa0474', 'bytes': 15612512}, 'catalog': {'manifest_path': 'data/raw/financial-cadaster-202412-20261003/20261003T204148892567Z_catalog_metadata_202412_8f64be16714a446387225826f4cc6241.json', 'manifest_sha256': 'b6ead0180a1622fa27766d55bc63520a0d35e6202a4e35075b615b4a235447c7', 'body_sha256': '2428b8a436e142682cd63eb6155717f58f2524582dcca427654032f45f6acf07', 'bytes': 13527657}, 'portal': {'manifest_path': 'data/raw/discovery-20261001/20261001T012756759142Z_portal_56229187f15948a0a353b4b194b7cb3f.json', 'manifest_sha256': '5757f812b56dbd414e2fa3d68075cafbf50157a010a9b4b330126fab86dd211a', 'body_sha256': '234fcb9158bd25b222625418f2d775d438a8db8df1585e65ef1b40c7a7fb0153', 'bytes': 92483}}
+_INDIVIDUAL_PROFILE_SHA256 = '52bdf4c91473c017c06b962044a4f6ebb97b9d1bd3654a3bad39aef26c37438c'
+
+def _individual_utc(literal):
+    """Derive UTC while retaining the original offset literal in provenance."""
+    try:
+        value = datetime.fromisoformat(literal) if type(literal) is str else None
+        _require(value is not None and value.utcoffset() is not None, 'Individual retrieval requires timezone')
+        return value.astimezone(timezone.utc).isoformat()
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Individual retrieval requires timezone') from exc
+
+
+def _individual_sources():
+    result = {}
+    for sid, pin in _INDIVIDUAL_PINS.items():
+        _, manifest = _read_hashed(_contained(CHECKOUT_ROOT, pin['manifest_path'], source=True), pin['manifest_sha256'])
+        role = 'numeric' if sid == 'numeric:1' else sid
+        result[sid] = {'source_id': sid, 'role': role, 'area': 1 if role == 'numeric' else None,
+            'native_file': {'cadaster':'ifdata/202412/cadastro202412_1006.json', 'dictionary':'ifdata/202412/info202412.json', 'numeric':'ifdata/202412/dados202412_1.json'}.get(role),
+            'catalog_pointer': {'cadaster':'/99/files/1/f','dictionary':'/99/files/9/f','numeric':'/99/files/3/f'}.get(role),
+            'manifest_path': pin['manifest_path'], 'manifest_sha256':pin['manifest_sha256'],
+            'body_sha256':pin['body_sha256'], 'provenance_sha256':_digest(_native(manifest))}
+    return result
+
+
+def _authenticate_individual_source(source):
+    body, record = _authenticate_source(source, {'selection':_INDIVIDUAL_SELECTION}, _individual=True)
+    _require(len(body) == _INDIVIDUAL_PINS[source['source_id']]['bytes'], 'Individual physical size differs')
+    _require('source_complete' not in record['manifest'] and 'contract' not in record['manifest'], 'Legacy framing cannot become bounded')
+    return body, record
+
+
+def _individual_descriptor(selection=None):
+    _same(_INDIVIDUAL_SELECTION if selection is None else selection, _INDIVIDUAL_SELECTION, 'Noncanonical individual selection')
+    sources = _individual_sources()
+    body, _ = _authenticate_individual_source(sources['catalog'])
+    catalog = _json(body)
+    _require(_pointer(catalog,'/99')['dt'] == 202412, 'Individual catalog reference differs')
+    result = {'selection':copy.deepcopy(_INDIVIDUAL_SELECTION),
+        'catalog':{**{k:sources['catalog'][k] for k in ('manifest_path','manifest_sha256','body_sha256','provenance_sha256')},'reference_pointer':'/99'},
+        'reports':[{'report':_native(_pointer(catalog,f'/99/files/{i}/trel')),'catalog_pointer':f'/99/files/{i}/trel'} for i in (29,27,11,30)],
+        'source_offers':[{k:s[k] for k in ('source_id','role','area','native_file','catalog_pointer')} for sid,s in sources.items() if sid not in ('catalog','portal')]}
+    for offer in result['source_offers']:
+        _same(_pointer(catalog,offer['catalog_pointer']),offer['native_file'],'Individual advertisement differs')
+    result['descriptor_sha256'] = _digest(_offer_payload(result))
+    return result
+
+
+def author_individual_profile():
+    """Return a candidate reconstructed only from the exact archived bundle."""
+    descriptor = _individual_descriptor()
+    handoff = {'contract':SOURCES_CONTRACT,'phase':'complete','selection':descriptor['selection'],
+        'descriptor_sha256':descriptor['descriptor_sha256'],'catalog':descriptor['catalog'],'sources':list(_individual_sources().values())}
+    profile = _compile(handoff,_digest(handoff),_individual=True)
+    _same(profile['cadaster_columns'],[f'c{i}' for i in range(38)],'Individual cadaster width differs')
+    body,_ = _authenticate_individual_source(_individual_sources()['cadaster'])
+    _require(len(_json(body)) == 1585,'Individual population differs')
+    _same([(len(r['nodes']),sum(n['kind']=='group' for n in r['nodes'])) for r in profile['reports']],[(19,0),(30,2),(35,3),(45,4)],'Individual tree counts differ')
+    portal,_ = _authenticate_individual_source(_individual_sources()['portal'])
+    _require(all(portal[o:o+8] == b'case 13:' for o in (28520,33835)),'Portal formatter offsets differ')
+    for item in profile['reports']:
+        for node in item['nodes']:
+            if node['kind'] == 'group':
+                continue
+            if node['kind'] == 'numeric':
+                _require(node['fid'] == 13,'Individual monetary formatter differs')
+                flow = item['report']['id'] == 94 or (item['report']['id'] == 93 and node['lid'] == 78187)
+                node.update(unit='BRL_raw_inferred',unit_basis='Technical inference: cp R$ mil; portal case13 value/1000.0 at UTF-8 offsets 28520,33835; economic scale not certified',
+                    window_start='2024-07-01' if flow else '2024-12-31',window_end='2024-12-31',
+                    window_basis='Native report rp note 1: July-December flow; not annualized' if flow else 'Conceptual inference: stock at reference')
+            else:
+                node.update(unit='quantity' if node['kind']=='quantity' else 'attribute',unit_basis='cadaster_definition',window_end='2024-12-31',window_basis='cadaster_reference')
+    profile.update(contract='ifdata-individual-reports-profile-202412-v1',cadaster_fields=38)
+    for sid,record in profile['source_members'].items():
+        projected = _project_source_record(record)
+        projected['retrieved_at_original'] = projected['retrieved_at_utc']
+        projected['retrieved_at_utc_derived'] = _individual_utc(projected['retrieved_at_original'])
+        projected['completion_evidence'] = 'Exact legacy GET/200; truncated=false; empty diagnostics; physical/manifest/Content-Length agree; Content-Encoding absent; EOF unobserved'
+        profile['source_members'][sid] = projected
+        profile['source_pins'][sid]['projection_sha256'] = _digest(projected)
+    profile['limitations'] = ['Individual namespace 1006 only; no financial equivalence or academic eligibility.',
+        'Exact legacy archive pins; no observed EOF, bounded counters or global/economic completeness.',
+        'Raw BRL is technical inference; stock window conceptual inference; July-December flows not annualized.',
+        'N1 original shared-pilot capture context preserved; additional use supported by literal catalog bindings.']
+    return profile
+
+
+def load_individual_context(selection=None):
+    """Only the integrator-installed closed individual selection is accepted."""
+    _same(_INDIVIDUAL_SELECTION if selection is None else selection,_INDIVIDUAL_SELECTION,'Noncanonical individual selection')
+    body = _contained(PACKAGE_ROOT,'individual-reports-profile-202412.json').read_bytes()
+    _require(_sha(body.replace(b'\r\n',b'\n')) == _INDIVIDUAL_PROFILE_SHA256,'Installed individual profile SHA-256 differs')
+    profile = _json(body)
+    _same(profile['selection'],_INDIVIDUAL_SELECTION,'Installed individual selection differs')
+    contract = 'ifdata-individual-reports-snapshot-202412-v1'
+    return {'period':202412,'selection':copy.deepcopy(_INDIVIDUAL_SELECTION),'contract':contract,
+        'envelope':{'contract':contract,'period':202412,'perspective':'individual','perspective_id':1006},
+        'part':'parts/individual-cells-202412.parquet','parquet_contract':'ifdata-individual-reports-parquet-202412-v1',
+        'profile':profile,'profile_body':body,'profile_sha256':_INDIVIDUAL_PROFILE_SHA256,
+        'cadaster_columns':profile['cadaster_columns'],'cad_csv_fields':profile['cad_csv_fields'],
+        'source_members':profile['source_members'],'limitations':profile['limitations']}
