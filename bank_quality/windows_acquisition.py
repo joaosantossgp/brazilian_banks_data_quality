@@ -459,7 +459,14 @@ def _resource_sample(destination, coordinator):
     processes, handles, identities = [], {}, {}
     try:
         for pid in sorted(selected):
-            handles[pid] = _checked(kernel.OpenProcess(0x1000 | 0x10, False, pid), 'Resource OpenProcess')
+            handle = kernel.OpenProcess(0x1000 | 0x10, False, pid)
+            if not handle:
+                error = C.get_last_error()
+                if pid != coordinator['pid'] and error == 87:
+                    raise _ProcessObservationPending(
+                        f'Candidate PID {pid}: OpenProcess error 87 at snapshot {observed_before}')
+                raise OSError(error, 'Resource OpenProcess failed')
+            handles[pid] = handle
             identities[pid] = _identity(kernel, handles[pid], pid)
         def refresh():
             fresh = _process_parents(kernel)

@@ -16,6 +16,52 @@ from unittest.mock import patch, Mock
 
 
 class WindowsAcquisitionTests(unittest.TestCase):
+    def test_resource_open_candidate_invalid_parameter_is_pending(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        kernel, psapi = Mock(), Mock()
+        kernel.OpenProcess.side_effect = lambda access, inherit, pid: pid if pid == 10 else 0
+        machine = {'elapsed_clock_ns': 1, 'free_physical_bytes': 100,
+                   'free_commit_bytes': 100, 'free_disk_bytes': 100}
+        with patch.object(api, '_machine_resource_sample', return_value=machine), \
+                patch.object(api, '_kernel', return_value=kernel), \
+                patch.object(api, '_process_parents', return_value=(1000, {10: 1, 20: 10})), \
+                patch.object(api, '_identity', return_value=root), \
+                patch.object(api.C, 'WinDLL', return_value=psapi, create=True), \
+                patch.object(api.C, 'get_last_error', return_value=87, create=True):
+            with self.assertRaisesRegex(api._ProcessObservationPending, '20.*87.*1000'):
+                api._resource_sample(Path('.'), root)
+        kernel.CloseHandle.assert_called_once_with(10)
+        psapi.GetProcessMemoryInfo.assert_not_called()
+
+    def test_resource_open_other_failures_are_fatal(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        for failed_pid, error, operation in ((10, 87, 'open'), (20, 5, 'open'),
+                                             (20, 6, 'open'), (20, 87, 'identity')):
+            with self.subTest(pid=failed_pid, error=error, operation=operation):
+                kernel, psapi = Mock(), Mock()
+                kernel.OpenProcess.side_effect = lambda access, inherit, pid: (
+                    0 if operation == 'open' and pid == failed_pid else pid)
+                def identity(k, handle, pid):
+                    if operation == 'identity' and pid == failed_pid:
+                        raise OSError(error, 'identity fixture')
+                    return {'pid': pid, 'creation_time': 100 if pid == 10 else 110}
+                machine = {'elapsed_clock_ns': 1, 'free_physical_bytes': 100,
+                           'free_commit_bytes': 100, 'free_disk_bytes': 100}
+                with patch.object(api, '_machine_resource_sample', return_value=machine), \
+                        patch.object(api, '_kernel', return_value=kernel), \
+                        patch.object(api, '_process_parents', return_value=(1000, {10: 1, 20: 10})), \
+                        patch.object(api, '_identity', side_effect=identity), \
+                        patch.object(api.C, 'WinDLL', return_value=psapi, create=True), \
+                        patch.object(api.C, 'get_last_error', return_value=error, create=True):
+                    with self.assertRaises(OSError) as failure:
+                        api._resource_sample(Path('.'), root)
+                self.assertEqual(failure.exception.errno, error)
+                self.assertEqual([call.args[0] for call in kernel.CloseHandle.call_args_list],
+                                 ([] if failed_pid == 10 else [10, 20] if operation == 'identity' else [10]))
+                psapi.GetProcessMemoryInfo.assert_not_called()
+
     def test_resource_snapshot_reassociates_newborn_identity_with_current_parent(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         root = {'pid': 10, 'creation_time': 100}
@@ -712,6 +758,25 @@ class ResourceMonitorTransitionTests(unittest.TestCase):
             self.assertEqual(machine.call_count, 2)
             self.assertTrue(all(sample['inflight_reserved_bytes'] == 30 for sample in gap['machine_samples']))
             self.assertTrue(all(not any('tree_' in key for key in sample) for sample in gap['machine_samples']))
+
+    def test_pending_birth_then_open_failure_does_not_renew_deadline(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            calls = []
+            def sample(*args):
+                calls.append(True)
+                if len(calls) == 1:
+                    raise api._ProcessObservationPending('birth fixture')
+                raise api._ProcessObservationPending('Candidate PID 20: OpenProcess error 87 at snapshot 1000')
+            with patch.object(api, '_resource_sample', side_effect=sample):
+                with self.assertRaisesRegex(RuntimeError, 'pending limit exceeded'):
+                    monitor.sample()
+            gap, = monitor.observation_gaps
+            self.assertEqual(gap['reason'], 'birth fixture')
+            self.assertEqual(gap['status'], 'expired')
+            self.assertEqual(gap['duration_ns'], 250_000_000)
+            self.assertEqual(machine.call_count, 5)
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 0)
 
     def test_pending_persistent_expires_and_preserves_reservations(self):
         with self.fixture() as (api, monitor, clock, good, machine, cancelled):
