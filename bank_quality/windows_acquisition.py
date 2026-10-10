@@ -361,6 +361,8 @@ def _owned_process_ids(coordinator, parents, identities, *, observed_before):
         for pid, parent in parents.items():
             if pid in selected or parent not in selected:
                 continue
+            if pid not in identities:
+                raise _ProcessObservationPending('New process candidate lacks a retained identity')
             child = identities[pid]
             if child['pid'] != pid or type(child['creation_time']) is not int or child['creation_time'] <= 0:
                 raise RuntimeError('Invalid observed child identity')
@@ -399,9 +401,7 @@ def _reconcile_process_snapshot(coordinator, parents, identities, *, observed_be
     if any(identity['creation_time'] > observed_before for identity in identities.values()):
         observed_before, parents = refresh()
     candidates = _candidate_process_ids(coordinator, parents)
-    if not candidates <= identities.keys():
-        raise _ProcessObservationPending('New process candidate lacks a retained identity')
-    relevant = {pid: identities[pid] for pid in candidates}
+    relevant = {pid: identities[pid] for pid in candidates if pid in identities}
     if any(identity['creation_time'] > observed_before for identity in relevant.values()):
         raise _ProcessObservationPending('Process birth remains after snapshot boundary')
     return _owned_process_ids(coordinator, parents, relevant, observed_before=observed_before)

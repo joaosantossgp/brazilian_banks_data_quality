@@ -82,6 +82,31 @@ class WindowsAcquisitionTests(unittest.TestCase):
                 {10: root, 20: {'pid': 20, 'creation_time': 110}}, observed_before=105,
                 refresh=lambda: (120, {10: 1, 20: 10, 30: 20}))
 
+    def test_resource_snapshot_ignores_unknown_descendants_of_stale_branch(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        for stale_parent, stale_birth in ((10, 50), (20, 105)):
+            with self.subTest(stale_parent=stale_parent):
+                identities = {10: root, 20: {'pid': 20, 'creation_time': 110},
+                              40: {'pid': 40, 'creation_time': stale_birth}}
+                parents = {10: 1, 20: 10, 40: stale_parent}
+                refreshed = dict(parents)
+                refreshed.update({50: 40, 60: 50})
+                refresh = Mock(return_value=(130, refreshed))
+                self.assertEqual(api._reconcile_process_snapshot(
+                    root, parents, identities, observed_before=108, refresh=refresh), {10, 20})
+                refresh.assert_called_once_with()
+
+    def test_resource_snapshot_stale_branch_does_not_hide_unknown_owned_descendant(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        root = {'pid': 10, 'creation_time': 100}
+        identities = {10: root, 20: {'pid': 20, 'creation_time': 110},
+                      40: {'pid': 40, 'creation_time': 50}}
+        with self.assertRaises(api._ProcessObservationPending):
+            api._reconcile_process_snapshot(
+                root, {10: 1, 20: 10, 40: 10}, identities, observed_before=105,
+                refresh=lambda: (130, {10: 1, 20: 10, 30: 20, 40: 10, 50: 40}))
+
     def test_resource_snapshot_unknown_refresh_is_fatal(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
         root = {'pid': 10, 'creation_time': 100}
