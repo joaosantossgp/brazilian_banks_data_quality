@@ -62,7 +62,8 @@ def _binding_identity(node, context):
     report, column = node['report_id'], node['column_id']
     _require(type(report) is int and report in context['selection']['reports'] and type(column) is int
              and column >= 0, 'Invalid trusted numeric binding identity')
-    return f'financial_numeric_r{report}_c{column}'
+    family = 'individual' if context['selection']['perspective'] == 1006 else 'financial'
+    return f'{family}_numeric_r{report}_c{column}'
 
 
 def _decimal_dimensions(rows):
@@ -110,9 +111,17 @@ def _numeric_bindings(validated):
     return result
 
 
+def _family_inputs(individual=False):
+    return admission.INDIVIDUAL_INPUTS if individual else admission.INPUTS
+
+
+def _companions(context):
+    return _family_inputs(context['selection']['perspective'] == 1006)[2:]
+
+
 def _outputs(bindings, context):
     return (context['part'], *(b['path'] for b in bindings), 'metadata/source-manifest.json',
-            *(f'metadata/{name}' for name in COMPANIONS))
+            *(f'metadata/{name}' for name in _companions(context)))
 
 
 def _records(con, table):
@@ -178,7 +187,7 @@ def _counts(validated):
             'value_state_counts': dict(Counter(r['value_state'] for r in cells))}
 
 
-def convert_financial(source: Path, destination: Path, *, source_manifest_sha256: str) -> dict:
+def _convert(source: Path, destination: Path, *, source_manifest_sha256: str, individual=False) -> dict:
     """Convert authenticated admission bytes into a new closed snapshot."""
     source, destination = Path(source).resolve(), Path(destination).absolute()
     if destination.exists():
@@ -187,15 +196,17 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
     _authenticate(source_body, source_manifest_sha256, 'Source manifest hash mismatch')
     source_manifest = _json(source_body)
     _require(isinstance(source_manifest, dict), 'Invalid original manifest')
-    if source_manifest.get('contract') == 'ifdata-financial-reports-historical-snapshot-v1':
+    if individual or source_manifest.get('contract') == 'ifdata-financial-reports-historical-snapshot-v1':
         _require('profile_path' not in source_manifest, 'Caller profile override is forbidden')
-    _closed_inventory(source, admission.INPUTS)
-    bodies = _files(source, source_manifest.get('files'), admission.INPUTS)
-    validated = admission.validate_admission(source_manifest, bodies)
+    inputs = _family_inputs(individual)
+    _closed_inventory(source, inputs)
+    bodies = _files(source, source_manifest.get('files'), inputs)
+    validator = admission.validate_individual_admission if individual else admission.validate_admission
+    validated = validator(source_manifest, bodies)
     context = validated['context']
     # These authenticated CSV images are consumed by validation. Keep only the
     # original companions while projecting the materialized, validated cells.
-    del bodies['financial-cells.csv'], bodies['financial-observations.csv']
+    del bodies[inputs[1]], bodies[inputs[0]]
     bindings = _numeric_bindings(validated)
     destination.mkdir(parents=True, exist_ok=False)
     (destination / 'parts').mkdir()
@@ -213,7 +224,7 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
                                                             encoding=b.get('encoding', 'duckdb_decimal')),
                     decimal_type=binding['decimal_type'], value_column=binding.get('value_column'))
     (destination / 'metadata/source-manifest.json').write_bytes(source_body)
-    for name in COMPANIONS:
+    for name in _companions(context):
         (destination / 'metadata' / name).write_bytes(bodies[name])
     result = {'contract': context['parquet_contract'], 'accepted': True, 'selection': copy.deepcopy(context['selection']),
               'created_utc': datetime.now(timezone.utc).isoformat(),
@@ -223,7 +234,9 @@ def convert_financial(source: Path, destination: Path, *, source_manifest_sha256
               **_counts(validated), 'limitations': list(source_manifest['limitations']),
               'files': [_entry(destination, name) for name in _outputs(bindings, context)]}
     if any(binding.get('encoding') == 'decimal_text_v1' for binding in bindings):
-        result.update(contract=HISTORICAL_V2, numeric_projection='mixed_exact_v1')
+        result.update(numeric_projection='mixed_exact_v1')
+        if not individual:
+            result['contract'] = HISTORICAL_V2
     output = (_dump(result) + '\n').encode('utf-8')
     pending = destination / '.manifest.pending'
     pending.write_bytes(output)
@@ -246,16 +259,17 @@ class _CSVHashWriter:
         return self.stream.write(body)
 
 
-def _original_csv_images(con, directory, source):
+def _original_csv_images(con, directory, source, *, individual=False):
     entries = {entry['path']: entry for entry in source['files']}
-    names = ('financial-cells.csv', 'financial-observations.csv')
+    inputs = _family_inputs(individual)
+    names = (inputs[1], inputs[0])
     with (directory / names[0]).open('xb') as all_stream, (directory / names[1]).open('xb') as stored_stream:
         sinks = [_CSVHashWriter(all_stream), _CSVHashWriter(stored_stream)]
         writers = [csv.writer(sink, lineterminator='\n') for sink in sinks]
         for writer in writers:
             writer.writerow(FIELDS)
         presence = FIELDS.index('presence')
-        for row in _records(con, 'financial_data'):
+        for row in _records(con, 'individual_data' if individual else 'financial_data'):
             _require(all(type(value) is str for value in row), 'Null/nontext original field')
             writers[0].writerow(row)
             if row[presence] == 'stored':
@@ -266,25 +280,29 @@ def _original_csv_images(con, directory, source):
     return {name: (directory / name).read_bytes() for name in names}
 
 
-def _validate_source(manifest, body, companions, context):
+def _validate_source(manifest, body, companions, context, *, individual=False):
     _authenticate(body, manifest['source_manifest_sha256'], 'Original manifest hash mismatch')
     source = _json(body)
     _require(isinstance(source, dict) and source.get('contract') == context['contract']
              and source.get('accepted') is True, 'Unknown original source contract')
     _require(_dump(source.get('selection')) == _dump(context['selection']), 'Original source selection mismatch')
-    if 'source_members' in context:
+    if 'source_members' in context and not individual:
         _require('profile_path' not in source
                  and source.get('profile_sha256') == context['profile_sha256']
                  and source.get('input_index_sha256') == context['profile']['final_handoff_sha256'],
                  'Unknown historical original profile/lineage')
         admission._check_sources(source.get('sources'), context)
+    if individual:
+        _require('profile_path' not in source, 'Caller profile override is forbidden')
+        admission._check_sources(source.get('sources'), context)
+    inputs = _family_inputs(individual)
     _require(_dump(source.get('files')) == _dump(manifest['source_files']), 'Original file inventory mismatch')
     entries = source.get('files')
-    _require(isinstance(entries, list) and len(entries) == len(admission.INPUTS), 'Invalid original file inventory')
+    _require(isinstance(entries, list) and len(entries) == len(inputs), 'Invalid original file inventory')
     membership = set()
     for entry in entries:
         _require(isinstance(entry, dict) and set(entry) == {'path', 'bytes', 'sha256'}
-                 and isinstance(entry['path'], str) and entry['path'] in admission.INPUTS
+                 and isinstance(entry['path'], str) and entry['path'] in inputs
                  and entry['path'] not in membership and type(entry['bytes']) is int and entry['bytes'] >= 0
                  and isinstance(entry['sha256'], str) and HASH.fullmatch(entry['sha256']), 'Invalid original file record')
         membership.add(entry['path'])
@@ -294,17 +312,22 @@ def _validate_source(manifest, body, companions, context):
     return source
 
 
-def _open_snapshot(destination, expected_hash, *, binding_id=None):
+def _open_snapshot(destination, expected_hash, *, binding_id=None, individual=False):
     root = Path(destination).resolve()
     body = _path(root, 'manifest.json').read_bytes()
     _authenticate(body, expected_hash, 'Snapshot manifest hash mismatch')
     manifest = _json(body)
     _require(isinstance(manifest, dict) and 'selection' in manifest, 'Unknown snapshot selection')
-    v2 = manifest.get('contract') == HISTORICAL_V2
-    context = (admission._historical_context(manifest['selection']) if manifest.get('contract') in
-               ('ifdata-financial-reports-historical-parquet-v1', HISTORICAL_V2) else admission._context(manifest['selection']))
+    v2 = (manifest.get('numeric_projection') == 'mixed_exact_v1' if individual
+          else manifest.get('contract') == HISTORICAL_V2)
+    if individual:
+        from .financial_report_profiles import load_individual_context
+        context = load_individual_context(manifest['selection'])
+    else:
+        context = (admission._historical_context(manifest['selection']) if manifest.get('contract') in
+                   ('ifdata-financial-reports-historical-parquet-v1', HISTORICAL_V2) else admission._context(manifest['selection']))
     _require(set(manifest) == MANIFEST_FIELDS | ({'numeric_projection'} if v2 else set())
-             and manifest['contract'] == (HISTORICAL_V2 if v2 else context['parquet_contract'])
+             and manifest['contract'] == (HISTORICAL_V2 if v2 and not individual else context['parquet_contract'])
              and (not v2 or manifest['numeric_projection'] == 'mixed_exact_v1') and manifest['accepted'] is True
              and manifest['original_fields'] == FIELDS and manifest['cells_part'] == context['part']
              and manifest['decimal_type'] == 'per_binding'
@@ -321,8 +344,8 @@ def _open_snapshot(destination, expected_hash, *, binding_id=None):
     outputs = _outputs(trusted, context)
     _closed_inventory(root, outputs)
     bodies = _files(root, manifest['files'], outputs)
-    companions = {name: bodies[f'metadata/{name}'] for name in COMPANIONS}
-    source = _validate_source(manifest, bodies['metadata/source-manifest.json'], companions, context)
+    companions = {name: bodies[f'metadata/{name}'] for name in _companions(context)}
+    source = _validate_source(manifest, bodies['metadata/source-manifest.json'], companions, context, individual=individual)
     if 'source_members' in context:
         numeric = manifest['numeric_bindings']
         expected = [{'report_id': node['report_id'], 'column_id': node['column_id'],
@@ -352,11 +375,13 @@ def _open_snapshot(destination, expected_hash, *, binding_id=None):
                 (directory / f'{number}.parquet').write_bytes(bodies.pop(name))
             con = _connection([directory])
             con.execute('SET preserve_insertion_order = true')
-            con.execute('CREATE TABLE financial_data AS FROM read_parquet(?, hive_partitioning=false)',
+            grade_table = 'individual_data' if individual else 'financial_data'
+            con.execute('CREATE TABLE ' + grade_table + ' AS FROM read_parquet(?, hive_partitioning=false)',
                         [str(directory / '0.parquet')])
-            _assert_schema(con, 'financial_data', FIELDS)
-            payloads = {**companions, **_original_csv_images(con, directory, source)}
-            validated = admission.validate_admission(source, payloads)
+            _assert_schema(con, grade_table, FIELDS)
+            payloads = {**companions, **_original_csv_images(con, directory, source, individual=individual)}
+            validator = admission.validate_individual_admission if individual else admission.validate_admission
+            validated = validator(source, payloads)
             del payloads
             bindings = _numeric_bindings(validated)
             _require(v2 == any(b.get('encoding') == 'decimal_text_v1' for b in bindings),
@@ -398,13 +423,13 @@ def validate_snapshot(destination: Path, *, manifest_sha256: str) -> dict:
     return {**manifest, 'manifest_sha256': manifest_sha256}
 
 
-def iter_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id=None):
+def _iter_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id=None, individual=False):
     """Yield exact values from one fully validated snapshot; close on early exit.
 
     Wide historical values are Python Decimals, not native SQL DECIMAL scalars.
     The owned connection is opened lazily and records are read in bounded chunks.
     """
-    con, manifest, _ = _open_snapshot(destination, manifest_sha256, binding_id=binding_id)
+    con, manifest, _ = _open_snapshot(destination, manifest_sha256, binding_id=binding_id, individual=individual)
     try:
         for binding in manifest['numeric_bindings']:
             if binding_id is not None and binding_id != (binding['report_id'], binding['column_id']):
@@ -418,19 +443,25 @@ def iter_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id
         con.close()
 
 
-def snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.DuckDBPyConnection':
+def _snapshot_connection(destination: Path, *, manifest_sha256: str, individual=False) -> 'duckdb.DuckDBPyConnection':
     """Return a verified in-memory snapshot; caller owns and closes the connection."""
-    con, manifest, validated = _open_snapshot(destination, manifest_sha256)
+    con, manifest, validated = _open_snapshot(destination, manifest_sha256, individual=individual)
+    family = 'individual' if individual else 'financial'
     try:
         con.execute('CREATE TABLE occurrences (institution_id VARCHAR, entity_locator VARCHAR)')
         con.execute('INSERT INTO occurrences SELECT unnest(?), unnest(?)',
                     [[row['c0'] for row in validated['cadastro']], [row['source_pointer'] for row in validated['cadastro']]])
+        if individual:
+            fields = validated['context']['cad_csv_fields']
+            con.execute('CREATE TABLE individual_cadastro (' + ', '.join('"' + name + '" VARCHAR' for name in fields) + ')')
+            con.executemany('INSERT INTO individual_cadastro VALUES (' + ','.join('?' for _ in fields) + ')',
+                            [[row[name] for name in fields] for row in validated['cadastro']])
         con.execute('CREATE TABLE snapshot_identity (snapshot_id VARCHAR, source_snapshot_id VARCHAR)')
         con.execute('INSERT INTO snapshot_identity VALUES (?, ?)', [manifest_sha256, manifest['source_manifest_sha256']])
-        con.execute("CREATE VIEW financial_cells AS SELECT d.*, i.snapshot_id, i.source_snapshot_id, "
+        con.execute("CREATE VIEW " + family + "_cells AS SELECT d.*, i.snapshot_id, i.source_snapshot_id, "
                     "o.entity_locator, d.catalog_pointer AS binding_locator, 'single' AS cell_locator "
-                    'FROM financial_data d JOIN occurrences o USING (institution_id) CROSS JOIN snapshot_identity i')
-        con.execute("CREATE VIEW financial_observations AS SELECT * FROM financial_cells WHERE presence='stored'")
+                    'FROM ' + family + '_data d JOIN occurrences o USING (institution_id) CROSS JOIN snapshot_identity i')
+        con.execute("CREATE VIEW " + family + "_observations AS SELECT * FROM " + family + "_cells WHERE presence='stored'")
         con.execute('CREATE TABLE binding_data (report_id VARCHAR, column_id VARCHAR, catalog_pointer VARCHAR, '
                     'parent_pointer VARCHAR, kind VARCHAR, metadata_json VARCHAR, numeric_view VARCHAR, decimal_type VARCHAR)')
         numeric = {binding['catalog_pointer']: binding for binding in manifest['numeric_bindings']}
@@ -439,9 +470,47 @@ def snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.D
             con.execute('INSERT INTO binding_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                         [str(node['report_id']), str(node['column_id']), node['catalog_pointer'], node['parent_pointer'],
                          node['kind'], _dump(node), binding.get('view', ''), binding.get('decimal_type', '')])
-        con.execute('CREATE VIEW financial_bindings AS SELECT b.*, i.snapshot_id, i.source_snapshot_id '
+        con.execute('CREATE VIEW ' + family + '_bindings AS SELECT b.*, i.snapshot_id, i.source_snapshot_id '
                     'FROM binding_data b CROSS JOIN snapshot_identity i')
     except Exception:
         con.close()
         raise
     return con
+
+
+def convert_financial(source: Path, destination: Path, *, source_manifest_sha256: str) -> dict:
+    """Convert only the existing closed financial admission contracts."""
+    return _convert(source, destination, source_manifest_sha256=source_manifest_sha256)
+
+
+def convert_individual(source: Path, destination: Path, *, source_manifest_sha256: str) -> dict:
+    """Convert the closed individual four-report admission into a new snapshot."""
+    return _convert(source, destination, source_manifest_sha256=source_manifest_sha256, individual=True)
+
+
+def validate_individual_snapshot(destination: Path, *, manifest_sha256: str) -> dict:
+    """Authenticate individual metadata, textual grade and all exact bindings."""
+    con, manifest, _ = _open_snapshot(destination, manifest_sha256, individual=True)
+    con.close()
+    return {**manifest, 'manifest_sha256': manifest_sha256}
+
+
+def iter_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id=None):
+    """Yield exact financial values from one authenticated snapshot."""
+    yield from _iter_numeric_decimals(destination, manifest_sha256=manifest_sha256, binding_id=binding_id)
+
+
+def iter_individual_numeric_decimals(destination: Path, *, manifest_sha256: str, binding_id=None):
+    """Yield exact individual Decimals, including bindings wider than SQL DECIMAL."""
+    yield from _iter_numeric_decimals(destination, manifest_sha256=manifest_sha256,
+                                      binding_id=binding_id, individual=True)
+
+
+def snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.DuckDBPyConnection':
+    """Return a fully validated financial snapshot in memory; caller closes it."""
+    return _snapshot_connection(destination, manifest_sha256=manifest_sha256)
+
+
+def individual_snapshot_connection(destination: Path, *, manifest_sha256: str) -> 'duckdb.DuckDBPyConnection':
+    """Return own individual views and native roster in memory; caller closes it."""
+    return _snapshot_connection(destination, manifest_sha256=manifest_sha256, individual=True)

@@ -68,27 +68,27 @@ Antes da primeira escrita de dados, congelar inventário/hashes dos cinco inputs
 
 ### A. Contexto, fontes e perfil individual
 
-- [ ] Conferir fontes/pins/framing/literais de timestamp e as árvores/bindings; gerar candidato somente de bytes autenticados.
-- [ ] Escrever testes RED para seleção trocada, caller profile override, fonte/manifest/hash/contexto/URL alterados, duplicatas JSON e timestamps sem fuso. Validar a projeção UTC derivada e preservação do literal original.
-- [ ] Implementar a extensão mínima de contexto e fontes; produzir perfil individual fechado, sem relaxar regras financeiras existentes.
-- [ ] Rodar `tests.test_individual_report_profiles` e os testes pertinentes de `tests.test_financial_report_profiles`; conferir defaults e seleção1005. Reviewer independente compara perfil inteiro com O/D/C/N1/P e o inventário da allowlist. Corrigir/revalidar achados materiais antes de B.
+- [x] Conferir fontes/pins/framing/literais de timestamp e as árvores/bindings; gerar candidato somente de bytes autenticados.
+- [x] Escrever testes RED para seleção trocada, caller profile override, fonte/manifest/hash/contexto/URL alterados, duplicatas JSON e timestamps sem fuso. Validar a projeção UTC derivada e preservação do literal original.
+- [x] Implementar a extensão mínima de contexto e fontes; produzir perfil individual fechado, sem relaxar regras financeiras existentes.
+- [x] Rodar `tests.test_individual_report_profiles` e os testes pertinentes de `tests.test_financial_report_profiles`; conferir defaults e seleção1005. Reviewer independente compara perfil inteiro com O/D/C/N1/P e o inventário da allowlist. Corrigir/revalidar achados materiais antes de B.
 
 ### B. Admissão dos quatro relatórios
 
-- [ ] Testes RED de roster próprio, código opaco, origem td1/td3, ausência/zero/NA/NI/null/vazio, lexema/Decimal, ordem/hierarquia e rejeição de perspectiva/contrato cruzados.
-- [ ] Implementar API individual explícita, com envelope/contrato/nomes próprios e mecanismo comum interno. A API financeira não passa a aceitar1006 por troca de parâmetro.
-- [ ] Rodar `tests.test_individual_reports` e regressões pertinentes de `tests.test_financial_reports`, `tests.test_financial_reports_202503` e `tests.test_financial_reports_historical`.
-- [ ] Executar admissão real no destino novo, com hashes externos. Conferir grade190200, 129nós/120folhas, todas as posições/observações/ausências, origens e estados. Confrontar lexemas e Decimal com os corpos exatos, sem float. Registrar contagens reais e limites.
-- [ ] Reviewer independente confere código, dados/denominadores, conceitos/janelas/unidades e preservação. Nenhum aceite parcial vira PASS global; corrigir o recorte antes de C.
+- [x] Testes RED de roster próprio, código opaco, origem td1/td3, ausência/zero/NA/NI/null/vazio, lexema/Decimal, ordem/hierarquia e rejeição de perspectiva/contrato cruzados.
+- [x] Implementar API individual explícita, com envelope/contrato/nomes próprios e mecanismo comum interno. A API financeira não passa a aceitar1006 por troca de parâmetro.
+- [x] Rodar `tests.test_individual_reports` e regressões pertinentes de `tests.test_financial_reports`, `tests.test_financial_reports_202503` e `tests.test_financial_reports_historical`.
+- [x] Executar admissão real no destino novo, com hashes externos. Conferir grade190200, 129nós/120folhas, todas as posições/observações/ausências, origens e estados. Confrontar lexemas e Decimal com os corpos exatos, sem float. Registrar contagens reais e limites.
+- [x] Reviewer independente confere código, dados/denominadores, conceitos/janelas/unidades e preservação. Nenhum aceite parcial vira PASS global; corrigir o recorte antes de C.
 
 ### C. Parquet, consulta e replay
 
-- [ ] Testes RED de contratos/manifest/part trocados, tipo numérico local, binding largo, projeções por binding sem cast/UNION global automático, fonte adulterada e destino existente.
-- [ ] Implementar conversão/leitura individual explícitas, mantendo grades textuais autoritativas, projeções locais e accessor Decimal exato. Metadados de origem e qualificações acompanham a saída.
-- [ ] Rodar `tests.test_individual_reports_parquet`, `tests.test_financial_reports_parquet` e `tests.test_financial_reports_historical_parquet` conforme o delta.
-- [ ] Converter o conjunto real; validar manifest fechado, schema/contagens/grades e consultar todas as projeções numéricas por binding, sem arredondar.
-- [ ] Admitir e converter novamente em destinos de replay novos; comparar payloads/digest lógico e resultados exatos, qualificando timestamps de execução diferentes. Revalidar hashes de inputs/pilotos/11financeiros e executar leitura real dos 11 conjuntos financeiros com os leitores correntes; alteração dos leitores impede carry do PASS histórico.
-- [ ] Reviewer independente aprova a composição e evidência antes de ampliar épocas/famílias. Este recorte não habilita prudencial nem outro período individual.
+- [x] Testes RED de contratos/manifest/part trocados, tipo numérico local, binding largo, projeções por binding sem cast/UNION global automático, fonte adulterada e destino existente.
+- [x] Implementar conversão/leitura individual explícitas, mantendo grades textuais autoritativas, projeções locais e accessor Decimal exato. Metadados de origem e qualificações acompanham a saída.
+- [x] Rodar `tests.test_individual_reports_parquet`, `tests.test_financial_reports_parquet` e `tests.test_financial_reports_historical_parquet` conforme o delta.
+- [x] Converter o conjunto real; validar manifest fechado, schema/contagens/grades e consultar todas as projeções numéricas por binding, sem arredondar.
+- [x] Admitir e converter novamente em destinos de replay novos; comparar payloads/digest lógico e resultados exatos, qualificando timestamps de execução diferentes. Revalidar hashes de inputs/pilotos/11financeiros e executar leitura real dos 11 conjuntos financeiros com os leitores correntes; alteração dos leitores impede carry do PASS histórico.
+- [x] Reviewer independente aprova a composição e evidência antes de ampliar épocas/famílias. Este recorte não habilita prudencial nem outro período individual.
 
 ### D. Entrega e próxima fronteira
 
@@ -102,3 +102,17 @@ Antes da primeira escrita de dados, congelar inventário/hashes dos cinco inputs
 Medição de 2026-10-10T18:52:15Z: RAM livre1784168448B, commit livre17310965760B, disco421581926400B. Não prova capacidade da admissão/conversão; medir por etapa e manter execução serial inicial, sem teto universal inventado. Usar supervisão/medição existente, sem instalar serviço ou alterar proteção.
 
 Na primeira falha de integridade, persistência, recurso ou encerramento inconclusivo, preservar tentativa/logs/hashes e interromper a expansão. Não repetir lote, recuperar autoridade59, alterar segurança ou sobrescrever aceites. A execução offline não resolve automaticamente a regressão de persistência do Windows nem autoriza GET. Encerramento total63/64 exige todos os complementos escolhidos e base financeira completa, não apenas este primeiro recorte.
+
+## Evidência do primeiro conjunto — 2026-10-10
+
+A e B tiveram revisão independente APP antes da expansão:35 testes de perfil e56 de admissão/regressões, com recibos terminais do processo nativo. C teve revisão independente do código após45 testes individuais/financeiros/históricos em um único processo. As contagens não constituem uma soma de testes para alegar PASS global; a composição final tem execução própria. [Checkpoint A](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/63#issuecomment-6101242458) e [checkpoint B](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/63#issuecomment-6101335202).
+
+Admissão:190200 posições,189682 armazenadas,518 ausências(148 informação não armazenada e370 entidade não armazenada),1585 cadastros,129 nós/120 folhas/nove grupos. Todas as posições foram confrontadas com os lexemas das fontes pinadas;119942 têm Decimal não nulo. Não houve GET. Manifest da admissão `e51357a33cd2c190f93c2dfdd74820785a405ea5792395d2a5cb4b352561e7fe`; replay `f78d7354e183dcd60a02572a018e6d0434ec82a144df9f23be6570aa137b92ea`. Os cinco payloads são idênticos; os manifests diferem somente em `created_utc`.
+
+Parquet:76 bindings numéricos,75 em DECIMAL local e um em `decimal_text_v1`/VARCHAR, relatório94/coluna13687 com precisão39/escala28. Contrato individual preservado. As120460 posições das projeções e do accessor foram comparadas, incluindo None nas ausências; este denominador difere dos119942 valores não nulos. Cadastro conserva38 campos nativos e sete de envelope/proveniência. Manifest Parquet `7e3b2b64340c567d21ccc31cd396178f8f7e02d2c1c8ec8109eb1a78cc215c81`; replay `067a03d5559dee975f316b21ddc0d2e22784590eed9de1f345af690d4d32cef0`.80 de81 arquivos são byte a byte idênticos; `metadata/source-manifest.json` difere somente no horário de admissão, com hashes derivados no manifest Parquet. Digest lógico do manifest normalizando apenas esses campos de execução: `e7832298f2d2a8e81048e8ae6af069c195669db08fdbdd92cb9b85a36b1412ad`.
+
+APIs verificadas: `admit_individual(index, destination, index_sha256=...)`, `convert_individual(source, destination, source_manifest_sha256=...)`, `individual_snapshot_connection(destination, manifest_sha256=...)` e `iter_individual_numeric_decimals(destination, manifest_sha256=...)`; conexões/iteradores fechados explicitamente. Replays exigem destinos novos. Leitura real com catálogo pinado e os três módulos correntes passou nos11 financeiros202312–202606, comparando1461348 posições das projeções e exemplos de accessor de cada encoding em cada conjunto. Depois da leitura, os1243 arquivos protegidos e os pins dos três módulos continuavam intactos.
+
+Tempos medidos: admissão6,163s; confronto integral8,379s; conversões11,836s/11,549s; consultas completas64,049s/64,570s; soma das11 leituras300,183s. Pico nativo por intérprete: conversão589762560B de working set/625258496B de pagefile; consulta735543296B/723492864B. São picos do intérprete e amostras de máquina nas fronteiras, não pico conjunto ou mínimo global. Houve sobreposição de aproximadamente7,18s entre o fim da consulta do replay e a primeira leitura financeira; os períodos das11 leituras foram executados sequencialmente. Não atribuir ao incidente59 os retornos antecipados de observação da ferramenta: o recibo do processo nativo determina o término de cada execução.
+
+Esta evidência cobre apenas1006/202412. Não certifica escala econômica, comparabilidade acadêmica, toda a oferta individual/prudencial ou solução do incidente de persistência59. Revisão final, SHA publicado, CI, integração e estado restante permanecem registrados na Issue real.
