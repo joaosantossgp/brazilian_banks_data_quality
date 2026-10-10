@@ -403,6 +403,57 @@ def _validate_numeric(body, area):
             legacy._value(cell['v'])
 
 
+def _compile_od(catalog, definitions, descriptor, columns=None):
+    """Compile native O/D bindings; absent C leaves its schema unasserted.
+
+    Full-profile callers still provide validated columns and enforce localizers.
+    This core neither authenticates an offer nor activates a context.
+    """
+    _require(isinstance(definitions, list), 'Dictionary must be native array')
+    infos = {}
+    for position, info in enumerate(definitions):
+        _require(isinstance(info, dict) and type(info.get('id')) is int and info['id'] not in infos, 'Invalid dictionary identity')
+        infos[info['id']] = (position, info)
+    offers = {s['source_id']: s for s in descriptor['source_offers']}
+    compiled, required = [], {'catalog', 'cadaster', 'dictionary', 'portal'}
+    for expected in descriptor['reports']:
+        native_report = _pointer(catalog, expected['catalog_pointer'])
+        _same(_native(native_report), expected['report'], 'Native report metadata/tree differs from installed offer')
+        perspectives = native_report.get('s')
+        _require(isinstance(perspectives, list) and all(isinstance(p, dict) and type(p.get('id')) is int for p in perspectives)
+                 and len({p['id'] for p in perspectives}) == len(perspectives)
+                 and sum(p['id'] == descriptor['selection']['perspective'] for p in perspectives) == 1, 'Native financial report membership invalid')
+        nodes, ids = [], set()
+        for column, pointer, parent in reports._walk(native_report['c'], expected['catalog_pointer'] + '/c'):
+            _require(column['id'] not in ids and column['ifd'] in infos, 'Duplicate column or missing definition')
+            ids.add(column['id'])
+            position, info = infos[column['ifd']]
+            _require(all(type(info.get(k)) is int for k in ('td', 'a', 'lid')) and type(info.get('n')) is str, 'Invalid binding definition')
+            group = bool(column['sc'])
+            if group:
+                _require(info['td'] == 2 and info['lid'] == -1, 'Unsupported native group origin')
+                origin, sid, kind = 'group', None, 'group'
+            elif info['td'] == 1:
+                _require(info['lid'] >= 0 and (columns is None or f"c{info['lid']}" in columns), 'Binding refers to absent cadaster field')
+                origin, sid = 'cadaster', 'cadaster'
+                kind = 'quantity' if column['fid'] == 2 else 'attribute'
+            else:
+                _require(info['td'] == 3 and info['lid'] >= 0 and info['a'] > 0, 'Unsupported native leaf origin')
+                origin, sid, kind = 'numeric', f"numeric:{info['a']}", 'numeric'
+                _require(sid in offers, 'Numeric origin is not advertised')
+                required.add(sid)
+            nodes.append({'report_id': native_report['id'], 'column_id': column['id'], 'ifd': column['ifd'],
+                          'fid': column['fid'], 'td': info['td'], 'area': info['a'], 'lid': info['lid'], 'name': info['n'],
+                          'catalog_pointer': pointer, 'parent_pointer': parent,
+                          'children_pointers': [pointer + '/sc/' + str(n) for n in range(len(column['sc']))],
+                          'definition': _native(info), 'definition_pointer': '/' + str(position),
+                          'origin_kind': origin, 'origin_source_id': sid, 'kind': kind,
+                          'unit': '' if group else 'unknown', 'unit_basis': '' if group else 'unknown: no binding-specific evidence',
+                          'window_start': '', 'window_end': '', 'window_basis': '' if group else 'unknown: no binding-specific evidence'})
+        compiled.append({'report': _native(native_report), 'catalog_pointer': expected['catalog_pointer'], 'nodes': nodes})
+    return compiled, required
+
+
 def _compile(handoff, handoff_sha256, *, _individual=False):
     _require(isinstance(handoff, dict) and handoff.get('contract') == SOURCES_CONTRACT
              and handoff.get('phase') in ('metadata', 'complete'), 'Invalid historical handoff contract/phase')
@@ -442,48 +493,7 @@ def _compile(handoff, handoff_sha256, *, _individual=False):
                  and row['c0'] and row['c1'] == str(descriptor['selection']['period']) and row['c0'] not in codes,
                  'Native cadaster schema/reference/identity mismatch')
         codes.add(row['c0'])
-    definitions = _json(bodies['dictionary'])
-    _require(isinstance(definitions, list), 'Dictionary must be native array')
-    infos = {}
-    for position, info in enumerate(definitions):
-        _require(isinstance(info, dict) and type(info.get('id')) is int and info['id'] not in infos, 'Invalid dictionary identity')
-        infos[info['id']] = (position, info)
-    compiled, required = [], {'catalog', 'cadaster', 'dictionary', 'portal'}
-    for expected in descriptor['reports']:
-        native_report = _pointer(catalog, expected['catalog_pointer'])
-        _same(_native(native_report), expected['report'], 'Native report metadata/tree differs from installed offer')
-        perspectives = native_report.get('s')
-        _require(isinstance(perspectives, list) and all(isinstance(p, dict) and type(p.get('id')) is int for p in perspectives)
-                 and len({p['id'] for p in perspectives}) == len(perspectives)
-                 and sum(p['id'] == descriptor['selection']['perspective'] for p in perspectives) == 1, 'Native financial report membership invalid')
-        nodes, ids = [], set()
-        for column, pointer, parent in reports._walk(native_report['c'], expected['catalog_pointer'] + '/c'):
-            _require(column['id'] not in ids and column['ifd'] in infos, 'Duplicate column or missing definition')
-            ids.add(column['id'])
-            position, info = infos[column['ifd']]
-            _require(all(type(info.get(k)) is int for k in ('td', 'a', 'lid')) and type(info.get('n')) is str, 'Invalid binding definition')
-            group = bool(column['sc'])
-            if group:
-                _require(info['td'] == 2 and info['lid'] == -1, 'Unsupported native group origin')
-                origin, sid, kind = 'group', None, 'group'
-            elif info['td'] == 1:
-                _require(f"c{info['lid']}" in columns, 'Binding refers to absent cadaster field')
-                origin, sid = 'cadaster', 'cadaster'
-                kind = 'quantity' if column['fid'] == 2 else 'attribute'
-            else:
-                _require(info['td'] == 3 and info['lid'] >= 0 and info['a'] > 0, 'Unsupported native leaf origin')
-                origin, sid, kind = 'numeric', f"numeric:{info['a']}", 'numeric'
-                _require(sid in offers, 'Numeric origin is not advertised')
-                required.add(sid)
-            nodes.append({'report_id': native_report['id'], 'column_id': column['id'], 'ifd': column['ifd'],
-                          'fid': column['fid'], 'td': info['td'], 'area': info['a'], 'lid': info['lid'], 'name': info['n'],
-                          'catalog_pointer': pointer, 'parent_pointer': parent,
-                          'children_pointers': [pointer + '/sc/' + str(n) for n in range(len(column['sc']))],
-                          'definition': _native(info), 'definition_pointer': '/' + str(position),
-                          'origin_kind': origin, 'origin_source_id': sid, 'kind': kind,
-                          'unit': '' if group else 'unknown', 'unit_basis': '' if group else 'unknown: no binding-specific evidence',
-                          'window_start': '', 'window_end': '', 'window_basis': '' if group else 'unknown: no binding-specific evidence'})
-        compiled.append({'report': _native(native_report), 'catalog_pointer': expected['catalog_pointer'], 'nodes': nodes})
+    compiled, required = _compile_od(catalog, _json(bodies['dictionary']), descriptor, columns)
     for sid in members:
         if sid.startswith('numeric:'):
             _require(sid in required, 'Unrequired numeric source in handoff')
@@ -1092,3 +1102,135 @@ def _load_historical_individual_context(selection):
             'profile': profile, 'profile_body': body, 'profile_sha256': digest,
             'cadaster_columns': profile['cadaster_columns'], 'cad_csv_fields': profile['cad_csv_fields'],
             'source_members': profile['source_members'], 'limitations': profile['limitations']}
+
+
+_PRUDENTIAL_METADATA_SELECTION = {'period': 202312, 'perspective': 1009, 'reports': [102]}
+# Own reviewed authority. These original manifests are not financial/individual
+# legacy exceptions and callers cannot choose their paths or trust digests.
+_PRUDENTIAL_METADATA_PINS = {
+    'catalog': {'manifest_path': 'data/raw/financial-cadaster-202412-20261003/20261003T204148892567Z_catalog_metadata_202412_8f64be16714a446387225826f4cc6241.json',
+        'manifest_sha256': 'b6ead0180a1622fa27766d55bc63520a0d35e6202a4e35075b615b4a235447c7',
+        'body_sha256': '2428b8a436e142682cd63eb6155717f58f2524582dcca427654032f45f6acf07', 'bytes': 13527657},
+    'dictionary': {'manifest_path': 'data/runs/expansion-202312-20261001/raw/2026-10-01T033720509Z_202312_e1bacaca-f0b3-4c23-a40d-8defa2891ca2.json',
+        'manifest_sha256': 'f26d028164139e20faa2094b31bab08e8fbcd1410b28bd917b406018cf2c0425',
+        'body_sha256': '11a0704ec62d3123c8af2ceb7c98b545c683781e297f8a3f4d89e449122c7ee2', 'bytes': 174579},
+    'numeric:1': {'manifest_path': 'data/runs/expansion-202312-20261001/raw/2026-10-01T033724367Z_202312_5477956f-562c-4989-acdb-a72c933a3d42.json',
+        'manifest_sha256': '9d35989367a25ab9ae12551c8a5f6ddf7c51249d6a0f181bd34240f63a74e6db',
+        'body_sha256': 'fb85523b59409bb6ebc8bb32bf78751a2380eea3b880873f27331398e5511eae', 'bytes': 15316532},
+    'portal': {'manifest_path': 'data/raw/discovery-20261001/20261001T012756759142Z_portal_56229187f15948a0a353b4b194b7cb3f.json',
+        'manifest_sha256': '5757f812b56dbd414e2fa3d68075cafbf50157a010a9b4b330126fab86dd211a',
+        'body_sha256': '234fcb9158bd25b222625418f2d775d438a8db8df1585e65ef1b40c7a7fb0153', 'bytes': 92483}}
+_PRUDENTIAL_METADATA_OFFERS = [
+    {'source_id': 'cadaster', 'role': 'cadaster', 'area': None,
+     'native_file': 'ifdata/202312/cadastro202312_1009.json', 'catalog_pointer': '/95/files/2/f'},
+    {'source_id': 'dictionary', 'role': 'dictionary', 'area': None,
+     'native_file': 'ifdata/202312/info202312.json', 'catalog_pointer': '/95/files/9/f'},
+    {'source_id': 'numeric:1', 'role': 'numeric', 'area': 1,
+     'native_file': 'ifdata/202312/dados202312_1.json', 'catalog_pointer': '/95/files/3/f'}]
+
+
+def _prudential_metadata_source(sid):
+    """Authenticate exact reviewed legacy bytes, preserving capture limitations."""
+    pin = _PRUDENTIAL_METADATA_PINS[sid]
+    path = _contained(CHECKOUT_ROOT, pin['manifest_path'], source=True)
+    _, manifest = _read_hashed(path, pin['manifest_sha256'])
+    _require(isinstance(manifest, dict) and manifest.get('method') == 'GET'
+             and type(manifest.get('http_status')) is int and manifest['http_status'] == 200
+             and manifest.get('outcome') == 'ok' and isinstance(manifest.get('context'), dict),
+             'Prudential source manifest failed')
+    decoded = sid in ('dictionary', 'numeric:1')
+    if decoded:
+        _require('truncated' not in manifest
+                 and manifest.get('diagnostics') == ['Playwright stores decoded response-body bytes']
+                 and manifest['context'].get('body_capture') == 'Intercepted official response bytes before browser fulfillment'
+                 and manifest['context'].get('period') == 202312,
+                 'Unreviewed prudential decoded legacy capture')
+    else:
+        _require(manifest.get('truncated') is False and manifest.get('diagnostics') == [],
+                 'Unreviewed prudential metadata capture')
+    _require('source_complete' not in manifest and 'contract' not in manifest,
+             'Legacy metadata cannot become bounded retroactively')
+    utc = _individual_utc(manifest.get('retrieved_at_utc'))
+    offer = next((o for o in _PRUDENTIAL_METADATA_OFFERS if o['source_id'] == sid),
+                 {'source_id':sid, 'role':sid, 'area':None, 'native_file':None, 'catalog_pointer':None})
+    for key in ('url', 'final_url'):
+        url = urlsplit(manifest.get(key, ''))
+        _require(url.scheme == 'https' and url.netloc == 'www3.bcb.gov.br' and not url.fragment,
+                 'Prudential source URL outside official endpoint')
+        expected = '/ifdata/rest/relatorios2000a2024' if sid == 'catalog' else '/ifdata/index.html' if sid == 'portal' else '/ifdata/rest/arquivos'
+        _require(url.path == expected and (not url.query if sid in ('catalog','portal') else
+                 parse_qsl(url.query, keep_blank_values=True) == [('nomeArquivo',offer['native_file'])]),
+                 'Prudential source URL differs from literal offer')
+    body = _contained(path.parent, manifest.get('body_path')).read_bytes()
+    _require(type(manifest.get('bytes')) is int and len(body) == manifest['bytes'] == pin['bytes']
+             and _sha(body) == manifest.get('sha256') == _hash(pin['body_sha256']),
+             'Prudential source body integrity mismatch')
+    source = {**offer, **pin, 'provenance_sha256': _digest(_native(manifest))}
+    record = _project_source_record({**source, 'manifest': _native(manifest), 'body_path':manifest['body_path'],
+        'source_generation_state':'unknown', 'truncation_state':'undeclared_legacy' if decoded else 'observed_false'})
+    record.update(retrieved_at_original=manifest['retrieved_at_utc'], retrieved_at_utc_derived=utc,
+        completion_evidence='Exact decoded legacy capture; truncated undeclared; EOF unobserved' if decoded else
+                            'Exact legacy capture; truncated=false; EOF unobserved')
+    return body, record
+
+
+def author_prudential_metadata(selection=None):
+    """Return incomplete Segmentação metadata only; never install or admit it.
+
+    O/D/N1/P are read from this module's authority. N1/P availability and bytes
+    are authenticated, but no observations or presentation code are executed.
+    Cadaster width, population and raw numeric units remain unknown.
+    """
+    selection = copy.deepcopy(_PRUDENTIAL_METADATA_SELECTION if selection is None else selection)
+    _require(isinstance(selection, dict) and set(selection) == {'period','perspective','reports'}
+             and type(selection['period']) is int and type(selection['perspective']) is int
+             and type(selection['reports']) is list and all(type(n) is int for n in selection['reports'])
+             and len(set(selection['reports'])) == len(selection['reports']),
+             'Noncanonical prudential metadata selection')
+    _same(selection, _PRUDENTIAL_METADATA_SELECTION, 'Noncanonical prudential metadata selection')
+    members, bodies = {}, {}
+    for sid in ('catalog', 'dictionary', 'numeric:1', 'portal'):
+        bodies[sid], members[sid] = _prudential_metadata_source(sid)
+    catalog = _json(bodies['catalog'])
+    reference = _pointer(catalog, '/95')
+    _require(type(reference.get('dt')) is int and reference['dt'] == 202312, 'Prudential catalog reference differs')
+    for offer in _PRUDENTIAL_METADATA_OFFERS:
+        _same(_pointer(catalog, offer['catalog_pointer']), offer['native_file'], 'Prudential native advertisement differs')
+    native_report = _pointer(catalog, '/95/files/13/trel')
+    _require(type(native_report.get('id')) is int and native_report['id'] == 102, 'Prudential report differs')
+    descriptor = {'selection':selection,
+        'catalog':{**{k:members['catalog'][k] for k in ('manifest_path','manifest_sha256','body_sha256','provenance_sha256')},
+                   'reference_pointer':'/95'},
+        'reports':[{'report':_native(native_report),'catalog_pointer':'/95/files/13/trel'}],
+        'source_offers':copy.deepcopy(_PRUDENTIAL_METADATA_OFFERS)}
+    digest = _digest(_offer_payload(descriptor))
+    compiled, required = _compile_od(catalog, _json(bodies['dictionary']), descriptor)
+    nodes = compiled[0]['nodes']
+    _same([n['column_id'] for n in nodes], list(range(17989,18004)), 'Prudential column order differs')
+    for node in nodes:
+        col = node['column_id']
+        if col in (17997,17998,17999,18000,18001):
+            expected = {17997:(79707,85843,16),17998:(79708,85844,16),17999:(79709,85845,16),
+                        18000:(79710,86846,13),18001:(79711,87071,11)}[col]
+            _same([node['ifd'],node['lid'],node['fid']], list(expected), 'Prudential numeric binding differs')
+            _same([node['origin_kind'],node['area']], ['numeric',1], 'Prudential numeric origin differs')
+            node.update(kind='flag' if col < 18000 else 'numeric_measure',
+                        unit='not_applicable' if col < 18000 else 'unknown', encoding='json_native_token_v1',
+                        decimal_projection='exact_decimal_by_binding_v1',
+                        presentation={'labels':['Sim','Não']} if col < 18000 else
+                                     {'currency':'BRL' if col == 18000 else 'USD','scale':'mil'})
+            if col >= 18000:
+                node.update(raw_currency='unknown', raw_scale='unknown')
+        else:
+            _require(node['origin_kind'] == 'cadaster', 'Prudential attribute origin differs')
+            node.update(kind='attribute',unit='not_applicable',encoding='utf8_string_exact_v1')
+        node['unit_basis'] = 'Binding-specific prudential metadata; presentation is separate from raw storage'
+    return {'contract':'ifdata-prudential-metadata-candidate-v1', 'selection':selection,
+            'descriptor_sha256':digest, 'catalog':descriptor['catalog'], 'source_offers':descriptor['source_offers'],
+            'reports':compiled, 'required_sources':sorted(required), 'missing_sources':sorted(required-members.keys()),
+            'source_members':members, 'source_pins':{sid:{k:record[k] for k in
+                ('manifest_sha256','body_sha256','provenance_sha256')} for sid,record in members.items()},
+            'limitations':['Incomplete metadata candidate; missing prudential cadaster prevents installation and admission.',
+                'Cadaster schema, population, grid, numeric precision and raw currency/scale unknown.',
+                'Token encoding is a contract annotation; no prudential value parser, observations or formatter executed.',
+                'Native prudential namespace only; no financial/individual equivalence or academic eligibility.']}
