@@ -2083,6 +2083,80 @@ class HistoricalPreparationTests(unittest.TestCase):
             self.batch._historical_limits('unknown')
 
 
+class HistoricalReplacementIdentityTests(unittest.TestCase):
+    setUp = HistoricalPreparationTests.setUp
+    prepare = HistoricalPreparationTests.prepare
+
+    def derive(self, draft):
+        derive = getattr(self.batch, '_derive_historical_replacement', None)
+        self.assertTrue(callable(derive), 'Replacement derivation is missing')
+        return derive(draft)
+
+    def test_deterministic_identity_is_disjoint_without_changing_financial_inputs(self):
+        original = self.prepare()
+        before = canonical(original)
+        policy = canonical(self.batch._HISTORICAL_POLICY_V1)
+        actual = self.derive(original)
+        self.assertEqual(actual, self.derive(original))
+        self.assertEqual(canonical(original), before)
+        self.assertEqual(canonical(self.batch._HISTORICAL_POLICY_V1), policy)
+        self.assertFalse(actual['executable'])
+        self.assertEqual(actual['window_id'], 'F1-01-R1')
+        self.assertEqual(actual['scope'], original['scope'] + '/replacement-1')
+        self.assertEqual(actual['destination'], original['destination'] + '-replacement-1')
+        for key in set(original) - {'scope', 'window_id', 'destination', 'members'}:
+            self.assertEqual(actual[key], original[key], key)
+        for old, new in zip(original['members'], actual['members']):
+            old_job, new_job = old['job'], new['job']
+            self.assertEqual(new['period'], old['period'])
+            self.assertEqual(new['session_root'], actual['destination'] + f"/members/{old['period']}/sessions")
+            self.assertEqual(new_job['acquisition_scope'], old_job['acquisition_scope'] + '/replacement-1')
+            self.assertEqual(new_job['member'], dict(old_job['member'],
+                scope=new_job['acquisition_scope'], window_id='F1-01-R1'))
+            self.assertEqual(new['job_sha256'], new_job['job_sha256'])
+            self.assertEqual(new_job['job_sha256'], self.acquisition._job_hash(new_job))
+            self.assertNotEqual(new_job['job_sha256'], old_job['job_sha256'])
+            old_paths = set(self.acquisition._authority_paths(old_job))
+            self.assertFalse(old_paths.intersection(self.acquisition._authority_paths(new_job)))
+            for key in set(old_job) - {'acquisition_scope', 'member', 'job_sha256'}:
+                self.assertEqual(new_job[key], old_job[key], key)
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+    def test_other_window_and_replacement_of_replacement_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self.derive(self.prepare('F1-02'))
+        with self.assertRaises(ValueError):
+            self.derive(self.derive(self.prepare()))
+
+    def test_mutated_original_is_rejected_without_writing(self):
+        original = self.prepare()
+        changed = []
+        for key, value in [('scope', 'caller'), ('destination', 'data/runs/caller'),
+                           ('policy_sha256', '0' * 64), ('acquire_periods', [201003]),
+                           ('executable', True)]:
+            item = copy.deepcopy(original)
+            item[key] = value
+            changed.append(item)
+        item = copy.deepcopy(original)
+        item['members'][0]['job']['policies']['attempts'] += 1
+        item['members'][0]['job']['job_sha256'] = self.acquisition._job_hash(item['members'][0]['job'])
+        item['members'][0]['job_sha256'] = item['members'][0]['job']['job_sha256']
+        changed.append(item)
+        for item in changed:
+            with self.subTest(item=item['scope']), self.assertRaises(ValueError):
+                self.derive(item)
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+    def test_derived_draft_and_jobs_cannot_execute_before_exclusive_link(self):
+        draft = self.derive(self.prepare())
+        with self.assertRaises(ValueError):
+            self.batch._verify_draft(draft)
+        for member in draft['members']:
+            with self.assertRaises(ValueError):
+                self.acquisition._execution_job(member['job'])
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+
 class HistoricalContinuationPreparationTests(unittest.TestCase):
     prepare = HistoricalPreparationTests.prepare
 

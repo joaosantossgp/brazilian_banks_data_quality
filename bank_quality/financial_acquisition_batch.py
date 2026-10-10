@@ -1029,6 +1029,25 @@ def _compile_historical(refs, window_id):
             'executable': False}
 
 
+def _derive_historical_replacement(draft):
+    """Derive the one replacement identity; this grants no execution capability."""
+    original = _verify_draft(draft)
+    _require(original['contract'] == 'financial-acquisition-batch-draft-v2'
+             and original['window_id'] == 'F1-01', 'Only original F1-01 can be replaced')
+    result = copy.deepcopy(original)
+    result['window_id'] = 'F1-01-R1'
+    result['scope'] += '/replacement-1'
+    result['destination'] += '-replacement-1'
+    for member in result['members']:
+        job = member['job']
+        job['acquisition_scope'] += '/replacement-1'
+        job['member'].update(scope=job['acquisition_scope'], window_id=result['window_id'])
+        job['job_sha256'] = acquisition._job_hash(job)
+        member['job_sha256'] = job['job_sha256']
+        member['session_root'] = result['destination'] + f"/members/{member['period']}/sessions"
+    return result
+
+
 def prepare_historical_batch(catalog_index, catalog_index_sha256, *, window_id):
     path = _path(Path(catalog_index).absolute().relative_to(_ROOT.absolute()).as_posix())
     _file(path, acquisition._digest(catalog_index_sha256))

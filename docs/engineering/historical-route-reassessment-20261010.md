@@ -62,6 +62,40 @@ O primeiro resultado operacional é metadata e o representante201003, não uma b
 
 Issue59 concentra esta reavaliação; expansão Worker4 interrompida para evitar ampliar custo antes da escolha. Issue60 depende do primeiro handoff e contrato próprio; seu desenho pode ser preparado antes dos55. Issue61 tem implementação inicial, expansão final depende dos dados aceitos da60. Issue16 está ready para pesquisa em documentação própria, reutilizando3/14; adoção acadêmica continua humana. Issues62/63/64 conservam decisão de conteúdo e dependências finais. Project3 permanece com Zec.
 
+### Conferência das onze Issues e estimativas — 2026-10-10
+
+Corpos reais das onze Issues e entregas pertinentes foram conferidos, com revisão independente. O mapa vigente continua na2; esta nota explica a mudança de rota, sem criar outro tracker.
+
+| Issue | Próximo resultado e dependência real |
+|---|---|
+| 2 | Síntese vigente das onze frentes; comentários guardam checkpoints, sem repetir históricos inteiros |
+| 3 | Decisão humana de unidade/amostra/método; alternativas14/16 podem preceder a decisão, sem bloquear base nativa |
+| 14 | Pesquisa parcial integrada em PR33; proposta integral ainda depende de lista/complemento original ausente ou reformulação explícita, fontes/componentes e decisões3. Pesquisa factual delimitada pode avançar |
+| 16 | Pesquisa ready de amostra/comparabilidade em seus dois destinos documentais; adoção/cálculo dependem3 |
+| 17 | Workflow e revisões parciais entregues em PR69/70. Owner/bindings reais e runner remoto são escopo futuro indefinido, sem dependência financeira; pausa antiga e checkbox de PR pequena são históricos superados |
+| 59 | Substituição restrita, representante/janela, handoff; depois demais janelas. Software ainda incompleto, nenhuma fonte nova nesta revisão |
+| 60 | Preparar interface agora; primeiro lote real depende de handoff59, contrato e allowlist próprios. Não esperar55 |
+| 61 | Inicial integrado em PR71/b2d72c8, ancestral de main; manter11/66 e expandir incrementalmente após aceites60. Não refazer catálogo/CLI |
+| 62 | Escolha humana do conteúdo complementar; alternativas podem ser pesquisadas com contrato próprio, sem bloquear financeiro |
+| 63 | Implementar quantidade/conjuntos definidos em62; não estimar coletor amplo com conteúdo ainda desconhecido |
+| 64 | Conferência incremental dos handoffs e composição final59/60/61/63; método acadêmico e automação17 não bloqueiam base nativa |
+
+Estimativas separadas, sem confundir esforço de software com relógio de execução:
+
+- **Software59:** orçamento inicial de planejamento de4–8horas para ligação restrita, integração do executor/CLI, testes pertinentes e revisão. Confiança baixa, não medição nem prazo garantido. Reavaliar ao terminar A2; caso a solução exija outro transporte ou máquina de estados, interromper expansão e rever a escolha.
+- **Software60 e primeiro lote consultável:** orçamento inicial de4–8horas para contrato/dispatch da interface e primeira família, com testes/revisão. Confiança baixa; dados reais e diferenças de família ainda podem alterar esse esforço. Não inclui a expansão inteira.
+- **Coleta55:** falta medir o representante. Há até288targets anunciados na policy; cenários ilustrativos de10/30/60segundos por target, uma tentativa, dão48min/2h24/4h48. Não são benchmarks ou previsão do BCB. O orçamento máximo configurado de tentativas/esperas é19h36; primeira janela tem65min20. Não são limites garantidos do tempo total.
+- **Validação/conversão55:** medir o primeiro lote completo e projetar por família/tamanho, separando leitura, admissão, Parquet, consulta e replay. Não usar tempo de download como estimativa dessas fases.
+- **Goal inteiro:** sem ETA fechado enquanto conteúdo63 e decisões humanas próprias não estiverem definidos. Isso não impede estimar e entregar a frente financeira separadamente.
+
+### Checkpoint parcial de código A1
+
+Resultado: `_derive_historical_replacement` deriva somente F1-01-R1 a partir do draft original reautenticado. Scopes novos com sufixo `/replacement-1`, destino novo com `-replacement-1`, hashes/session roots recalculados; policy e dados financeiros idênticos. Nenhum alias executável instalado: os gates continuam recusando a variante atéA2.
+
+Allowlist: batch, teste batch e esta nota; impacto arquitetural nenhum. RED:4casos/9falhas por helper ausente,0,275s, log privado `.scratch/replacement-identity-red-20261010.log`. GREEN:4PASS/0,633s, `.scratch/replacement-identity-green-20261010.log`. Regressões existentes, separadas:16janelas1PASS/1,744s; rejeição de jobs adulterados1PASS/0,252s. Não declarar PASS global pela soma.
+
+Revisão independente APP, sem achados materiais, dos dois arquivos físicos sobre7de3bb6: batchSHA256 `23a510b46a606785d521ed2c580ac1563bd41436b616ede086296071bb06df93`; testeSHA256 `79db8ae80322190365151f9c18912c43e1dc7cbea9e6867394c12305f4dc1527`. Isso permite detalhar/revisar A2, sem inicializar autoridade ou GET. Próximo: ligação única e durável com predecessor, usando a exclusividade global histórica já existente; claims originais apenas na emissão/prova, sem exceção nova de leitura no child.
+
 ## Método e limitações
 
 Instruções locais de grill-with-docs aplicadas por leitura de grilling e domain-modeling; pesquisa de fatos delegada ao revisor existente, somente leitura. Não há ferramenta Skill nesta interface: não alegar slash command executado. Revisão independente sustenta o diagnóstico e a plausibilidade da alternativa, não comprova seu custo, prazo ou funcionamento. A rodada de decisões foi concluída; próximo passo é o checkpointA da rota escolhida, com detalhamento técnico e validação proporcionais.
