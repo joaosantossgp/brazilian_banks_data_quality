@@ -2403,6 +2403,181 @@ class HistoricalContinuationPreparationTests(unittest.TestCase):
         self.late_artifact(directory=True)
 
 
+class HistoricalReplacementInitializationTests(unittest.TestCase):
+    setUp = HistoricalContinuationPreparationTests.setUp
+    prepare = HistoricalPreparationTests.prepare
+    call_prepare = HistoricalContinuationPreparationTests.call_prepare
+
+    def api(self):
+        function = getattr(self.batch, 'initialize_historical_replacement', None)
+        self.assertTrue(callable(function), 'Replacement initialization is missing')
+        return function
+
+    def protected(self):
+        names = set(self.snapshot['files'])
+        for member in json.loads(self.bundle.read_bytes())['members']:
+            _, binding, lock = self.acquisition._authority_paths(member['job'])
+            names.update(p.relative_to(self.root).as_posix() for p in (binding, lock))
+        return {name: sha((self.root / name).read_bytes()) for name in names}
+
+    def proof(self):
+        result = self.call_prepare()
+        return self.root / result['path'], result['sha256']
+
+    def initialize_replacement(self):
+        path, pin = self.proof()
+        return self.api()(path, pin, reviewed_code_pins=self.current_pins)
+
+    def test_initializes_and_opens_common_authorities_without_changing_predecessor(self):
+        before = self.protected()
+        result = self.initialize_replacement()
+        path = self.root / result['bundle_path']
+        bundle = json.loads(path.read_bytes())
+        self.assertEqual(bundle['contract'], 'financial-acquisition-batch-v2')
+        self.assertEqual(bundle['window_id'], 'F1-01-R1')
+        self.assertEqual(bundle['code_pins'], self.current_pins)
+        status = self.batch.verify_historical_batch(path, result['bundle_sha256'],
+            bootstrap_sha256=result['bootstrap_sha256'])
+        self.assertEqual(status['sequence'], 0)
+        self.assertFalse(status['pending_phases'])
+        self.assertEqual(status['totals']['attempts'], 0)
+        with self.batch._open_batch(path, result['bundle_sha256'], result['bootstrap_sha256']) as opened:
+            member = opened.bundle['members'][0]
+            start = self.batch._start_phase(opened, member, 'metadata')
+            context = self.batch._MemberContext(opened, member)
+            context.start = start
+            with self.acquisition._open_authority(member['job'], member['bootstrap_sha256'],
+                    coordinator=context) as authority:
+                target = next(iter(authority.targets.values()))
+                reservation = self.acquisition.reserve_attempt(authority, target,
+                    session_id=Path(start['session']).name)
+                self.assertEqual(reservation['attempt_delta'], 1)
+            transport = self.batch._transport_context(context)
+            self.assertEqual(transport['contract'], 'financial-acquisition-worker-context-v3')
+            checked_member, checked_start = self.batch._worker_context(member['job'], transport)
+            self.assertEqual(checked_member, member)
+            self.assertEqual(checked_start, {k: v for k, v in start.items() if k != 'record_sha256'})
+        self.assertEqual(self.protected(), before)
+
+    def test_claims_originals_only_for_issuance_and_keeps_global_through_initialization(self):
+        path, pin = self.proof()
+        function = self.api()
+        held, seen = [], []
+        original_initialize = self.batch._initialize_batch
+        @contextmanager
+        def claim(lock):
+            lock.touch(exist_ok=True)
+            held.append(lock)
+            seen.append(lock.name)
+            try:
+                yield
+            finally:
+                held.remove(lock)
+        def initialize(*args, **kwargs):
+            self.assertEqual([p.name for p in held], ['historical-active-window.lock'])
+            return original_initialize(*args, **kwargs)
+        with patch.object(self.acquisition, '_claim', claim), \
+                patch.object(self.batch, '_initialize_batch', initialize):
+            function(path, pin, reviewed_code_pins=self.current_pins)
+        self.assertFalse(held)
+        self.assertEqual(seen[0], 'historical-active-window.lock')
+        self.assertEqual(len(seen), 11)  # global, five originals, new batch and four members
+
+    def test_bad_proof_and_wrong_current_pins_reject_before_new_artifacts(self):
+        path, pin = self.proof()
+        function = self.api()
+        with self.assertRaises(ValueError):
+            function(path, '0' * 64, reviewed_code_pins=self.current_pins)
+        changed = copy.deepcopy(self.current_pins)
+        changed['reviewed_commit'] = 'c' * 40
+        with self.assertRaises(ValueError):
+            function(path, pin, reviewed_code_pins=changed)
+        original = json.loads(path.read_bytes())
+        original['effective_totals']['totals']['attempts'] = 1
+        path.write_bytes(canonical(original))
+        with self.assertRaises(ValueError):
+            function(path, sha(path.read_bytes()), reviewed_code_pins=self.current_pins)
+        destination = self.root / (json.loads(self.bundle.read_bytes())['destination'] + '-replacement-1')
+        self.assertFalse(destination.exists())
+
+    def test_predecessor_drift_after_claim_prevents_link_and_authority(self):
+        path, pin = self.proof()
+        function = self.api()
+        batch_binding, _ = self.batch._batch_paths(json.loads(self.bundle.read_bytes())['scope'])
+        marker = batch_binding.with_name(batch_binding.name.replace('.binding.json', '.replacement.json'))
+        count = 0
+        @contextmanager
+        def claim(lock):
+            nonlocal count
+            lock.touch(exist_ok=True)
+            count += 1
+            if count == 6:
+                (self.member_folder / 'journal.jsonl').write_bytes(b'unproven attempt\n')
+            yield
+        with patch.object(self.acquisition, '_claim', claim), self.assertRaises(ValueError):
+            function(path, pin, reviewed_code_pins=self.current_pins)
+        self.assertFalse(marker.exists())
+
+    def test_partial_initialization_does_not_rebind_or_retry_with_clean_budget(self):
+        path, pin = self.proof()
+        function = self.api()
+        with patch.object(self.batch, '_initialize_batch', side_effect=OSError('injected initialization failure')):
+            with self.assertRaises(OSError):
+                function(path, pin, reviewed_code_pins=self.current_pins)
+        binding, _ = self.batch._batch_paths(json.loads(self.bundle.read_bytes())['scope'])
+        marker = binding.with_name(binding.name.replace('.binding.json', '.replacement.json'))
+        before = marker.read_bytes()
+        with self.assertRaises(ValueError):
+            function(path, pin, reviewed_code_pins=self.current_pins)
+        self.assertEqual(marker.read_bytes(), before)
+        destination = self.root / self.batch._historical_window('F1-01-R1')['destination']
+        draft_path = destination.with_name(destination.name + '.draft.json')
+        with self.assertRaises(ValueError):
+            self.batch.initialize_historical_batch(draft_path, sha(draft_path.read_bytes()), destination,
+                reviewed_code_pins=self.current_pins)
+        self.assertFalse(destination.exists())
+
+    def test_bundle_drift_between_reconstruction_and_expected_blocks_link(self):
+        path, pin = self.proof()
+        expected = self.batch._replacement_expected
+        def changed(proof):
+            self.bundle.write_bytes(self.bundle.read_bytes() + b' ')
+            return expected(proof)
+        with patch.object(self.batch, '_replacement_expected', changed):
+            with self.assertRaises(ValueError):
+                self.api()(path, pin, reviewed_code_pins=self.current_pins)
+        self.assertFalse(self.batch._replacement_marker().exists())
+
+    def test_tampered_link_blocks_common_open_and_old_overlay_cannot_fork(self):
+        result = self.initialize_replacement()
+        marker = self.root / result['replacement']['path']
+        original = marker.read_bytes()
+        data = json.loads(original)
+        data['successor']['bundle_sha256'] = '0' * 64
+        marker.write_bytes(canonical(data))
+        with self.assertRaises(ValueError):
+            self.batch.verify_historical_batch(self.root / result['bundle_path'], result['bundle_sha256'],
+                bootstrap_sha256=result['bootstrap_sha256'])
+        marker.write_bytes(original)
+        proof_path, proof_pin = self.root / data['predecessor']['path'], data['predecessor']['sha256']
+        with self.assertRaises(ValueError):
+            self.batch.activate_historical_continuation(proof_path, proof_pin,
+                destination=self.root / 'data/runs/forbidden-overlay')
+        self.assertFalse((self.root / 'data/runs/forbidden-overlay').exists())
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Native exclusive claims require Windows')
+    def test_native_original_claims_are_released_before_common_initialization(self):
+        from bank_quality.windows_acquisition import exclusive_claim as _claim
+        path, pin = self.proof()
+        function = self.api()
+        before = self.protected()
+        with patch.object(self.acquisition, '_claim', _claim):
+            result = function(path, pin, reviewed_code_pins=self.current_pins)
+            self.batch.verify_historical_batch(self.root / result['bundle_path'], result['bundle_sha256'],
+                bootstrap_sha256=result['bootstrap_sha256'])
+        self.assertEqual(self.protected(), before)
+
+
 class HistoricalContinuationActivationTests(unittest.TestCase):
     prepare = HistoricalContinuationPreparationTests.prepare
     setUp = HistoricalContinuationPreparationTests.setUp

@@ -972,6 +972,11 @@ _HISTORICAL_POLICY_V1 = {'aggregate_caps': {'announced_targets_max': 288,
 
 
 def _historical_window(window_id):
+    if window_id == 'F1-01-R1':
+        window = copy.deepcopy(_historical_window('F1-01'))
+        window.update(window_id=window_id, scope=window['scope'] + '/replacement-1',
+                      destination=window['destination'] + '-replacement-1')
+        return window
     policy = _historical_policy(_HISTORICAL_POLICY_V1)
     matches = [w for w in policy['windows'] if type(window_id) is str and w['window_id'] == window_id]
     _require(len(matches) == 1, 'Installed historical window required')
@@ -996,6 +1001,10 @@ def _historical_limits(budget_id):
 
 
 def _compile_historical(refs, window_id):
+    if window_id == 'F1-01-R1':
+        draft, _, _ = _replacement_state()
+        _same(refs, draft['catalogs'], 'Replacement catalogs differ')
+        return draft
     window = _historical_window(window_id)
     catalogs = acquisition._catalogs(refs)
     members = []
@@ -1065,7 +1074,8 @@ def _verify_historical_job(job):
         and job['version'] == 2 and job['executable'] is False and type(job['member']) is dict,
         'Invalid closed historical job')
     installed = _historical_member(job['member'].get('period'))
-    expected = next(m['job'] for m in _compile_historical(job['catalogs'], installed['window_id'])['members']
+    window_id = 'F1-01-R1' if job['member'].get('window_id') == 'F1-01-R1' else installed['window_id']
+    expected = next(m['job'] for m in _compile_historical(job['catalogs'], window_id)['members']
                     if m['period'] == installed['period'])
     _same(job, expected, 'Historical job differs from installed selection/scope/budget/descriptor')
     budget = _HISTORICAL_POLICY_V1['budgets'][installed['budget_id']]
@@ -1172,6 +1182,12 @@ def _member_bootstrap(job):
 
 
 def _build_bundle(draft, destination, pins):
+    bootstraps = {m['job_sha256']: _member_bootstrap(m['job']) for m in draft['members']}
+    return _assemble_bundle(draft, destination, pins, bootstraps)
+
+
+def _assemble_bundle(draft, destination, pins, bootstraps):
+    """Pure identity assembly; callers must separately authenticate execution."""
     members = []
     for member in draft['members']:
         job = member['job']
@@ -1180,7 +1196,7 @@ def _build_bundle(draft, destination, pins):
         members.append({**copy.deepcopy(member), 'job_path': name,
                         'job_file_sha256': _sha(_canonical(job)),
                         'authority_path': folder.relative_to(_ROOT).as_posix(),
-                        'bootstrap_sha256': _sha(_canonical(_member_bootstrap(job)))})
+                        'bootstrap_sha256': _sha(_canonical(bootstraps[member['job_sha256']]))})
     return {**copy.deepcopy(draft), 'contract': ('financial-acquisition-batch-v2' if draft['contract'].endswith('-v2') else 'financial-acquisition-batch-v1'), 'members': members,
             'destination': destination, 'code_pins': copy.deepcopy(pins), 'executable': True}
 
@@ -1267,11 +1283,24 @@ def _bound_bytes(batch):
     _same(_json(_path(binding.relative_to(_ROOT).as_posix()).read_bytes()), batch.binding, 'Immutable batch scope binding mismatch')
 
 
-def _initialize_batch(draft_path: Path, draft_sha256: str, destination: Path, *, code_pins: dict) -> dict:
+class _ReplacementIssuance:
+    """In-process capability, live only while the issuer holds the global claim."""
+    def __init__(self, marker_path, marker_sha256):
+        self.marker_path, self.marker_sha256 = marker_path, marker_sha256
+        self.active = True
+
+
+def _initialize_batch(draft_path: Path, draft_sha256: str, destination: Path, *, code_pins: dict,
+                      replacement_issuance=None) -> dict:
     path = _path(Path(draft_path).absolute().relative_to(_ROOT.absolute()).as_posix())
     _file(path, draft_sha256)
     draft = _verify_draft(_json(path.read_bytes()))
     historical = draft['contract'] == 'financial-acquisition-batch-draft-v2'
+    if historical and draft['window_id'] == 'F1-01-R1':
+        _require(type(replacement_issuance) is _ReplacementIssuance and replacement_issuance.active,
+                 'Replacement initialization requires the live original issuance')
+        _require(replacement_issuance.marker_path == _replacement_marker(), 'Wrong replacement issuance')
+        _file(replacement_issuance.marker_path, replacement_issuance.marker_sha256)
     if historical:
         expected_destination = acquisition._safe_destination(_ROOT / draft['destination'])
         _require(acquisition._safe_destination(destination) == expected_destination, 'Historical destination must exactly match installed window')
@@ -2099,6 +2128,11 @@ def _run_batch(bundle_path: Path, bundle_sha256: str, *, bootstrap_sha256: str, 
 def _bundle_code_identity(bundle, *, current_head=False):
     if bundle.get('contract') == 'financial-acquisition-batch-v2':
         _code_identity_v2(bundle['code_pins'])
+        if bundle.get('window_id') == 'F1-01-R1':
+            _, expected, _ = _replacement_state()
+            _same(bundle, expected, 'Replacement bundle differs from authenticated successor')
+        elif bundle.get('window_id') == 'F1-01':
+            _require(not _replacement_marker().exists(), 'Original window retired by replacement')
     else:
         _code_identity(bundle['code_pins'], current_head=current_head)
 
@@ -2499,6 +2533,92 @@ def _reconstruct_continuation_draft(path, pin, destination, *, held_claims=froze
     return candidate
 
 
+def _replacement_marker():
+    binding, _ = _batch_paths(_historical_window('F1-01')['scope'])
+    return binding.with_name(binding.name.replace('.binding.json', '.replacement.json'))
+
+
+def _replacement_expected(proof):
+    _same((proof['scope'], proof['window_id']),
+          (_historical_window('F1-01')['scope'], 'F1-01'), 'Only interrupted F1-01 can be replaced')
+    raw = _path(proof['original']['bundle']['path']).read_bytes()
+    _require(_sha(raw) == proof['original']['bundle']['sha256'], 'Predecessor bundle changed before derivation')
+    original = _json(raw)
+    draft = _derive_historical_replacement(_compile_historical(original['catalogs'], 'F1-01'))
+    bootstraps = {}
+    for old, new in zip(original['members'], draft['members'], strict=True):
+        bootstrap = _member_bootstrap(old['job'])
+        bootstrap.update(acquisition_scope=new['job']['acquisition_scope'], job_sha256=new['job_sha256'])
+        bootstraps[new['job_sha256']] = bootstrap
+    bundle = _assemble_bundle(draft, draft['destination'], proof['current_code_pins'], bootstraps)
+    pin = _sha(_canonical(bundle))
+    bootstrap_pin = _sha(_canonical(_batch_bootstrap(bundle, pin)))
+    return draft, bundle, _binding(bundle, pin, bootstrap_pin)
+
+
+def _replacement_state():
+    _require(_replacement_marker().is_file(), 'Authenticated replacement linkage required')
+    marker_path = _path(_replacement_marker().relative_to(_ROOT).as_posix())
+    raw = marker_path.read_bytes()
+    marker = _json(raw)
+    _require(type(marker) is dict and set(marker) == {'contract', 'predecessor', 'successor'}
+             and marker['contract'] == 'financial-historical-replacement-v1', 'Invalid replacement linkage')
+    ref = marker['predecessor']
+    _require(type(ref) is dict and set(ref) == {'path', 'sha256'}, 'Invalid replacement predecessor')
+    destination = _ROOT / _historical_window('F1-01-R1')['destination']
+    proof = _reconstruct_continuation_draft(_path(ref['path']), ref['sha256'], destination)
+    draft, bundle, successor = _replacement_expected(proof)
+    _same(marker['successor'], successor, 'Replacement successor binding differs')
+    binding, _ = _batch_paths(proof['scope'])
+    _require(not binding.with_name(binding.name.replace('.binding.json', '.continuation.json')).exists(),
+             'Original already has continuation overlay')
+    _require(marker_path.read_bytes() == raw, 'Replacement linkage changed during validation')
+    return draft, bundle, successor
+
+
+def initialize_historical_replacement(predecessor_draft_path, predecessor_draft_sha256, *, reviewed_code_pins):
+    """Retire the authenticated zero-attempt predecessor and initialize the common executor."""
+    from contextlib import ExitStack
+    path = _path(Path(predecessor_draft_path).absolute().relative_to(_ROOT.absolute()).as_posix())
+    pin = acquisition._digest(predecessor_draft_sha256)
+    destination = acquisition._safe_destination(_ROOT / _historical_window('F1-01-R1')['destination'])
+    proof = _reconstruct_continuation_draft(path, pin, destination)
+    _same(reviewed_code_pins, proof['current_code_pins'], 'Reviewed replacement code differs')
+    _code_identity_v2(reviewed_code_pins)
+    binding, batch_claim = _batch_paths(proof['scope'])
+    claims = [batch_claim] + [_path(t['claim']['path']) for t in proof['classification']['authority_tails']]
+    _require(len(claims) == 5 and len(set(claims)) == 5, 'Five distinct original claims required')
+    global_lock = acquisition._safe_destination(_ROOT / 'data/runs/financial-acquisition-authority/historical-active-window.lock')
+    global_lock.parent.mkdir(parents=True, exist_ok=True)
+    with acquisition._claim(global_lock):
+        with ExitStack() as stack:
+            for lock in claims:
+                _require(lock.is_file() and lock.read_bytes() == b'', 'Original empty claim file required')
+                stack.enter_context(acquisition._claim(lock))
+            proof = _reconstruct_continuation_draft(path, pin, destination, held_claims=frozenset(claims))
+            draft, _, successor = _replacement_expected(proof)
+            marker_path = _replacement_marker()
+            draft_path = destination.with_name(destination.name + '.draft.json')
+            overlay = binding.with_name(binding.name.replace('.binding.json', '.continuation.json'))
+            _require(not marker_path.exists() and not overlay.exists(), 'Original scope already has a successor')
+            _require(not destination.exists() and not draft_path.exists(), 'Replacement destination must be new')
+            marker = {'contract': 'financial-historical-replacement-v1',
+                      'predecessor': {'path': path.relative_to(_ROOT).as_posix(), 'sha256': pin},
+                      'successor': successor}
+            _reconstruct_continuation_draft(path, pin, destination, held_claims=frozenset(claims))
+            acquisition._write_exclusive(marker_path, marker)
+        # Original claims must be released before common initialization/child replay.
+        acquisition._write_exclusive(draft_path, draft)
+        issuance = _ReplacementIssuance(marker_path, _sha(_canonical(marker)))
+        try:
+            result = _initialize_batch(draft_path, _sha(_canonical(draft)), destination,
+                                       code_pins=reviewed_code_pins, replacement_issuance=issuance)
+        finally:
+            issuance.active = False
+        return {**result, 'replacement': {'path': marker_path.relative_to(_ROOT).as_posix(),
+                                         'sha256': _sha(_canonical(marker))}}
+
+
 def _continuation_activation_files(manifest, manifest_pin):
     """Deterministic initial overlays, anchored to original tails, not bootstrap."""
     classification = manifest['classification']
@@ -2574,6 +2694,7 @@ def activate_historical_continuation(draft_path, draft_sha256, *, destination):
     _require(not folder.is_relative_to(path.parent) and not path.parent.is_relative_to(folder),
              'Activation destination overlaps preparation ownership')
     draft = _reconstruct_continuation_draft(path, draft_sha256, folder)
+    _require(not _replacement_marker().exists(), 'Original window already replaced')
     binding, batch_claim = _batch_paths(draft['scope'])
     claims = [batch_claim] + [_path(tail['claim']['path']) for tail in draft['classification']['authority_tails']]
     _require(len(claims) == 5 and len(set(claims)) == 5, 'Five distinct original claims required')
@@ -2584,6 +2705,7 @@ def activate_historical_continuation(draft_path, draft_sha256, *, destination):
             stack.enter_context(acquisition._claim(lock))
         held = frozenset(claims)
         draft = _reconstruct_continuation_draft(path, draft_sha256, folder, held_claims=held)
+        _require(not _replacement_marker().exists(), 'Original window already replaced')
         original = draft['original']
         bundle = _json(_path(original['bundle']['path']).read_bytes())
         parent = _json(_path(bundle['destination'] + '/head.json').read_bytes())

@@ -96,6 +96,18 @@ Allowlist: batch, teste batch e esta nota; impacto arquitetural nenhum. RED:4cas
 
 Revisão independente APP, sem achados materiais, dos dois arquivos físicos sobre7de3bb6: batchSHA256 `23a510b46a606785d521ed2c580ac1563bd41436b616ede086296071bb06df93`; testeSHA256 `79db8ae80322190365151f9c18912c43e1dc7cbea9e6867394c12305f4dc1527`. Isso permite detalhar/revisar A2, sem inicializar autoridade ou GET. Próximo: ligação única e durável com predecessor, usando a exclusividade global histórica já existente; claims originais apenas na emissão/prova, sem exceção nova de leitura no child.
 
+### Checkpoint parcial de código A2
+
+Resultado implementado: `initialize_historical_replacement` autentica a prova física da interrupção sem tentativas, reserva uma ligação única com F1-01-R1 e inicializa os mesmos contratos batch-v2/job-v2. Verificação, autoridades de membros, reserva e contexto worker-v3 usam o executor existente. CLI `historical-replacement-initialize` recebe somente prova/hash e pins/hash; scope, destino, seleção e orçamento não são livres. A exclusividade global permanece durante a emissão/inicialização; os cinco claims originais são liberados antes da inicialização comum. Os arquivos aceitos e o predecessor real não foram alterados; nenhum GET ou autoridade real foi ativado.
+
+Allowlist: batch, CLI, testes batch e esta nota. Sem pasta, camada ou dependência nova. A montagem privada `_assemble_bundle` calcula identidades sem conceder execução; a validação R1 exige ligação autenticada. O desenho inicial tinha um ciclo entre construção e validação, encontrado e corrigido na revisão antes do código.
+
+Revisão parcial do código encontrou dois P2 reproduzidos: endpoint comum contornava o bloqueio após inicialização parcial (RED1FAIL/15,784s); releitura não pinada podia persistir ligação após alteração do predecessor (RED1FAIL/3,163s). Correções: capability privada válida apenas durante a emissão sob claim global, invalidada em `finally`, sem opção pública/CLI; hash dos bytes usados na derivação e reconstrução integral imediatamente antes do CAS. Logs privados `replacement-partial-bypass-red-20261010.log` e `replacement-bundle-drift-red-20261010.log`.
+
+RED inicial corrigido:7FAIL por API ausente/10,458s. Primeira execução implementada:7casos/6PASS e uma comparação incorreta do formato de retorno worker no teste,119,284s; corrigido o teste para o formato que remove `record_sha256` após conferência. Execução composta A1+A2:12PASS/128,155s, incluindo claims nativos Windows, mesma execução; log privado `replacement-composed-green-attempt2-20261010.log`. Regressão separada das16janelas existentes:1PASS/1,777s. CLI help e `git diff --check` conferidos. Revisão final do recorte registrada na Issue59; não confundir com aprovação global da PR73 ou execução operacional.
+
+Próximo checkpoint: retirar a rota de overlay abandonada do conjunto executável, conservar apenas sua prova de leitura necessária à ligação e verificar composição/CLI/regressões antes de emitir pins atuais. A estimativa de software permanece orçamento de planejamento de baixa confiança; ainda falta composição e gate operacional, portanto não há ETA medido para coleta.
+
 ## Método e limitações
 
 Instruções locais de grill-with-docs aplicadas por leitura de grilling e domain-modeling; pesquisa de fatos delegada ao revisor existente, somente leitura. Não há ferramenta Skill nesta interface: não alegar slash command executado. Revisão independente sustenta o diagnóstico e a plausibilidade da alternativa, não comprova seu custo, prazo ou funcionamento. A rodada de decisões foi concluída; próximo passo é o checkpointA da rota escolhida, com detalhamento técnico e validação proporcionais.
