@@ -10,7 +10,7 @@
 
 **Spec:** decisão de conteúdo62, contrato lógico existente e desenho/allowlist desta extensão na Issue63, comentário6101741520.
 
-Estado: contrato revisado APP, execução da fatia E assumida no [claim6101807990](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/63#issuecomment-6101807990). Base integrada b0d886c2c4aff2b1fc6d1265d1c0be1765584dd2; branch codex/individual-historical-extension. CI pós-merge79 tem conferência própria antes de publicação desta extensão. Conteúdo aprovado na #62: quatro relatórios individuais em toda a oferta201003–202606; esta extensão constrói seleção/autoria/leitura comuns e valida os dois bundles adicionais já arquivados. Os demais períodos e o prudencial permanecem no aceite integral da #63.
+Estado: E e F aprovadas independentemente; gates locais G concluídos, revisão do SHA final e publicação/CI/integração pendentes. [Claim6101807990](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/63#issuecomment-6101807990). Base integrada b0d886c2c4aff2b1fc6d1265d1c0be1765584dd2; branch codex/individual-historical-extension. CI pós-merge79 confirmada SUCCESS. Conteúdo aprovado na #62: quatro relatórios individuais em toda a oferta201003–202606; esta extensão constrói seleção/autoria/leitura comuns e valida os dois bundles adicionais já arquivados. Os demais períodos e o prudencial permanecem no aceite integral da #63.
 
 ## Decisão técnica e alternativas
 
@@ -52,10 +52,10 @@ Novos contratos: `ifdata-individual-reports-registry-v1`, `ifdata-individual-rep
 
 ## Fatia F — admissão, Parquet e conferência real dos dois períodos
 
-- [ ] Escrever negativos/positivos de admissão/contexto/Parquet e observar RED antes do delta pertinente.
-- [ ] Executar os módulos `test_individual_reports.py` e `test_individual_reports_parquet.py` com `unittest discover`, em testes públicos sem data/; registrar cada execução sem somá-las como PASS global.
-- [ ] Revisão independente do código e dos testes antes de rodar a admissão/conversão real.
-- [ ] Executar cada candidato/replay em destino novo, confrontar grade/projeções/accessor e proteção; obter revisão independente das evidências antes de G.
+- [x] Escrever negativos/positivos de admissão/contexto/Parquet e observar RED antes do delta pertinente.
+- [x] Executar os módulos `test_individual_reports.py` e `test_individual_reports_parquet.py` com `unittest discover`, em testes públicos sem data/; registrar cada execução sem somá-las como PASS global.
+- [x] Revisão independente do código e dos testes antes de rodar a admissão/conversão real.
+- [x] Executar cada candidato/replay em destino novo, confrontar grade/projeções/accessor e proteção; obter revisão independente das evidências antes de G.
 
 - Propagar contexto nos caminhos individuais existentes; autenticar inventário próprio e projeções com literal de timestamp preservado/UTC derivado. Cadastro, metadados, tokens, ausências, quantidade e precisão exata permanecem nativos.
 - Testes sintéticos públicos exercitam28/32/38campos, mudança de IDs, múltiplas áreas anunciadas, ausência de fonte, contrato cruzado, adulteração repinada e leitura de Parquet sem bruto. Mantêm negativos de202412 e financeiros.
@@ -65,8 +65,8 @@ Novos contratos: `ifdata-individual-reports-registry-v1`, `ifdata-individual-rep
 
 ## Fatia G — composição e entrega
 
-- [ ] Executar em processo único os nove módulos pertinentes (três individuais e seis financeiros correntes) a partir de exportação pública sem data/, como no gate de composição da PR79. Capturar imagem/import/HEAD/contagens/terminal; não usar código do checkout por engano.
-- [ ] Regressão real202412 individual e11financeiros, somente se leitores comuns alterados; rehash protegido após o gate.
+- [x] Executar em processo único os nove módulos pertinentes (três individuais e seis financeiros correntes) a partir de exportação pública sem data/, como no gate de composição da PR79. Capturar imagem/import/HEAD/contagens/terminal; não usar código do checkout por engano.
+- [x] Regressão real202412 individual e11financeiros, somente se leitores comuns alterados; rehash protegido após o gate.
 - [ ] Conferir diff/allowlist/hashes, obter revisão independente do SHA final e publicar o conjunto na PR própria da extensão.
 - [ ] Conferir CI do SHA, integrar dentro da autorização existente, provar ancestralidade em main e CI pós-merge; atualizar63/2 sem fechar o objetivo parcial como entrega integral.
 
@@ -104,3 +104,21 @@ Composição pertinente única `.venv/Scripts/python.exe -B -m unittest discover
 O código testado f87c2e077d559d4a4fbd4dbae390bd0b503c16fa845367a2a65cbbdb20b6a241 recebeu apenas trim de newlineEOF: final684ee37a26f8c1cfc719bf4a864f3ee9dca537d1e4074d754e8742d2560d4e3c. Revisão reconstruiu o hash testado substituindo somente o suffix final; gitdiff--checkPASS, sem repetir testes por formatação. Esta identidade é física Windows, distinta dos blobs LF do Git.
 
 CI pós-merge79 no baseb0d886c confirmada SUCCESS728testes/20skips,696.976s+guards+portal. EAPP permite F; nenhum novo aceite de dados ou Parquet foi declarado por metadata/fixture. Issue63 continua aberta para toda a oferta e prudencial.
+
+## Checkpoint F — código e conferência parcial
+
+Código APP independente, checkpoint local a740922: três pontos no reader propagam seleção em inventário/autenticação e reutilizam a projeção própria. Adapter inalterado. REDs causais precederam os fixes; composição única de sete módulos pertinentes terminou com108testes, zero falhas/erros/skips,89.615s, em2026-10-10T20:41:29.817026Z. Default202412 e financeiro1005 preservados. Dados reais começaram somente após essa revisão.
+
+Recorte201012 passou na revisão independente parcial:237.120células/234.752observações/2.368ausências, cadastro1.976×28. Confronto independente com fontes autenticadas incluiu145.123posições numéricas exatas. Query comparou150.176posições por projeção e accessor, incluindo ausências. Uma lacuna apontada durante a revisão foi corrigida antes de ampliar: confronto físico direto do Parquet com CSV auditado, todos32campos de células/observações, e quatro companions idênticos. Replay tem5/5membros da admissão e80/81membros Parquet byteidênticos; somente manifest de origem tem horário próprio, propagado aos hashes dos manifests. Por essa identidade, não se repetiu a query/accessor integral do replay; não se alega que essa execução ocorreu. Esta simplificação foi aceita na revisão parcial.
+
+202312 também concluiu admissão/replay e auditoria independente do produto:186.240células/186.092observações/148ausências, cadastro1.552×32,117.804posições numéricas exatas. Query comparou117.952posições por projeção e accessor; ambos períodos têm76bindings numéricos,75DECIMAL e um texto exato. Confronto físico direto confirmou todos32campos dos dois runs e os mesmos5/5membros da admissão e80/81membros Parquet idênticos; query replay integral também não foi repetida. As quantidades de posições de projeção incluem ausências; não são a contagem de valores numéricos armazenados.
+
+Os recursos foram medidos por processo e por amostras nas fronteiras da máquina, sem alegar mínimo global de RAM. Execuções de dados foram seriais; maior pico nativo observado nos gates instrumentados foi834.506.752bytes de working set, não pico da árvore ou dos auditores não instrumentados. Proteção final F confirmou1.431arquivos intactos, baseline8502f159, em2026-10-10T20:50:18.663505Z. Revisão independente final dos dados F APP, relatório privado SHA110ae557b505ab989f8270b5bd0359fe47dd371c3a9dba6e11527700d2ad1a16, sem achado material pendente. Composição G e integração têm gates próprios; resultado local não equivale a extensão integrada.
+
+## Checkpoint G — composição pública
+
+Exportação Git do código em a7409221966a03297c82496eeff6b00853cd535f, sem pasta data/: nove módulos pertinentes,152testes, zero falhas/erros, OK em processo único,234.434s. Runtime Windows existente, PID24348,2026-10-10T20:51:28.299868Z–20:55:22.989795Z. Import comprovado dentro da imagem pública; revisão independente confrontou76arquivos tracked de código/testes com os blobs, sem diferenças após normalização LF. Documentação de status posterior não altera o código dessa imagem.
+
+Regressão individual202412:190.200células/189.682observações/cadastro1.585; todas120.460posições das projeções e accessor confrontadas,129nós e45campos do cadastro com envelope/proveniência,66.294sPASS. Manifest aceito7e3b2b64340c567d21ccc31cd396178f8f7e02d2c1c8ec8109eb1a78cc215c81 intacto.
+
+Regressão financeira: os11conjuntos202312–202606 passaram com os três módulos atuais;1.461.348posições numéricas de todas as projeções confrontadas, accessor representativo por encoding em cada conjunto. Não se alega accessor integral financeiro. Execuções foram seriais, após a regressão individual; timestamps conferidos. Fechamento local G em2026-10-10T21:02:03.765558Z confirmou1.431arquivos anteriores e352arquivos novos individuais intactos. Revisão final do SHA, publicação e CI/integração continuam pendentes, com evidência própria na PR/Issue; nenhum novo GET foi executado.
