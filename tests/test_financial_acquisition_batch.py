@@ -2403,6 +2403,40 @@ class HistoricalContinuationPreparationTests(unittest.TestCase):
         self.late_artifact(directory=True)
 
 
+class HistoricalPolicyValidationTests(unittest.TestCase):
+    def test_installed_policy_is_serialized_once_and_copy_is_isolated(self):
+        batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        installed = batch._HISTORICAL_POLICY_V1
+        original = copy.deepcopy(installed)
+        with patch.object(batch, '_canonical', wraps=batch._canonical) as encode:
+            result = batch._historical_policy(installed)
+        self.assertEqual(encode.call_count, 1, 'Same policy was serialized repeatedly')
+        self.assertEqual(result, original)
+        result['windows'][0]['scope'] = 'changed-copy'
+        self.assertEqual(installed, original)
+
+    def test_distinct_policy_compares_bytes_and_rejects_mutation(self):
+        batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        value = copy.deepcopy(batch._HISTORICAL_POLICY_V1)
+        with patch.object(batch, '_canonical', wraps=batch._canonical) as encode:
+            self.assertEqual(batch._historical_policy(value), value)
+        self.assertEqual(encode.call_count, 2)
+        value['windows'][0]['scope'] += '/altered'
+        with self.assertRaises(ValueError):
+            batch._historical_policy(value)
+
+    def test_installed_policy_mutation_between_calls_is_not_cached(self):
+        batch = importlib.import_module('bank_quality.financial_acquisition_batch')
+        original = batch._HISTORICAL_POLICY_V1['windows'][0]['scope']
+        batch._historical_policy(batch._HISTORICAL_POLICY_V1)
+        try:
+            batch._HISTORICAL_POLICY_V1['windows'][0]['scope'] = original + '/altered'
+            with self.assertRaises(ValueError):
+                batch._historical_policy(batch._HISTORICAL_POLICY_V1)
+        finally:
+            batch._HISTORICAL_POLICY_V1['windows'][0]['scope'] = original
+
+
 class HistoricalExecutionSurfaceTests(unittest.TestCase):
     def test_abandoned_overlay_execution_api_is_unavailable(self):
         batch = importlib.import_module('bank_quality.financial_acquisition_batch')

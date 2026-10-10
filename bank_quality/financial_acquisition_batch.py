@@ -1112,8 +1112,10 @@ def _code_identity(pins, *, current_head=False):
 def _historical_policy(value):
     """Only the reviewed finite literal; no runtime resource or policy override."""
     acquisition._closed_data(value)
-    _require(_sha(_canonical(_HISTORICAL_POLICY_V1)) == _HISTORICAL_POLICY_SHA256
-             and _canonical(value) == _canonical(_HISTORICAL_POLICY_V1), 'Historical installed policy differs')
+    installed = _canonical(_HISTORICAL_POLICY_V1)
+    _require(_sha(installed) == _HISTORICAL_POLICY_SHA256
+             and (value is _HISTORICAL_POLICY_V1 or _canonical(value) == installed),
+             'Historical installed policy differs')
     return copy.deepcopy(value)
 
 

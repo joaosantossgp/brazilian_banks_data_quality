@@ -116,6 +116,14 @@ Allowlist: batch, teste batch, esta nota, parágrafo da arquitetura e aviso inic
 
 A revisão da composição identificou falta do controle específico R1 até worker/receipt/representante/remaining/export. Acrescentado reaproveitando o helper de roundtrip existente, com inicialização R1 e comparação dos32arquivos protegidos; não modifica produção. Primeiro controle:1ERROR/71,980s por helper `write` ausente na fixture, corrigido por delegação ao helper existente. Controle corrigido em execução separada; não somar resultados para promover PASS global nem liberar coleta antes do terminal/revisão/SHA. Transporte, ancestry e recursos são simulados nesse controle offline; ele valida os kernels e a ligação, não contenção nativa ou rede real.
 
+### Checkpoint causal A4: trabalho duplicado na policy
+
+CI do SHA8426491 cancelada pelo limite vigente de10min; no run38056731932, o unittest concluiu690casos/OK/skipped20 em600,859s, mas Budget guards/Portal não executaram. O segundo run38056735098 também foi cancelado. Não é PASS de CI nem falha de asserção demonstrada. Não aumentar timeout ou alterar workflow/proteções.
+
+O perfil local de uma validação R1 mediu1,784s/5,8milhões de chamadas, com191validações da policy e serialização repetida do mesmo objeto. Ajuste restrito a `_historical_policy`: calcular os bytes canônicos instalados uma vez por chamada, conferir SHA fresco e comparar objeto distinto aos mesmos bytes; closed_data e deepcopy permanecem. Sem cache entre chamadas, mudança da policy ou bypass. RED3casos/duas falhas/0,118s; GREEN3PASS/0,118s, incluindo mutação instalada entre chamadas rejeitada, cópia isolada e objeto distinto adulterado rejeitado. Perfil posterior no mesmo controle:1,454s, redução observada de18,5%; não é previsão de CI ou coleta.
+
+Allowlist A4: batch, testes batch e esta nota, registrada na Issue59 antes da escrita. Revisão focal independente APP dos dois arquivos de código/teste. Execução completa do módulo com133casos em andamento e nova CI pendente da publicação; resultados serão registrados na Issue/PR no SHA entregue. Guards Node locais PASS e portal2/2PASS, em execuções próprias. Gates operacionais e cobertura11/66 permanecem próprios.
+
 ## Método e limitações
 
 Instruções locais de grill-with-docs aplicadas por leitura de grilling e domain-modeling; pesquisa de fatos delegada ao revisor existente, somente leitura. Não há ferramenta Skill nesta interface: não alegar slash command executado. Revisão independente sustenta o diagnóstico e a plausibilidade da alternativa, não comprova seu custo, prazo ou funcionamento. A rodada de decisões foi concluída; próximo passo é o checkpointA da rota escolhida, com detalhamento técnico e validação proporcionais.
