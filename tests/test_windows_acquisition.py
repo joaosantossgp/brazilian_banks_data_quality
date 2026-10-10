@@ -1,6 +1,6 @@
 """Windows containment integration tests use only a known local fixture worker."""
 import hashlib
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import importlib
 import json
 import os
@@ -201,8 +201,11 @@ class WindowsAcquisitionTests(unittest.TestCase):
                 monitor.sample()
             self.assertEqual(monitor.reservations['a' * 32]['reserved_bytes'], 10)
             monitor.finish('a' * 32)
-            monitor.sample()
-            self.assertEqual(monitor.samples[-1]['inflight_reserved_bytes'], 0)
+            self.assertTrue(monitor.cancel_event.is_set())
+            self.assertEqual(monitor.reservations, {})
+            with self.assertRaisesRegex(RuntimeError, 'Monitor failure'):
+                monitor.sample()
+            self.assertEqual(monitor.sample_count, 0)
 
     def test_worker_marker_is_unobservable_during_partial_write(self):
         api = importlib.import_module('bank_quality.windows_acquisition')
@@ -656,6 +659,274 @@ def _resource_diagnostic(workers):
             'elapsed_seconds_including_shutdown': elapsed, 'results': results,
             'all_worker_and_descendant_identities_extinct': True,
             'scope': 'loopback 1 MiB response per worker; whole coordinator and descendant tree sampled; not BCB acceptance'}
+
+
+class ResourceMonitorTransitionTests(unittest.TestCase):
+    class Clock:
+        def __init__(self):
+            self.value = 10_000_000_000
+
+        def now(self):
+            return self.value
+
+        def sleep(self, seconds):
+            self.value += round(seconds * 1_000_000_000)
+
+    @contextmanager
+    def fixture(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        clock = self.Clock()
+        cancelled = threading.Event()
+        profile = {'contract': 'financial-acquisition-resource-profile-v1', 'machine_id': 'fixture',
+            'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1,
+            'min_free_disk_bytes': 1, 'sampling_interval_ms': 250}
+        good = {'free_physical_bytes': 100, 'free_commit_bytes': 100, 'free_disk_bytes': 100,
+                'processes': [{'pid': 7, 'creation_time': 9}],
+                'tree_working_set_bytes': 2, 'tree_private_bytes': 3, 'elapsed_clock': 10.0}
+        machine = {'elapsed_clock_ns': clock.now(), 'free_physical_bytes': 100,
+                   'free_commit_bytes': 100, 'free_disk_bytes': 100}
+        with patch.object(api, '_machine_id', return_value='fixture'), \
+                patch.object(api, '_current_identity', return_value={'pid': 7, 'creation_time': 9}), \
+                patch.object(api, '_machine_resource_sample', return_value=machine, create=True) as machine_call, \
+                patch.object(api.time, 'perf_counter_ns', side_effect=clock.now), \
+                patch.object(api.time, 'sleep', side_effect=clock.sleep):
+            yield api, api._ResourceMonitor(profile, Path('.'), cancelled), clock, good, machine_call, cancelled
+
+    def test_pending_resolves_without_zero_memory_or_duplicate_samples(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            monitor.reserve({'attempt_id': 'a' * 32, 'reserved_bytes': 30, 'reserved_attempt_seconds': 120})
+            with patch.object(api, '_resource_sample', side_effect=[
+                    api._ProcessObservationPending('birth fixture'),
+                    api._ProcessObservationPending('birth fixture'), good]):
+                monitor.sample()
+            self.assertFalse(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 1)
+            self.assertEqual(len(monitor.samples), 1)
+            self.assertEqual(monitor.peaks, {'tree_working_set_bytes': 2, 'tree_private_bytes': 3})
+            gap, = monitor.observation_gaps
+            self.assertEqual(gap['status'], 'resolved')
+            self.assertEqual(gap['observations'], 2)
+            self.assertGreater(gap['duration_ns'], 0)
+            self.assertLess(gap['duration_ns'], 250_000_000)
+            self.assertEqual(machine.call_count, 2)
+            self.assertTrue(all(sample['inflight_reserved_bytes'] == 30 for sample in gap['machine_samples']))
+            self.assertTrue(all(not any('tree_' in key for key in sample) for sample in gap['machine_samples']))
+
+    def test_pending_persistent_expires_and_preserves_reservations(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            monitor.reserve({'attempt_id': 'a' * 32, 'reserved_bytes': 30, 'reserved_attempt_seconds': 120})
+            with patch.object(api, '_resource_sample', side_effect=api._ProcessObservationPending('birth fixture')):
+                with self.assertRaisesRegex(RuntimeError, 'observation|pending'):
+                    monitor.sample()
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 0)
+            self.assertEqual(monitor.reservations['a' * 32]['reserved_bytes'], 30)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'expired')
+            self.assertGreaterEqual(machine.call_count, 2)
+
+    def test_complete_observation_after_limit_is_not_a_resolution(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            attempts = []
+            def sample(*args):
+                attempts.append(True)
+                if len(attempts) == 1:
+                    raise api._ProcessObservationPending('birth fixture')
+                clock.value += 300_000_000
+                return good
+            with patch.object(api, '_resource_sample', side_effect=sample):
+                with self.assertRaisesRegex(RuntimeError, 'observation|pending'):
+                    monitor.sample()
+            self.assertEqual(len(attempts), 2)
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 0)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'expired')
+
+    def test_pending_checks_fresh_reserved_disk_and_does_not_refund(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            monitor.reserve({'attempt_id': 'a' * 32, 'reserved_bytes': 100, 'reserved_attempt_seconds': 120})
+            with patch.object(api, '_resource_sample', side_effect=api._ProcessObservationPending('birth fixture')):
+                with self.assertRaisesRegex(RuntimeError, 'disk'):
+                    monitor.sample()
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 0)
+            self.assertEqual(monitor.reservations['a' * 32]['reserved_bytes'], 100)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'failed')
+
+    def test_reservation_snapshot_delay_cannot_accept_a_late_resolution(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            class DelayedReservations:
+                def __init__(self):
+                    self.calls = 0
+
+                def __enter__(self):
+                    self.calls += 1
+
+                def __exit__(self, *args):
+                    if self.calls == 2:
+                        clock.value += 300_000_000
+
+            monitor.lock = DelayedReservations()
+            with patch.object(api, '_resource_sample', side_effect=[
+                    api._ProcessObservationPending('birth fixture'), good]):
+                with self.assertRaisesRegex(RuntimeError, 'observation|pending'):
+                    monitor.sample()
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 0)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'expired')
+
+    def test_machine_measurement_can_expire_the_pending_window(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            def slow_machine(*args):
+                clock.value += 300_000_000
+                return {'elapsed_clock_ns': clock.now(), 'free_physical_bytes': 100,
+                        'free_commit_bytes': 100, 'free_disk_bytes': 100}
+            machine.side_effect = slow_machine
+            with patch.object(api, '_resource_sample', side_effect=api._ProcessObservationPending('birth fixture')):
+                with self.assertRaisesRegex(RuntimeError, 'observation|pending'):
+                    monitor.sample()
+            self.assertTrue(cancelled.is_set())
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'expired')
+
+    def test_unknown_error_is_sticky_and_is_never_reclassified(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            with patch.object(api, '_resource_sample', side_effect=OSError(87, 'native fixture')):
+                with self.assertRaises(OSError):
+                    monitor.sample()
+            self.assertTrue(cancelled.is_set())
+            self.assertIn('native fixture', monitor.error)
+            with patch.object(api, '_resource_sample', return_value=good) as native:
+                with self.assertRaises(RuntimeError):
+                    monitor.sample()
+                native.assert_not_called()
+            self.assertEqual(monitor.sample_count, 0)
+
+    def test_exit_requires_a_complete_terminal_observation(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            with patch.object(api, '_resource_sample', return_value=good):
+                monitor.__enter__()
+            with patch.object(api, '_resource_sample', side_effect=api._ProcessObservationPending('birth fixture')):
+                with self.assertRaises(RuntimeError):
+                    monitor.__exit__(None, None, None)
+            self.assertTrue(cancelled.is_set())
+            self.assertFalse(monitor.thread.is_alive())
+
+    def test_cancel_or_stop_during_resolution_cannot_accept_a_sample(self):
+        for signal in ('cancel', 'stop'):
+            with self.subTest(signal=signal), self.fixture() as (api, monitor, clock, good, machine, cancelled):
+                def resolved(*args):
+                    (cancelled if signal == 'cancel' else monitor.stop).set()
+                    return good
+                calls = iter([False, True])
+                def observation(*args):
+                    if not next(calls):
+                        raise api._ProcessObservationPending('birth fixture')
+                    return resolved(*args)
+                with patch.object(api, '_resource_sample', side_effect=observation):
+                    with self.assertRaisesRegex(RuntimeError, 'cancel'):
+                        monitor.sample()
+                self.assertTrue(cancelled.is_set())
+                self.assertEqual(monitor.sample_count, 0)
+                self.assertEqual(monitor.observation_gaps[-1]['status'], 'cancelled')
+
+    def test_terminal_pending_can_resolve_after_watcher_stops(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            with patch.object(api, '_resource_sample', return_value=good):
+                monitor.__enter__()
+            with patch.object(api, '_resource_sample', side_effect=[
+                    api._ProcessObservationPending('birth fixture'), good]):
+                monitor.__exit__(None, None, None)
+            self.assertFalse(cancelled.is_set())
+            self.assertFalse(monitor.thread.is_alive())
+            self.assertEqual(monitor.sample_count, 2)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'resolved')
+
+    def test_external_cancel_prevents_terminal_pending_resolution(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            with patch.object(api, '_resource_sample', return_value=good):
+                monitor.__enter__()
+            cancelled.set()
+            with patch.object(api, '_resource_sample', side_effect=api._ProcessObservationPending('birth fixture')):
+                with self.assertRaisesRegex(RuntimeError, 'cancel'):
+                    monitor.__exit__(None, None, None)
+            self.assertFalse(monitor.thread.is_alive())
+            self.assertEqual(monitor.sample_count, 1)
+            self.assertEqual(monitor.observation_gaps[-1]['status'], 'cancelled')
+
+    def test_exit_joins_an_inflight_complete_watcher_without_cancelling(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            entered, release = threading.Event(), threading.Event()
+            errors = []
+            def observation(*args):
+                if threading.current_thread() is monitor.thread:
+                    entered.set()
+                    if not release.wait(2):
+                        raise RuntimeError('fixture watcher not released')
+                return good
+            def finish():
+                try:
+                    monitor.__exit__(None, None, None)
+                except Exception as error:
+                    errors.append(error)
+            with patch.object(api, '_resource_sample', side_effect=observation):
+                monitor.__enter__()
+                self.assertTrue(entered.wait(2))
+                finalizer = threading.Thread(target=finish)
+                finalizer.start()
+                try:
+                    self.assertTrue(monitor.stop.wait(2))
+                finally:
+                    release.set()
+                    finalizer.join(2)
+            self.assertFalse(finalizer.is_alive())
+            self.assertFalse(monitor.thread.is_alive())
+            self.assertEqual(errors, [])
+            self.assertFalse(cancelled.is_set())
+            self.assertEqual(monitor.error, '')
+            self.assertEqual(monitor.sample_count, 2)
+
+    def test_successful_exit_adds_a_complete_terminal_observation(self):
+        with self.fixture() as (api, monitor, clock, good, machine, cancelled):
+            with patch.object(api, '_resource_sample', return_value=good):
+                monitor.__enter__()
+                monitor.__exit__(None, None, None)
+            self.assertFalse(cancelled.is_set())
+            self.assertEqual(monitor.sample_count, 2)
+
+    def test_sampling_is_serial_but_reservation_updates_are_not_blocked(self):
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        entered, release = threading.Event(), threading.Event()
+        errors, calls = [], []
+        with self.fixture() as (_, monitor, clock, good, machine, cancelled):
+            monitor.reserve({'attempt_id': 'a' * 32, 'reserved_bytes': 30, 'reserved_attempt_seconds': 120})
+            def sample(*args):
+                calls.append(True)
+                if len(calls) == 1:
+                    entered.set()
+                    if not release.wait(2):
+                        raise RuntimeError('Test release missing')
+                    raise api._ProcessObservationPending('birth fixture')
+                return good
+            def measure():
+                try:
+                    monitor.sample()
+                except BaseException as error:
+                    errors.append(error)
+            with patch.object(api, '_resource_sample', side_effect=sample):
+                first = threading.Thread(target=measure)
+                second = threading.Thread(target=measure)
+                first.start()
+                self.assertTrue(entered.wait(2))
+                second.start()
+                monitor.finish('a' * 32)
+                release.set()
+                first.join(2)
+                second.join(2)
+                self.assertFalse(first.is_alive() or second.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(monitor.sample_count, 2)
+            self.assertEqual(len(monitor.observation_gaps), 1)
+            self.assertTrue(all(sample['inflight_reserved_bytes'] == 0 for sample in monitor.samples))
 
 
 if __name__ == '__main__':

@@ -175,8 +175,12 @@ class CatalogAuthorityBoundaryTests(unittest.TestCase):
                 self.assertIn('authority pin', str(ctx.exception))
 
     def test_trusted_code_images_are_finite_and_physical(self):
-        source = Path(__file__).resolve().parents[1] / 'bank_quality/financial_acquisition_batch.py'
+        # Inert Git blob from ca63ee9674f58f9a80221af721fe6ebfc00025d3,
+        # bank_quality/financial_acquisition_batch.py. Never import or execute.
+        source = Path(__file__).parent / 'fixtures/financial_acquisition_batch_ca63.py.evidence'
         lf = source.read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(hashlib.sha256(lf).hexdigest(),
+                         '6c0d5e5ec5a605792a76491b10fe0a393d37972f5f8dd64d900b8291d03c2e2d')
         with tempfile.TemporaryDirectory(prefix='catalog61-code-image-') as folder:
             root = Path(folder); target = root / 'bank_quality/financial_acquisition_batch.py'
             target.parent.mkdir()

@@ -82,6 +82,11 @@ def main(argv=None):
         historical_initialize.add_argument('--' + name, type=Path, required=True)
     historical_initialize.add_argument('--draft-sha256', required=True)
     historical_initialize.add_argument('--code-pins-sha256', required=True)
+    replacement_initialize = commands.add_parser('historical-replacement-initialize', allow_abbrev=False)
+    replacement_initialize.add_argument('--predecessor-draft', type=Path, required=True)
+    replacement_initialize.add_argument('--predecessor-draft-sha256', required=True)
+    replacement_initialize.add_argument('--code-pins', type=Path, required=True)
+    replacement_initialize.add_argument('--code-pins-sha256', required=True)
     for name in ('historical-run', 'historical-verify', 'historical-export'):
         command = commands.add_parser(name, allow_abbrev=False)
         command.add_argument('--bundle', type=Path, required=True)
@@ -106,6 +111,10 @@ def main(argv=None):
             acquisition._write_exclusive(destination, result)
             result = {'status': 'draft', 'executable': False, 'window_id': args.window_id,
                       'draft_sha256': acquisition._sha(destination.read_bytes()), 'acquire_periods': result['acquire_periods']}
+        elif args.command == 'historical-replacement-initialize':
+            pins = batch._verified_current_code_pins(args.code_pins, args.code_pins_sha256)
+            result = batch.initialize_historical_replacement(args.predecessor_draft,
+                args.predecessor_draft_sha256, reviewed_code_pins=pins)
         elif args.command == 'historical-initialize':
             pins = batch._verified_current_code_pins(args.code_pins, args.code_pins_sha256)
             result = batch.initialize_historical_batch(args.draft, args.draft_sha256, args.destination, reviewed_code_pins=pins)
