@@ -198,3 +198,169 @@ class IndividualProfileTests(unittest.TestCase):
             profiles.descriptor_for_selection({'period':202412,'perspective':1006,'reports':[93,77,100,94]})
         context = profiles.load_installed_context({'period':202412,'perspective':1005,'reports':[92,96,101,98]})
         self.assertEqual(context['selection']['perspective'],1005)
+
+class IndividualHistoricalTests(unittest.TestCase):
+    def test_finite_offers_and_epoch_selection_without_raw(self):
+        lookup = getattr(profiles, 'individual_descriptor_for_selection', None)
+        self.assertTrue(callable(lookup), 'Historical individual offer lookup is missing')
+        registry = profiles._individual_registry()
+        self.assertEqual(len(registry['members']), 66)
+        self.assertEqual([m['selection']['period'] for m in registry['members']][::65], [201003, 202606])
+        with patch.object(profiles, 'CHECKOUT_ROOT', Path('absent-raw')):
+            for member in registry['members']:
+                self.assertEqual(lookup(member['selection']), member)
+        for bad in (None, {}, {'period':True,'perspective':1006,'reports':[93,77,100,94]},
+                    {'period':202412,'perspective':1005,'reports':[93,77,100,94]},
+                    {'period':202412,'perspective':1006,'reports':[93,93,100,94]},
+                    {'period':202412,'perspective':1006,'reports':[77,93,100,94]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError): lookup(bad)
+
+    def test_historical_context_unknown_annotations_and_no_raw(self):
+        for period, width in ((201012,28),(202312,32)):
+            with self.subTest(period=period):
+                registry_fn = getattr(profiles, '_individual_registry', None)
+                self.assertTrue(callable(registry_fn), 'Historical registry is missing')
+                descriptor = next(m for m in registry_fn()['members'] if m['selection']['period']==period)
+                with patch.object(profiles, 'CHECKOUT_ROOT', Path('absent-raw')):
+                    context = profiles.load_individual_context(descriptor['selection'])
+                self.assertEqual(len(context['cadaster_columns']), width)
+                self.assertEqual(context['contract'], 'ifdata-individual-reports-historical-snapshot-v1')
+                self.assertEqual(context['part'], f'parts/individual-cells-{period}.parquet')
+                for report in context['profile']['reports']:
+                    for node in report['nodes']:
+                        if node['kind'] != 'group':
+                            self.assertEqual(node['unit'], 'unknown')
+                            self.assertEqual(node['window_end'], '')
+                if period==202312:
+                    for sid in ('cadaster','dictionary','numeric:1'):
+                        record=context['source_members'][sid]
+                        self.assertNotIn('truncated', record)
+                        self.assertTrue(record['diagnostics'])
+                        self.assertNotIn('truncated=false',record['completion_evidence'])
+
+@contextmanager
+def historical_fixture(period):
+    member = next(m for m in profiles._individual_registry()['members'] if m['selection']['period']==period)
+    member=copy.deepcopy(member)
+    installed=profiles.load_individual_context(member['selection'])['profile']
+    with tempfile.TemporaryDirectory() as folder:
+        root=Path(folder)
+        ref=int(member['catalog']['reference_pointer'][1:])
+        files=[{} for _ in range(max(int(x['catalog_pointer'].split('/')[3]) for x in member['reports']+member['source_offers'])+1)]
+        for offer in member['source_offers']: files[int(offer['catalog_pointer'].split('/')[3])]={'f':offer['native_file']}
+        definitions={}; areas={}
+        for report in installed['reports']:
+            files[int(report['catalog_pointer'].split('/')[3])]={'trel':copy.deepcopy(report['report'])}
+            for node in report['nodes']:
+                definitions[node['ifd']]=node['definition']
+                if node['kind']=='numeric': areas.setdefault(node['area'],set()).add(node['lid'])
+        catalog=[{} for _ in range(ref+1)]; catalog[ref]={'dt':period,'files':files}
+        bodies={'catalog':encoded(catalog),'portal':b'synthetic portal',
+                'dictionary':encoded(list(definitions.values())),
+                'cadaster':encoded([{**{f'c{i}':'synthetic' for i in range(member['cadaster_shape']['columns'])},'c0':str(n),'c1':str(period)} for n in range(2)])}
+        for area,lids in areas.items(): bodies[f'numeric:{area}']=encoded({'id':area,'values':[{'e':0,'v':[{'i':lid,'v':'123.4500'} for lid in sorted(lids)]}]})
+        member['cadaster_shape']['rows']=2
+        for sid,body in bodies.items():
+            source=member['sources'][sid]; policy=member['source_policy'][sid]
+            path=root/'data/raw'/ (sid.replace(':','-')+'.json'); path.parent.mkdir(exist_ok=True,parents=True)
+            body_name=sid.replace(':','-')+'.bin'; (path.parent/body_name).write_bytes(body)
+            url=('https://www3.bcb.gov.br/ifdata/rest/relatorios2000a2024' if sid=='catalog' else
+                 'https://www3.bcb.gov.br/ifdata/index.html' if sid=='portal' else
+                 'https://www3.bcb.gov.br/ifdata/rest/arquivos?'+urlencode({'nomeArquivo':source['native_file']}))
+            manifest={'url':url,'final_url':url,'method':'GET','http_status':200,'outcome':'ok',
+                      'bytes':len(body),'sha256':profiles._sha(body),'body_path':body_name,
+                      'retrieved_at_utc':'2026-10-01T01:00:00+00:00','diagnostics':policy['diagnostics'],
+                      'context':{'period':period,'body_capture':policy['body_capture']},
+                      'response_headers':{'Content-Length':str(len(body))}}
+            if policy['truncated_present']: manifest['truncated']=policy['truncated']
+            if period==202312 and sid in ('cadaster','dictionary','numeric:1'):
+                manifest['response_headers']['Content-Encoding']='gzip'
+            raw=encoded(manifest); path.write_bytes(raw)
+            source.update(manifest_path=path.relative_to(root).as_posix(),manifest_sha256=profiles._sha(raw),body_sha256=profiles._sha(body),provenance_sha256=profiles._digest(manifest))
+            policy['bytes']=len(body)
+        member['catalog']={**{k:member['sources']['catalog'][k] for k in ('manifest_path','manifest_sha256','body_sha256','provenance_sha256')},'reference_pointer':'/'+str(ref)}
+        member['descriptor_sha256']=profiles._digest(profiles._offer_payload(member))
+        with patch.object(profiles,'CHECKOUT_ROOT',root),patch.object(profiles,'_individual_registry',return_value={'members':[member]}):
+            yield root,member
+
+
+class IndividualHistoricalAuthorTests(unittest.TestCase):
+    def test_synthetic_each_historical_epoch_and_determinism(self):
+        for period,width in ((201012,28),(202312,32)):
+            with self.subTest(period=period),historical_fixture(period) as (_,member):
+                profile=profiles.author_individual_profile(member['selection'])
+                self.assertEqual(profile,profiles.author_individual_profile(member['selection']))
+                self.assertEqual(len(profile['cadaster_columns']),width)
+                self.assertEqual(profile['missing_sources'],[])
+                self.assertEqual(profile['source_members']['cadaster']['diagnostics'],member['source_policy']['cadaster']['diagnostics'])
+
+    def test_repin_cannot_change_capture_shape_role_or_archive_path(self):
+        for change in ('truncation','diagnostics','timestamp','url','shape','role','path'):
+            with self.subTest(change=change),historical_fixture(202312) as (root,member):
+                source=copy.deepcopy(member['sources']['cadaster'])
+                if change=='role': source['role']='dictionary'
+                elif change=='path': source['manifest_path']='../escape.json'
+                else:
+                    path=root/source['manifest_path']; manifest=json.loads(path.read_bytes())
+                    if change=='truncation': manifest['truncated']=False
+                    if change=='diagnostics': manifest['diagnostics']=[]
+                    if change=='timestamp': manifest['retrieved_at_utc']='2026-10-01T01:00:00'
+                    if change=='url': manifest['url']='https://example.org/'
+                    if change=='shape': member['cadaster_shape']['columns']=38
+                    raw=encoded(manifest); path.write_bytes(raw)
+                    source.update(manifest_sha256=profiles._sha(raw),provenance_sha256=profiles._digest(manifest))
+                    member['sources']['cadaster']=copy.deepcopy(source)
+                with self.assertRaises(ValueError):
+                    if change=='shape': profiles.author_individual_profile(member['selection'])
+                    else: profiles._authenticate_individual_source(source,member['selection'])
+
+    def test_inactive_offer_has_no_authority_and_profile_path_is_closed(self):
+        member=profiles._individual_registry()['members'][0]
+        with self.assertRaises(ValueError): profiles.author_individual_profile(member['selection'])
+        active=next(m for m in profiles._individual_registry()['members'] if m['selection']['period']==201012)
+        for name in ('../outside.json','individual-reports-profiles/202312.json',None):
+            mutated=copy.deepcopy(active); mutated['profile_path']=name
+            with patch.object(profiles,'_individual_registry',return_value={'members':[mutated]}),self.assertRaises(ValueError):
+                profiles.load_individual_context(active['selection'])
+
+class IndividualHistoricalRegistryGuards(unittest.TestCase):
+    def test_duplicate_offer_identity_rejected_even_with_recomputed_digest(self):
+        member=copy.deepcopy(next(m for m in profiles._individual_registry()['members'] if m['selection']['period']==201012))
+        member['source_offers'].append(copy.deepcopy(member['source_offers'][0]))
+        member['descriptor_sha256']=profiles._digest(profiles._offer_payload(member))
+        with patch.object(profiles,'_individual_registry',return_value={'members':[member]}),self.assertRaises(ValueError):
+            profiles.individual_descriptor_for_selection(member['selection'])
+
+    def test_duplicate_registry_selection_rejected(self):
+        original=profiles._individual_registry()
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); original['members'].append(copy.deepcopy(original['members'][0]))
+            (root/'individual-reports-registry.json').write_bytes(encoded(original))
+            with patch.object(profiles,'PACKAGE_ROOT',root),self.assertRaises(ValueError): profiles._individual_registry()
+
+    def test_alternating_contexts_preserves_default_and_financial(self):
+        default=profiles.load_individual_context()
+        for period in (201012,202312,202412,201012,202312):
+            member=next(m for m in profiles._individual_registry()['members'] if m['selection']['period']==period)
+            self.assertEqual(profiles.load_individual_context(member['selection'])['period'],period)
+            self.assertEqual(profiles.load_individual_context(),default)
+            financial=profiles.load_installed_context({'period':202412,'perspective':1005,'reports':[92,96,101,98]})
+            self.assertEqual(financial['selection']['perspective'],1005)
+
+    def test_installed_capture_and_annotations_cannot_be_repin_relaxed(self):
+        descriptor=next(m for m in profiles._individual_registry()['members'] if m['selection']['period']==202312)
+        context=profiles.load_individual_context(descriptor['selection'])
+        for change in ('diagnostics','annotation','truncated'):
+            with self.subTest(change=change),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder); member=copy.deepcopy(descriptor); profile=copy.deepcopy(context['profile'])
+                if change=='annotation':
+                    node=next(n for r in profile['reports'] for n in r['nodes'] if n['kind']!='group'); node['unit']='BRL_raw_inferred'
+                else:
+                    record=profile['source_members']['cadaster']
+                    if change=='diagnostics': record['diagnostics']=[]
+                    else: record['truncated']=False
+                    profile['source_pins']['cadaster']['projection_sha256']=profiles._digest(record)
+                body=encoded(profile); member['profile_sha256']=profiles._sha(body)
+                path=root/member['profile_path']; path.parent.mkdir(); path.write_bytes(body)
+                (root/'individual-reports-registry.json').write_bytes(encoded({'contract':'ifdata-individual-reports-registry-v1','members':[member]}))
+                with patch.object(profiles,'PACKAGE_ROOT',root),self.assertRaises(ValueError): profiles.load_individual_context(member['selection'])

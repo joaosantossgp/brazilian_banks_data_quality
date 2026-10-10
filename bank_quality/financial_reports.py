@@ -352,17 +352,12 @@ def _member_inputs(context, by_id, authenticate):
 
 def _individual_projection(record):
     from . import financial_report_profiles as profiles
-    projected = profiles._project_source_record(record)
-    projected['retrieved_at_original'] = projected['retrieved_at_utc']
-    projected['retrieved_at_utc_derived'] = profiles._individual_utc(projected['retrieved_at_original'])
-    projected['completion_evidence'] = ('Exact legacy GET/200; truncated=false; empty diagnostics; '
-        'physical/manifest/Content-Length agree; Content-Encoding absent; EOF unobserved')
-    return projected
+    return profiles._project_individual_source_record(record)
 
 
 def _authenticate_individual_member(source, context):
     from . import financial_report_profiles as profiles
-    body, record = profiles._authenticate_individual_source(source)
+    body, record = profiles._authenticate_individual_source(source, context['selection'])
     projected = _individual_projection(record)
     sid = source['source_id']
     _same(projected, context['source_members'].get(sid), 'Individual source projection differs')
@@ -385,7 +380,7 @@ def _read_individual(index_path, index_sha256):
              'Individual sources must be an explicit list')
     by_id = {member.get('source_id'): member for member in members}
     _require(len(by_id) == len(members), 'Duplicate individual source membership')
-    _same(by_id, profiles._individual_sources(), 'Individual source inventory differs')
+    _same(by_id, profiles._individual_sources(context['selection']), 'Individual source inventory differs')
     context, sources, cadastro, document, entities = _member_inputs(
         context, by_id, lambda source: _authenticate_individual_member(source, context))
     return _grade(index, index_body, context, sources, cadastro, document, entities, historical=True)
