@@ -108,6 +108,14 @@ RED inicial corrigido:7FAIL por API ausente/10,458s. Primeira execução impleme
 
 Próximo checkpoint: retirar a rota de overlay abandonada do conjunto executável, conservar apenas sua prova de leitura necessária à ligação e verificar composição/CLI/regressões antes de emitir pins atuais. A estimativa de software permanece orçamento de planejamento de baixa confiança; ainda falta composição e gate operacional, portanto não há ETA medido para coleta.
 
+### Checkpoint parcial A3: retirada da rota abandonada
+
+Removidos por símbolos13helpers/classes de overlay, registro privado de owners e import/decorador exclusivos:555linhas de produção. Saem ativação, replay/verify alternativo, writers e reserva própria; ficam a preparação/reconstrução somente de leitura e a substituição no executor comum. Foram retirados41testes das três classes exclusivas da implementação descartada; isso não é aumento de cobertura nem correção de suas falhas. O teste da superfície executável exige que sete entrypoints/classes abandonados estejam indisponíveis: RED1caso/7FAIL/0,117s → GREEN1PASS/0,109s. Busca em produção/scripts não encontrou chamadas residuais; o único uso dos nomes em testes é a conferência de indisponibilidade.
+
+Allowlist: batch, teste batch, esta nota, parágrafo da arquitetura e aviso inicial do ledger da aquisição; ampliação documental registrada na Issue59 antes da escrita. Mesmo módulo/destino, sem camada/dependência nova. Histórico dos commits e todos os registros anteriores preservados. Revisões estrutural e documental independentes APP. Módulo batch completo:129PASS/504,322s, sem skips, em uma execução (`replacement-common-batch-composition-20261010.log`). Conferência real do snapshot externo:24/24 hashes preservados. Nenhum dado/autoridade real alterado.
+
+A revisão da composição identificou falta do controle específico R1 até worker/receipt/representante/remaining/export. Acrescentado reaproveitando o helper de roundtrip existente, com inicialização R1 e comparação dos32arquivos protegidos; não modifica produção. Primeiro controle:1ERROR/71,980s por helper `write` ausente na fixture, corrigido por delegação ao helper existente. Controle corrigido em execução separada; não somar resultados para promover PASS global nem liberar coleta antes do terminal/revisão/SHA. Transporte, ancestry e recursos são simulados nesse controle offline; ele valida os kernels e a ligação, não contenção nativa ou rede real.
+
 ## Método e limitações
 
 Instruções locais de grill-with-docs aplicadas por leitura de grilling e domain-modeling; pesquisa de fatos delegada ao revisor existente, somente leitura. Não há ferramenta Skill nesta interface: não alegar slash command executado. Revisão independente sustenta o diagnóstico e a plausibilidade da alternativa, não comprova seu custo, prazo ou funcionamento. A rodada de decisões foi concluída; próximo passo é o checkpointA da rota escolhida, com detalhamento técnico e validação proporcionais.

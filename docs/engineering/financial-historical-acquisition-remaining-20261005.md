@@ -1,5 +1,7 @@
 # Aquisição histórica restante e retomada do snapshot
 
+**Rota corrente — 2026-10-10:** a [reavaliação aprovada](historical-route-reassessment-20261010.md) substitui o overlay de continuação descrito nos registros abaixo pela ligação restrita F1-01-R1 e executor comum. A2 implementado/revisado no commit `7cd9e99c02a5f20934c037b70c838fcf20e8e47c`; A3 retira o código de overlay abandonado, preservando a prova somente de leitura e o histórico. Registros datados anteriores documentam o trabalho daquela rota, não APIs ou próximos passos correntes. Composição final, pins/gates atuais e coleta permanecem pendentes; cobertura 11/66.
+
 Frente: [Issue 59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59), [plano](../superpowers/plans/2026-10-05-financial-historical-acquisition-remaining.md) e [mapa 2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2). Esta nota distingue transporte, software, gates e aquisição. A cobertura financeira integrada permanece **11/66**; faltam 55 fontes e sua sanitização na Issue 60. Project 3 permanece com Zec.
 
 ## Transporte e restauração — 2026-10-06
