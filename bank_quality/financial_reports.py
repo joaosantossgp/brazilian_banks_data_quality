@@ -28,6 +28,8 @@ FIELDS = legacy.FIELDS
 ROLES = legacy.ROLES
 INPUTS = ('financial-observations.csv', 'financial-cells.csv', 'financial-cadastro.csv',
           'financial-variables.json', 'financial-diagnostics.json')
+INDIVIDUAL_INDEX_CONTRACT = 'ifdata-individual-reports-sources-v1'
+INDIVIDUAL_INPUTS = tuple(name.replace('financial-', 'individual-', 1) for name in INPUTS)
 ENVELOPE = {'contract': CONTRACT, 'period': 202412, 'perspective': 'financial', 'perspective_id': 1005}
 CAD_FIELDS = [*ENVELOPE, *(f'c{i}' for i in range(38)), 'source_body', 'source_sha256', 'source_pointer']
 BIND_FIELDS = ('ifd', 'td', 'area', 'lid', 'fid', 'catalog_pointer', 'definition_pointer',
@@ -164,6 +166,11 @@ def _context(selection=None):
 def _check_sources(sources, context):
     if 'source_members' in context:
         _same(sources, context['source_members'], 'Historical source provenance differs from installed map')
+        if context['envelope']['perspective_id'] == 1006:
+            for sid, record in sources.items():
+                _require(_sha(_canonical(record).encode('utf-8')) ==
+                         context['profile']['source_pins'][sid]['projection_sha256'],
+                         'Individual projection digest differs')
         origins = [(r['role'], r['area'], r['body_path'], r['body_sha256']) for r in sources.values()]
         _require(len(origins) == len(set(origins)), 'Ambiguous historical source origin map')
         return
@@ -276,12 +283,18 @@ def _historical_inputs(index, index_body):
     by_id = {s.get('source_id'): s for s in members}
     _require(len(by_id) == len(members) and set(by_id) == set(context['source_members']),
              'Incomplete/duplicate historical source membership')
+    return _member_inputs(context, by_id, lambda source: profiles._authenticate_installed_source(source, context))
+
+
+def _member_inputs(context, by_id, authenticate):
+    """Shared native member reader; trust policy belongs to each closed caller."""
+    from . import financial_report_profiles as profiles
     sources, entities = {}, {}
     document = _variables(context)
     order = ['catalog', 'dictionary', 'cadaster', 'portal',
              *sorted(sid for sid in by_id if sid.startswith('numeric:'))]
     for sid in order:
-        body, sources[sid] = profiles._authenticate_installed_source(by_id[sid], context)
+        body, sources[sid] = authenticate(by_id[sid])
         if sid == 'portal':
             body.decode('utf-8')
         elif sid == 'catalog':
@@ -335,6 +348,47 @@ def _historical_inputs(index, index_body):
         del body
     _check_sources(sources, context)
     return context, sources, cadastro, document, entities
+
+
+def _individual_projection(record):
+    from . import financial_report_profiles as profiles
+    projected = profiles._project_source_record(record)
+    projected['retrieved_at_original'] = projected['retrieved_at_utc']
+    projected['retrieved_at_utc_derived'] = profiles._individual_utc(projected['retrieved_at_original'])
+    projected['completion_evidence'] = ('Exact legacy GET/200; truncated=false; empty diagnostics; '
+        'physical/manifest/Content-Length agree; Content-Encoding absent; EOF unobserved')
+    return projected
+
+
+def _authenticate_individual_member(source, context):
+    from . import financial_report_profiles as profiles
+    body, record = profiles._authenticate_individual_source(source)
+    projected = _individual_projection(record)
+    sid = source['source_id']
+    _same(projected, context['source_members'].get(sid), 'Individual source projection differs')
+    _require(_sha(_canonical(projected).encode('utf-8')) ==
+             context['profile']['source_pins'][sid]['projection_sha256'], 'Individual projection digest differs')
+    return body, projected
+
+
+def _read_individual(index_path, index_sha256):
+    from . import financial_report_profiles as profiles
+    index_body = Path(index_path).read_bytes()
+    _require(type(index_sha256) is str and re.fullmatch(r'[0-9a-f]{64}', index_sha256)
+             and _sha(index_body) == index_sha256, 'Individual index external SHA-256 differs')
+    index = _json(index_body)
+    _require(isinstance(index, dict) and set(index) == {'contract', 'selection', 'sources'}
+             and index['contract'] == INDIVIDUAL_INDEX_CONTRACT, 'Wrong individual source index')
+    context = profiles.load_individual_context(index['selection'])
+    members = index['sources']
+    _require(isinstance(members, list) and all(isinstance(member, dict) for member in members),
+             'Individual sources must be an explicit list')
+    by_id = {member.get('source_id'): member for member in members}
+    _require(len(by_id) == len(members), 'Duplicate individual source membership')
+    _same(by_id, profiles._individual_sources(), 'Individual source inventory differs')
+    context, sources, cadastro, document, entities = _member_inputs(
+        context, by_id, lambda source: _authenticate_individual_member(source, context))
+    return _grade(index, index_body, context, sources, cadastro, document, entities, historical=True)
 
 
 def _read(index_path):
@@ -464,7 +518,7 @@ def _grade(index, index_body, context, sources, cadastro, document, entities, hi
     diagnostics = _diagnostics(cadastro, document['variables'], cells, context)
     diagnostics['nodes'] = len(document['nodes'])
     provenance = {'input_index_sha256': _sha(index_body), 'profile_sha256': context['profile_sha256'],
-                  'reader_version': 'historical-1' if historical else '1', 'reader_source_sha256': _sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
+                  'reader_version': 'individual-1' if context['envelope']['perspective_id'] == 1006 else 'historical-1' if historical else '1', 'reader_source_sha256': _sha(Path(__file__).read_bytes().replace(b'\r\n', b'\n')),
                   'code_revision': index.get('code_revision', 'unknown')}
     return dict(context['envelope']), observations, cells, cadastro, document, diagnostics, sources, provenance
 
@@ -477,18 +531,33 @@ def admit(index_path: Path, output: Path) -> dict:
     envelope, observations, cells, cadastro, document, diagnostics, sources, provenance = _read(index_path)
     context = (_historical_context(document['selection']) if envelope['contract'] ==
                'ifdata-financial-reports-historical-snapshot-v1' else _context(document['selection']))
+    return _write_admission(output, context, envelope, observations, cells, cadastro, document, diagnostics, sources, provenance)
+
+
+def admit_individual(index_path: Path, output: Path, *, index_sha256: str) -> dict:
+    """Admit only the pinned individual bundle using an external index digest."""
+    from . import financial_report_profiles as profiles
+    output = Path(output)
+    if output.exists():
+        raise FileExistsError('Individual destination already exists: ' + str(output))
+    result = _read_individual(index_path, index_sha256)
+    context = profiles.load_individual_context(result[4]['selection'])
+    return _write_admission(output, context, *result, inputs=INDIVIDUAL_INPUTS)
+
+
+def _write_admission(output, context, envelope, observations, cells, cadastro, document, diagnostics, sources, provenance, *, inputs=INPUTS):
     _require(context['profile_sha256'] == provenance['profile_sha256'], 'Installed profile changed during admission')
     output.mkdir(parents=True, exist_ok=False)
-    legacy._csv(output / INPUTS[0], observations, FIELDS)
-    legacy._csv(output / INPUTS[1], cells, FIELDS)
-    legacy._csv(output / INPUTS[2], (
+    legacy._csv(output / inputs[0], observations, FIELDS)
+    legacy._csv(output / inputs[1], cells, FIELDS)
+    legacy._csv(output / inputs[2], (
         {**envelope, **cad, 'source_body': sources['cadaster']['body_path'],
          'source_sha256': sources['cadaster'].get('body_sha256', sources['cadaster'].get('sha256')), 'source_pointer': '/' + str(p)}
         for p, cad in enumerate(cadastro)), context.get('cad_csv_fields', CAD_FIELDS))
-    legacy._write_json(output / INPUTS[3], document)
-    legacy._write_json(output / INPUTS[4], diagnostics)
+    legacy._write_json(output / inputs[3], document)
+    legacy._write_json(output / inputs[4], diagnostics)
     files = []
-    for name in INPUTS:
+    for name in inputs:
         body = (output / name).read_bytes()
         files.append({'path': name, 'bytes': len(body), 'sha256': _sha(body)})
     manifest = {**envelope, 'selection': copy.deepcopy(document['selection']), 'accepted': True,
@@ -539,6 +608,19 @@ def validate_admission(manifest, bodies):
     _require('selection' in manifest, 'Wrong admission selection')
     historical = manifest.get('contract') == 'ifdata-financial-reports-historical-snapshot-v1'
     context = _historical_context(manifest['selection']) if historical else _context(manifest['selection'])
+    return _validate_admission(manifest, bodies, context, historical=historical)
+
+
+def validate_individual_admission(manifest, bodies):
+    """Reconstruct only an individual admission; caller authenticates manifest."""
+    from . import financial_report_profiles as profiles
+    _require(isinstance(manifest, dict) and manifest.get('accepted') is True
+             and 'selection' in manifest, 'Unaccepted individual admission')
+    context = profiles.load_individual_context(manifest['selection'])
+    return _validate_admission(manifest, bodies, context, inputs=INDIVIDUAL_INPUTS)
+
+
+def _validate_admission(manifest, bodies, context, *, inputs=INPUTS, historical=False):
     _same({k: manifest.get(k) for k in ENVELOPE}, context['envelope'], 'Wrong admission scope')
     _require(manifest.get('profile_sha256') == context['profile_sha256'], 'Unknown admitted profile')
     if historical:
@@ -546,20 +628,20 @@ def validate_admission(manifest, bodies):
                  'Historical admission lineage differs from installed handoff pin')
     _check_sources(manifest.get('sources'), context)
     _same(manifest.get('limitations'), context['limitations'], 'Changed admission qualifications')
-    _require(isinstance(bodies, dict) and set(bodies) == set(INPUTS), 'Invalid explicit payload membership')
+    _require(isinstance(bodies, dict) and set(bodies) == set(inputs), 'Invalid explicit payload membership')
     files = manifest.get('files')
-    _require(isinstance(files, list) and len(files) == len(INPUTS), 'Invalid payload inventory')
+    _require(isinstance(files, list) and len(files) == len(inputs), 'Invalid payload inventory')
     seen = set()
     for entry in files:
         _require(isinstance(entry, dict) and set(entry) == {'path', 'bytes', 'sha256'}
-                 and entry['path'] in INPUTS and entry['path'] not in seen, 'Invalid payload record')
+                 and entry['path'] in inputs and entry['path'] not in seen, 'Invalid payload record')
         seen.add(entry['path'])
         body = bodies[entry['path']]
         _require(type(body) is bytes and type(entry['bytes']) is int and len(body) == entry['bytes']
                  and _sha(body) == entry['sha256'], 'Payload size/hash mismatch')
-    document = _json(bodies['financial-variables.json'])
+    document = _json(bodies[inputs[3]])
     _same(document, _variables(context), 'Variable metadata differs from installed profile')
-    cad_rows = _csv_bytes(bodies['financial-cadastro.csv'], context.get('cad_csv_fields', CAD_FIELDS))
+    cad_rows = _csv_bytes(bodies[inputs[2]], context.get('cad_csv_fields', CAD_FIELDS))
     columns = context.get('cadaster_columns', [f'c{i}' for i in range(38)])
     cadastro = [{k: row[k] for k in columns} for row in cad_rows]
     _cadaster(cadastro, context)
@@ -568,7 +650,7 @@ def validate_admission(manifest, bodies):
                     'source_body': manifest['sources']['cadaster']['body_path'],
                     'source_sha256': manifest['sources']['cadaster'].get('body_sha256', manifest['sources']['cadaster'].get('sha256')), 'source_pointer': '/' + str(p)}
         _same(row, expected, 'Wrong admitted cadaster provenance/scope')
-    cells = _csv_bytes(bodies['financial-cells.csv'], FIELDS)
+    cells = _csv_bytes(bodies[inputs[1]], FIELDS)
     _require(len(cells) == len(cadastro) * len(document['variables']), 'Incomplete admitted grade')
     reports = {item['report']['id']: item['report'] for item in context['profile']['reports']}
     originals, entity_presence, pointer_keys, entity_codes = {}, {}, {}, {}
@@ -609,7 +691,7 @@ def validate_admission(manifest, bodies):
                          'source_kind': 'not_stored', 'value_state': 'unobserved_cell', 'numeric_value': ''}
             _require(all(row[k] == v for k, v in token.items()), 'Invalid native token/state/Decimal')
             if _numeric(node):
-                sid = node['origin_source_id'] if historical else 'numeric'
+                sid = node['origin_source_id'] if 'source_members' in context else 'numeric'
                 key = (sid, cad['c0'], node['lid'])
                 _require(key not in originals or originals[key] == token, 'Divergent repeated native source key')
                 originals[key] = token
@@ -632,11 +714,11 @@ def validate_admission(manifest, bodies):
     # or serializing two giant JSON strings for comparison. Returned observations
     # share the already validated cell dictionaries, as in admission generation.
     observations = [row for row in cells if row['presence'] == 'stored']
-    for actual, expected in zip_longest(_iter_csv_bytes(bodies['financial-observations.csv'], FIELDS), observations):
+    for actual, expected in zip_longest(_iter_csv_bytes(bodies[inputs[0]], FIELDS), observations):
         _require(actual == expected, 'Observation reconstruction differs')
     for key, count in (('cells', len(cells)), ('observations', len(observations)), ('cadaster_records', len(cadastro))):
         _require(type(manifest.get(key)) is int and manifest[key] == count, 'Invalid admitted count: ' + key)
-    diagnostics = _json(bodies['financial-diagnostics.json'])
+    diagnostics = _json(bodies[inputs[4]])
     expected_diagnostics = _diagnostics(cadastro, document['variables'], cells, context)
     expected_diagnostics['nodes'] = len(document['nodes'])
     _same(diagnostics, expected_diagnostics, 'Coverage/diagnostic reconstruction differs')
