@@ -2787,6 +2787,13 @@ class TransactionalHistoricalIssuerTests(unittest.TestCase):
             'files': {name: sha(name.encode()) for name in self.batch._CODE_FILES_V2},
             'runtime': {'path': sys.executable, 'sha256': sha(b'runtime')},
             'policy_sha256': self.batch._HISTORICAL_POLICY_SHA256}
+        @contextmanager
+        def synthetic_claim(path):
+            path.touch(exist_ok=True)
+            yield
+        claim_patch = patch.object(self.acquisition, '_claim', synthetic_claim)
+        claim_patch.start()
+        self.addCleanup(claim_patch.stop)
         patcher = patch.object(self.batch, '_code_identity_v2', side_effect=self.batch._capture_code_pins_v2)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -2795,6 +2802,12 @@ class TransactionalHistoricalIssuerTests(unittest.TestCase):
             'machine_id': __import__('socket').gethostname(), 'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
             'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1, 'min_free_disk_bytes': 1,
             'sampling_interval_ms': 250}))
+
+    def test_synthetic_issuer_never_calls_win32_kernel(self):
+        self.configure()
+        with patch('bank_quality.windows_acquisition._kernel', side_effect=AssertionError('Synthetic fixture called Win32')):
+            ref = self.initialize()
+            self.assertEqual(self.initialize(), ref)
 
     def test_create_reopen_preserves_pending_and_same_slot(self):
         self.configure()

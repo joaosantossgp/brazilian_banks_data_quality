@@ -262,6 +262,7 @@ class SQLMemberTests(unittest.TestCase):
         self.monitor = __import__('unittest.mock', fromlist=['MagicMock']).MagicMock()
         self.monitor.__enter__.return_value = self.monitor
         for item in (patch.object(self.api, 'require_supported'),
+                     patch.object(self.api, '_current_identity', return_value={'pid': 9, 'creation_time': 10}),
                      patch.object(self.api, 'verify_worker_ancestry'),
                      patch.object(self.api, 'run_contained_attempt', side_effect=self.launch),
                      patch('bank_quality.archive.fetch_bounded', side_effect=self.fetch),
@@ -312,6 +313,12 @@ class SQLMemberTests(unittest.TestCase):
         return {'identity': {'pid': 12, 'creation_time': 34, 'contained': True}, 'exit_code': 0,
                 'tree_extinct': self.mode != 'unknown', 'deadline_reached': False,
                 'elapsed_seconds': .1, 'deadline_overshoot_seconds': 0, 'job_handle_inherited': False}
+
+    def test_synthetic_member_never_calls_win32_kernel(self):
+        with patch('bank_quality.windows_acquisition._kernel', side_effect=AssertionError('Synthetic member called Win32')):
+            self.run_member()
+            self.run_member('values')
+        self.assertGreater(len(self.calls), 2)
 
     def test_member_metadata_values_resume_reauthenticates_without_new_get(self):
         a = self.run_member()
