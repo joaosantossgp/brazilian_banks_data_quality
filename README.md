@@ -1,5 +1,40 @@
 # Brazilian banks data quality
 
+## Consultar a base IF.data
+
+A importação offline de 2026-10-11 disponibiliza **18.228.826 registros** do serviço oficial IfDataValores em Parquet local. Os quatro conjuntos ficam em `data/curated/ifdata-odata-20261011/`:
+
+| Pasta | Conteúdo nativo | Trimestres | Janela | Registros |
+|---|---|---:|---|---:|
+| `financial` | Tipo 2: Resumo, Ativo, Passivo e DRE | 66 | 201003–202606 | 7.945.863 |
+| `individual` | Tipo 3: Resumo, Ativo, Passivo e DRE | 66 | 201003–202606 | 8.679.083 |
+| `capital` | Tipo 1: Capital | 46 | 201503–202606 | 1.344.190 |
+| `segmentation` | Tipo 1: Segmentação | 38 | 201703–202606 | 259.690 |
+
+Python 3.12 e DuckDB existentes bastam. Para consultar a base já importada:
+
+```powershell
+# Inventário por período, tipo e relatório, incluindo saldos ausentes.
+.venv/Scripts/python.exe scripts/import-ifdata.py counts data/curated/ifdata-odata-20261011/financial
+
+# Consulta aos campos nativos. Troque financial pela outra pasta desejada.
+.venv/Scripts/python.exe scripts/import-ifdata.py query data/curated/ifdata-odata-20261011/financial "SELECT AnoMes, CodInst, NumeroRelatorio, Conta, Grupo, Saldo FROM ifdata WHERE AnoMes = '202606' LIMIT 10"
+```
+
+Para reproduzir a conversão financeira a partir do pacote privado em `data/raw/ifdata-odata-20261011/`, escolha **um destino novo**:
+
+```powershell
+.venv/Scripts/python.exe scripts/import-ifdata.py import data/raw/ifdata-odata-20261011 data/curated/ifdata-odata-reproducao --periods 201003 201006 201009 201012 --types 2 --reports 1 2 3 4
+```
+
+O exemplo reproduz quatro trimestres; omitir `--periods` importa toda a oferta do pacote, inclusive anos fora do alvo. Para os complementos, use tipo 3/relatórios 1–4, tipo 1/relatório 5 ou tipo 1/relatório 6, com a janela da tabela.
+
+`Saldo` conserva o número original em texto, incluindo casas decimais/expoentes; null permanece distinto de zero. `bank_quality.ifdata_odata.saldo_decimal` retorna Decimal Python exato. IDs, Grupo, tipo e relatório permanecem literais. Cada linha conserva arquivo, hash, URL oficial, instante de coleta, contexto e posição de origem. Os tipos são populações próprias e não devem ser somados automaticamente.
+
+O pacote não contém cadastro institucional completo. A consulta usa os códigos nativos, inclusive ausências explícitas; amostra, vínculos e indicadores permanecem em suas Issues. A captura OData tem data própria e não substitui silenciosamente os 11 snapshots antigos, que continuam acessíveis pela CLI anterior. Os registros datados abaixo descrevem essa rota histórica, sem limitar a cobertura OData atual.
+
+Os 428 gzip recebidos passaram na conferência de hashes/tamanhos. Pilotos foram revisados antes da expansão; a conferência integral dos resultados e a integração estão registradas na [PR 84](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/84) e no [plano vigente](docs/superpowers/plans/2026-10-05-financial-historical-acquisition-remaining.md). Conversão financeira: 194,844 segundos; os três complementos, em sequência: 236,969 segundos. São medidas desta máquina e pacote. Pacote, Parquet e credenciais ficam fora do GitHub.
+
 **Retomada — 2026-10-06:** a [Release de snapshot](https://github.com/joaosantossgp/brazilian_banks_data_quality/releases/tag/snapshot-ifdata-11-20261006) transporta os dados locais sob criptografia, com `RETOMADA.md`, hashes e helpers de restauração em staging novo. O transporte foi validado no receptor e os11 conjuntos aceitos passaram na leitura integral/consultas; o candidato59 foi reconciliado em branch própria, com compatibilidade de runtime histórico, revisão/checks e recursos ainda necessários antes de coletar. A [nota59](docs/engineering/financial-historical-acquisition-remaining-20261005.md) registra provas e limitações. O clone ou download do ZIP de código não traz a base local; chave e pacote aberto permanecem privados e não entram no GitHub. Cobertura permanece11/66, sem nova coleta59.
 
 **Direção aprovada — 2026-10-04:** a frente financeira final cobre Resumo, Ativo, Passivo e DRE oficiais, com todas as variáveis disponíveis e contratos próprios, nas referências trimestrais disponíveis do alvo2010–2026. O piloto de oito variáveis é uma primeira fatia, sem comprovar o histórico completo. A execução avança pelas Issues do [mapa2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2), com decisões técnicas autônomas registradas, testes/revisão e paralelismo medido entre lotes independentes. Decisões de objetivo/conteúdo final, metodologia acadêmica e mudanças críticas permanecem com João.

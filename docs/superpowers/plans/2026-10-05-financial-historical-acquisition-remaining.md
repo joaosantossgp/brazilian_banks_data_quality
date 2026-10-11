@@ -1,3 +1,80 @@
+# Importação simples do pacote IF.data — plano vigente, 2026-10-11
+
+> Execução com `executing-plans`, testes pertinentes e revisão independente nos checkpoints. As seções históricas preservadas abaixo não são pré-requisitos da importação.
+
+**Objetivo:** disponibilizar os66 trimestres financeiros201003–202606 e os complementos aprovados usando os arquivos já capturados.
+
+**Arquitetura:** um leitor Python JSON/gzip, conversão incremental para Parquet e DuckDB existente. Tabela longa com campos nativos, período, tipo, relatório, conta, saldo original e arquivo de origem. Catálogo simples por manifesto/CLI identifica a fonte OData explicitamente; os11 aceitos antigos continuam próprios.
+
+**Contrato:** solicitação de João em2026-10-11, [claim59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6110704260), conteúdo aprovado na #62, arquitetura e ADR0001 existentes. Esta seção substitui a aquisição transacional na rota principal, sem alterar contratos antigos.
+
+**Responsável/base:** Root; planejamento na branch codex/transactional-acquisition, HEAD e3651efe868a75a63adbfe440fc0de01fe81822e. Implementação offline partirá de main em codex/ifdata-offline-import. Preservar alterações pendentes e PR83 draft; não incorporá-las à nova entrega ou apagá-las.
+
+## Simplificação concreta
+
+Saem da rota principal nova coleta, reservas SQL, tentativas/retomada de processos, diagnóstico Acronis/administrador/WSL e BigQuery. Não exigir perfis manuais por trimestre, cadeia de comprovantes da coleta ou equivalência total com o portal antigo para disponibilizar OData identificado.
+
+Manter integridade dos arquivos, precisão, contagens/cobertura, origem, falhas visíveis e revisão por resultado. Reutilizar manifesto/inventário recebidos e um resumo de importação por arquivo: caminho/hash/contagem/resultado. Nenhum ledger, scheduler, servidor ou dependência adicional.
+
+## Entrada e limites
+
+Inventário recebido:428consultas,106trimestres não vazios até202606; todos os55 faltantes constam no tipo2. Total declarado56.298.508registros e cerca de1,05GiB comprimido incluindo outros tipos/relatórios. Os 428 gzip físicos foram verificados por hash/tamanho; o aceite das seleções depende da conferência da transformação.
+
+Controle202312:84.300 valores exatos, duas diferenças nas últimas casas decimais, posições sem correspondência e colisões na chave diagnóstica reduzida. Preservar Grupo e demais campos; não deduplicar nem arredondar para forçar igualdade. Prefixo C e zeros nos códigos continuam literais; normalização diagnóstica não é vínculo aprovado.
+
+O arquivo de valores não traz cadastro completo. Conferir material cadastral do pacote e aproveitar vínculos oficiais comprovados; lacunas explícitas não impedem consulta por código nativo. Não harmonizar conceitos, selecionar amostra ou calcular indicadores nesta entrega.
+
+## 1. Receber e conferir — #59, 30–60min
+
+- [x] Baixar pacote completo em data/raw/ifdata-odata-20261011/, destino novo ignorado; conservar gzip/metadados originais.862arquivos recebidos, sem consultas novas ao BCB.
+- [x] Conferir todos os428gzip/hash/tamanho. Tipos2/3:66trimestres não vazios; tipo1:50desde201403.202609vazio não conta como disponível. Recibo em data/runs/ifdata-odata-receipt-20261011.json.
+- [x] Revisão independente APP do recebimento/inventário; amostras201003/202312tipos1/2/3 conferidas. Cobertura integral por relatório será produzida pela leitura em60/63; não inferida do inventário. [Entrega59 concluída](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6110916906).
+
+## 2. Leitor e primeiro lote consultável — #60/#61, 1,5–3h
+
+- [x] Criar bank_quality/ifdata_odata.py e tests/test_ifdata_odata.py. RED/GREEN6testes; review independente APP do leitor/CLI, incluindo precisão, null/zero/vazio/NUL, códigos literais e preservação de Grupo.
+- [x] Criar CLI fina scripts/import-ifdata.py: seleção período/tipo/relatório/destino. Piloto201003/202312 em data/curated/ifdata-odata-pilot-20261011/. Não interpretar OData como contrato do portal antigo.
+- [x] Preservar todos os registros, inclusive Grupo, separar tipos sobrepostos. Não usar DOUBLE; saldo que não couber em DECIMAL conserva texto e acesso Decimal Python.
+- [x] Conferir contagens, nulls, valores após conversão e consultas por código/conta/período. Comparação com202312 antigo é diagnóstica entre vintages.
+- [x] Revisão independente do leitor e dos dois resultados antes de ampliar. Todas242.399linhas fonte→Parquet conferidas literalmente; SQLreal confirma139.909em201003 e102.490em202312, quatro relatórios em ambos. Dataset data/curated/ifdata-odata-pilot-20261011, sem alteração dos11antigos.
+
+## 3. Janela financeira completa — #60/#61, 1–2h
+
+- [x] Rodar o mesmo leitor nos66trimestres/tipo2/relatórios1–4. Conferir cada arquivo e contagem por relatório; medir throughput do primeiro lote e recalcular duração restante.
+- [x] Disponibilizar catálogo simples por manifesto e `import-ifdata.py counts/query`. Ajuste técnico2026-10-11: não alterar financial_catalog.py/query-financial.py legados; a CLI nova já localiza períodos/relatórios e consulta diretamente cada dataset, evitando ligar OData à cadeia de contratos do portal. Os11antigos continuam acessíveis pela CLI antiga. Motivo: mesma capacidade de consulta com menos código e nenhuma migração silenciosa; validação: CLI e consultas reais do piloto aprovadas independentemente.
+- [x] Revisar primeiro bloco histórico e bloco2025/2026 antes de fechar cobertura66. Reexecutar apenas saída incompleta, sem reconstruir operação de coleta.
+
+## 4. Complementos pelo mesmo leitor — #63, 1–2h
+
+- [x] Individual tipo3/relatórios1–4,66trimestres201003–202606; prudencial tipo1/Capital5,46trimestres201503–202606, e Segmentação6,38trimestres201703–202606, conforme decisão62. Conferir oferta efetiva por relatório antes de declarar cobertura aprovada; não ampliar para os quatro contábeis prudenciais ou outras famílias.
+- [x] Reutilizar leitor/CLI/saída, mudando seleção; nenhum pipeline por família/período. Conferir e revisar um período de cada família antes de ampliar.
+
+## 5. Entrega final — #64, 45–90min
+
+- [x] Testes dos módulos alterados (7PASS), revisão independente da composição7paths APP e consultas reais históricas/2025–2026. Vínculo ao SHA final e CI conferidos na PR84. Não repetir suíte integral a cada lote de dados sem alteração de código.
+- [ ] README com comando de importação/localização/exemplos; arquitetura registra leitor adjacente e suporte OData no catálogo. Publicar/integrar código/documentos revisados e confirmar checks; pacote/brutos/credenciais privados.
+- [ ] Encerrar dados/Goal somente com cobertura e consultas comprovadas, distinguindo fonte OData e aceites antigos.
+
+## Ownership, revisão de Issues e prazo
+
+Planejamento modifica somente este plano e docs/engineering/historical-route-reassessment-20261010.md. Código limitado aos três paths de leitor/CLI/testes acima, README e arquitetura sob Root; allowlist por checkpoint na Issue antes do código. Dados nas raízes existentes, responsabilidade adjacente para formato OData, sem nova camada. Fixtures sintéticas/temporárias, sem pacote privado no Git.
+
+Nove Issues abertas conferidas:2mapa;59recebimento;60importação;61consulta;63complementos;64conferência final;3decisão acadêmica;14indicadores;17governança. Reutilizar16/62encerradas como pesquisa/decisão, sem novas Issues. #3/#14 não bloqueiam dados; #17 não ganha enforcement/runner como pré-requisito. Nenhuma Issue é encerrada só pela mudança de rota.
+
+#59recebimento e #60leitor podem avançar juntas, pois dois gzip já estão disponíveis; Root é integrador único. #61/#63reutilizam o leitor após primeira revisão, sem disputar seus arquivos; pesquisa3/14 é independente em documentação própria. #64depende de60/61/63. Project3comZec.
+
+Estimativa inicial:6–11horas de trabalho para base nativa e complementos consultáveis, incluindo revisão/integração; primeiro lote útil2–4horas. Não é benchmark ou garantia. Medir na etapa2 e atualizar; download/disco e lacunas reais podem alterar o prazo. Decisões acadêmicas/cálculos excluídos. Desvio de uma hora sem dado novo exige comunicar causa e ajuste, sem ampliar infraestrutura por rotina.
+
+## Resultado medido — 2026-10-11
+
+Base em data/curated/ifdata-odata-20261011/: financial66partes/7.945.863linhas; individual66/8.679.083; capital46/1.344.190; segmentation38/259.690. Total216partes/18.228.826linhas,612combinações período/relatório. Financeiro completo passou conferência independente de TODAS as linhas e16campos contra fonte, hashes e cobertura264/264. Complementos completos APP: todas10.282.963linhas/16campos, hashes e348combinações conferidos literalmente contra fontes,105,91s; seus três pilotos passaram comparação integral antes da expansão.
+
+Conversão financeira194,844s; três complementos em sequência236,969s, destinos separados e execução concorrente medida. A estimativa inicial6–11h foi conservadora e superada pelo processamento real em minutos; resta revisão final/CI/integração, sem ampliar infraestrutura.
+
+TDD7testes PASS, incluindo CodInst nulo real de201909: preservar ausência, sem inventar identificador. Revisão independente da correção APP. Tentativa financeira anterior incompleta permanece semmanifest, fora dos datasets aceitos. PR84 publica somente código/documentos; PR83/stash permanecem preservados.
+
+---
+
 # Aquisição financeira histórica — Issue 59
 
 **Retomada no receptor — 2026-10-06:** transporte autorizado por João na Release `snapshot-ifdata-11-20261006`, base integrada `6ca53d53f2022a7c2b9c81e8091838a871ef76af`, branch própria `codex/financial-historical-acquisition-resume`. O candidato9paths foi reconciliado, sem copiar o export210 sobre main. A [nota de execução](../../engineering/financial-historical-acquisition-remaining-20261005.md) registra restauração/hashes, runtime novo, leitura11 e gates ainda pendentes. Os estados de candidatura abaixo são históricos; autoridade atual na Issue59. Antes de GET, conferir revisão/checks/compat54/canônico202403/recursos da máquina receptora.
