@@ -2850,3 +2850,140 @@ def initialize_historical_replacement(predecessor_draft_path, predecessor_draft_
             issuance.active = False
         return {**result, 'replacement': {'path': marker_path.relative_to(_ROOT).as_posix(),
                                          'sha256': _sha(_canonical(marker))}}
+
+# One immutable index is the source of operational configuration. These helpers
+# deliberately never read, recover or replay predecessor authorities.
+def _transactional_paths(window_id, period=None):
+    window = _historical_window(window_id)
+    _require(not window_id.startswith('F1-'), 'F1 requires its reviewed cumulative policy')
+    base = f'data/runs/financial-historical-transactional-{window_id}'
+    if period is None:
+        return base
+    _require(type(period) is int and period in window['periods'], 'Member outside installed window')
+    return base + f'/members/{period}'
+
+
+def _transactional_absence(draft):
+    batch_binding, _ = _batch_paths(draft['scope'])
+    names = [draft['destination'], batch_binding.relative_to(_ROOT).as_posix()]
+    for member in draft['members']:
+        job = member['job']
+        base = 'data/runs/financial-acquisition-authority/'
+        names.extend((base + job['job_sha256'], base + 'scope-' + _sha(job['acquisition_scope'].encode()) + '.binding.json'))
+    for name in names:
+        path = acquisition._safe_destination(_ROOT / name)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            continue
+        raise ValueError('Historical scope exists; carry requires specific diagnosis: ' + name)
+    return names
+
+
+def _transactional_index(draft, pins, resource_ref):
+    from .windows_acquisition import _resource_profile
+    from . import financial_acquisition_store
+    _transactional_paths(draft['window_id'])
+    _code_identity_v2(pins)
+    _resource_profile(_read(resource_ref))
+    members = []
+    for source in draft['members']:
+        job, period = source['job'], source['period']
+        base = _transactional_paths(draft['window_id'], period)
+        budget = _HISTORICAL_POLICY_V1['budgets'][job['member']['budget_id']]
+        members.append({'period': period, 'logical_id': draft['window_id'] + '/' + str(period),
+            'job': job, 'job_path': base + '/job.json', 'store_path': base + '/attempts.sqlite',
+            'limits': {'attempts': budget['attempts_max'], 'body_bytes': budget['body_bytes_max'],
+                       'attempt_ms': budget['attempt_seconds_max'] * 1000},
+            'carry': acquisition._initial_state()})
+    return {'contract': 'financial-historical-transactional-index-v1', 'window_id': draft['window_id'],
+            'catalogs': draft['catalogs'], 'policy_sha256': _HISTORICAL_POLICY_SHA256,
+            'code_pins': pins, 'store_sha256': _sha(Path(financial_acquisition_store.__file__).read_bytes()),
+            'resource_profile': resource_ref, 'absence_paths': _transactional_absence(draft), 'members': members}
+
+
+def _transactional_context(ref, member):
+    return {'index': ref, 'logical_id': member['logical_id'], 'carry': copy.deepcopy(member['carry'])}
+
+
+def _transactional_scope(ref, member):
+    return _sha(_canonical({'job_sha256': member['job']['job_sha256'], 'limits': member['limits'],
+                            'context': _transactional_context(ref, member)}))
+
+
+def _verified_transactional_index(ref):
+    index = _read(ref)
+    _require(type(index) is dict and index.get('contract') == 'financial-historical-transactional-index-v1',
+             'Closed transactional index required')
+    base = _transactional_paths(index.get('window_id'))
+    _same(ref['path'], base + '/index.json', 'Index outside stable logical slot')
+    draft = _compile_historical(index.get('catalogs'), index['window_id'])
+    expected = _transactional_index(draft, index.get('code_pins'), index.get('resource_profile'))
+    _same(index, expected, 'Transactional index differs from installed configuration/carry/pins')
+    return index
+
+
+def _transactional_member_context(context, *, path=None, scope=None, limits=None):
+    _require(type(context) is dict and set(context) == {'index', 'logical_id', 'carry'},
+             'Invalid closed operational context')
+    index = _verified_transactional_index(context['index'])
+    matches = [m for m in index['members'] if m['logical_id'] == context['logical_id']]
+    _require(len(matches) == 1, 'Unknown logical member')
+    member = matches[0]
+    _same(context, _transactional_context(context['index'], member), 'Operational carry/context differs')
+    if path is not None:
+        _require(Path(path).absolute() == acquisition._safe_destination(_ROOT / member['store_path']).absolute(), 'Store outside stable logical slot')
+    if scope is not None:
+        _same(scope, _transactional_scope(context['index'], member), 'Operational fingerprint differs')
+    if limits is not None:
+        _same(limits, member['limits'], 'Operational limits differ')
+    job_path = _path(member['job_path'])
+    _file(job_path, _sha(_canonical(member['job'])))
+    _same(_json(job_path.read_bytes()), member['job'], 'Operational job differs')
+    targets = _verify_historical_job(member['job'])
+    return {'targets': targets, 'policies': member['job']['policies'], 'carry': copy.deepcopy(member['carry'])}
+
+
+def reopen_transactional_historical_window(index_path, index_sha256):
+    from .financial_acquisition_store import AttemptStore
+    name = Path(index_path).absolute().relative_to(_ROOT.absolute()).as_posix()
+    ref = _reference(name, acquisition._digest(index_sha256))
+    index = _verified_transactional_index(ref)
+    for member in index['members']:
+        with AttemptStore.open(acquisition._safe_destination(_ROOT / member['store_path']), scope=_transactional_scope(ref, member)) as store:
+            _same(store.snapshot()['operational_context'], _transactional_context(ref, member),
+                  'Store operational context missing or different')
+    return ref
+
+
+def initialize_transactional_historical_window(catalog_index, catalog_index_sha256, *, window_id,
+        reviewed_code_pins, resource_profile_path, resource_profile_sha256):
+    """Create/reopen the sole logical slot; partial creation always stops intact."""
+    from .financial_acquisition_store import AttemptStore
+    base = _transactional_paths(window_id)
+    draft = prepare_historical_batch(catalog_index, catalog_index_sha256, window_id=window_id)
+    resource_name = Path(resource_profile_path).absolute().relative_to(_ROOT.absolute()).as_posix()
+    expected = _transactional_index(draft, reviewed_code_pins,
+        _reference(resource_name, acquisition._digest(resource_profile_sha256)))
+    folder = acquisition._safe_destination(_ROOT / base)
+    # The lock is a sibling, so its existence cannot turn a partial slot into a new one.
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    with acquisition._claim(folder.with_name(folder.name + '.lock')):
+        index_path = folder / 'index.json'
+        if folder.exists():
+            _require(index_path.is_file(), 'Partial transactional slot; no reset or alternate destination')
+            _same(_json(index_path.read_bytes()), expected, 'Logical slot already has different fingerprint')
+            return reopen_transactional_historical_window(index_path, _sha(index_path.read_bytes()))
+        folder.mkdir()
+        # Index is committed first. Any interruption leaves a diagnosed partial slot.
+        acquisition._write_exclusive(index_path, expected)
+        ref = _reference(base + '/index.json', _sha(_canonical(expected)))
+        for member in expected['members']:
+            member_folder = acquisition._safe_destination(_ROOT / _transactional_paths(window_id, member['period']))
+            member_folder.mkdir(parents=True)
+            acquisition._write_exclusive(acquisition._safe_destination(_ROOT / member['job_path']), member['job'])
+            with AttemptStore.create(acquisition._safe_destination(_ROOT / member['store_path']), scope=_transactional_scope(ref, member),
+                    limits=member['limits'], carried_usage={'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0},
+                    operational_context=_transactional_context(ref, member)):
+                pass
+        return reopen_transactional_historical_window(index_path, ref['sha256'])

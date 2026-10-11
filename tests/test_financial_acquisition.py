@@ -59,41 +59,38 @@ class SQLWorkerTests(unittest.TestCase):
     """New synthetic stores/catalogs; no frozen operational jobs or transport."""
 
     def setUp(self):
-        from bank_quality import financial_acquisition_store as store
-        from bank_quality import financial_acquisition_batch as batch
+        from bank_quality.financial_acquisition_store import AttemptStore
         self.api = importlib.import_module('bank_quality.financial_acquisition')
-        self.fixture = AcquisitionTests('runTest')
-        self.fixture.api = self.api
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
-        self.root, self.Store, self.batch = self.fixture.root.resolve(), store.AttemptStore, batch
-        self.api._ROOT = self.root
-        self.number = 0
-        self.job = batch._compile_historical(self.fixture.document['catalogs'], 'F1-02')['members'][0]['job']
-        budget = batch._HISTORICAL_POLICY_V1['budgets'][self.job['member']['budget_id']]
-        self.limits = {'attempts': budget['attempts_max'], 'body_bytes': budget['body_bytes_max'],
-                       'attempt_ms': budget['attempt_seconds_max'] * 1000}
+        self.Store = AttemptStore
         self.identity = {'pid': 12, 'creation_time': 34, 'contained': True}
+        self.limits = {'attempts': 10, 'body_bytes': 1000000000, 'attempt_ms': 1200000}
 
-    def specification(self, *, changes=None, bound=True, finished=False, limits=None, row_changes=None):
+    def specification(self, *, changes=None, bound=True, finished=False, limits=None, row_changes=None,
+                      context=True):
         import sys
-        self.number += 1
-        folder = self.root / f'data/runs/sql-{self.number}'
-        folder.mkdir(parents=True)
-        (folder / 'job.json').write_bytes(canonical(self.job))
-        limits = limits or self.limits
-        scope = sha(canonical({'job_sha256': self.job['job_sha256'], 'limits': limits}))
-        db = folder / 'attempts.sqlite'
+        import sqlite3
+        from tests.test_financial_acquisition_batch import TransactionalHistoricalIssuerTests
+        fixture = TransactionalHistoricalIssuerTests('runTest')
+        fixture.setUp()
+        fixture.configure()
+        self.addCleanup(fixture.doCleanups)
+        self.fixture, self.batch, self.root = fixture, fixture.batch, fixture.root
+        ref = fixture.initialize()
+        member = json.loads((self.root / ref['path']).read_bytes())['members'][0]
+        self.job, self.limits = member['job'], member['limits']
+        folder = self.root / member['job_path']
+        folder = folder.parent
+        db = self.root / member['store_path']
+        scope = self.batch._transactional_scope(ref, member)
         target = self.job['targets'][0]['target_key']
-        reservation = {'body_budget_bytes': 100, 'deadline_ms': 120000, **(row_changes or {})}
-        with self.Store.create(db, scope=scope, limits=limits,
-                               carried_usage={'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0}) as ledger:
-            attempt = ledger.reserve(target, **reservation)
+        with self.Store.open(db, scope=scope) as ledger:
+            attempt = ledger.reserve_request(target)
+            row = ledger.snapshot()['attempts'][0]
             spec = {'contract': 'financial-acquisition-worker-v4',
-                    'job_path': (folder / 'job.json').relative_to(self.root).as_posix(),
-                    'job_sha256': self.job['job_sha256'], 'store_path': db.relative_to(self.root).as_posix(),
-                    'store_scope': scope, 'attempt_id': attempt, 'target_key': target,
-                    'body_budget_bytes': 100, 'deadline_ms': 120000,
+                    'job_path': member['job_path'], 'job_sha256': self.job['job_sha256'],
+                    'store_path': member['store_path'], 'store_scope': scope,
+                    'attempt_id': attempt, 'target_key': target,
+                    'body_budget_bytes': row['body_budget_bytes'], 'deadline_ms': row['deadline_ms'],
                     'parent_identity': {'pid': 9, 'creation_time': 10},
                     'application_sha256': sha(Path(sys.executable).read_bytes()),
                     'worker_sha256': sha(Path(self.api.__file__).read_bytes()),
@@ -101,17 +98,33 @@ class SQLWorkerTests(unittest.TestCase):
                     'output_path': (folder / ('attempt-' + attempt)).relative_to(self.root).as_posix(),
                     **(changes or {})}
             path = folder / 'spec.json'
-            # Raw, deliberately noncanonical bytes must be the durable pin.
             path.write_text(json.dumps(spec, indent=2), encoding='utf-8')
             pin = sha(path.read_bytes())
             if bound:
                 ledger.bind_worker(attempt, spec_sha256=pin, launcher_identity=self.identity)
             if finished:
-                ledger.finish(attempt, observed_bytes=0, elapsed_ms=0, outcome='failure', result=None)
+                ledger.finish(attempt, observed_bytes=0, elapsed_ms=0, outcome='failure',
+                    result={'status': 'failed', 'retryable': False, 'guard': '', 'source_ref': None, 'tree_extinct': True})
+        with sqlite3.connect(db) as conn:
+            if not context:
+                conn.execute('UPDATE run_config SET operational_context_json=NULL')
+            if limits:
+                conn.execute('UPDATE run_config SET limits_json=?', (json.dumps(limits),))
+            for key, value in (row_changes or {}).items():
+                conn.execute('UPDATE attempts SET ' + key + '=?', (value,))
+        conn.close()
         return path, pin, spec, db
 
     def invoke(self, path, pin):
         return self.api._worker_main(path, pin)
+
+    def test_v4_context_free_store_is_not_executable(self):
+        path, pin, _, _ = self.specification(context=False)
+        with patch.object(self.api, 'require_supported'), patch.object(self.api, 'verify_worker_ancestry'), \
+                patch('bank_quality.archive.fetch_bounded') as fetch:
+            with self.assertRaisesRegex(ValueError, 'operational context'):
+                self.invoke(path, pin)
+            fetch.assert_not_called()
 
     def test_v4_valid_raw_pin_reaches_same_transport_boundary(self):
         self.assertTrue(callable(getattr(self.Store, 'bind_worker', None)))
@@ -126,7 +139,7 @@ class SQLWorkerTests(unittest.TestCase):
                 self.invoke(path, pin)
             ancestry.assert_called_once_with(self.identity, spec['parent_identity'])
             self.assertEqual(fetch.call_args.args[0], self.job['targets'][0]['url'])
-            self.assertEqual(fetch.call_args.kwargs['body_budget_bytes'], 100)
+            self.assertEqual(fetch.call_args.kwargs['body_budget_bytes'], spec['body_budget_bytes'])
         with self.Store.open(db, scope=spec['store_scope']) as ledger:
             self.assertEqual(ledger.snapshot()['attempts'][0]['outcome'], 'pending')
             with self.assertRaises(ValueError):
@@ -149,6 +162,20 @@ class SQLWorkerTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.invoke(path, pin)
                     fetch.assert_not_called()
+
+    def test_v4_changed_operational_carry_never_reaches_transport(self):
+        import sqlite3
+        path, pin, spec, db = self.specification()
+        with sqlite3.connect(db) as conn:
+            context = json.loads(conn.execute('SELECT operational_context_json FROM run_config').fetchone()[0])
+            context['carry']['attempts'] = 1
+            conn.execute('UPDATE run_config SET operational_context_json=?', (json.dumps(context),))
+        conn.close()
+        with patch.object(self.api, 'require_supported'), patch.object(self.api, 'verify_worker_ancestry'), \
+                patch('bank_quality.archive.fetch_bounded') as fetch:
+            with self.assertRaisesRegex(ValueError, 'carry/context'):
+                self.invoke(path, pin)
+            fetch.assert_not_called()
 
     def test_v4_binding_pin_launcher_parent_and_paths_are_authoritative(self):
         import sqlite3
@@ -191,12 +218,15 @@ class SQLWorkerTests(unittest.TestCase):
     def test_v4_native_fixture_proves_sql_binding_and_live_ancestry_without_get(self):
         from bank_quality import windows_acquisition as windows
         from tests import test_windows_acquisition as fixture_worker
+        path, pin, spec, db = self.specification(bound=False)
         marker = self.root / 'data/runs/authorized.json'
         changes = {'fixture_authorization': True, 'fixture_root': str(self.root),
                    'fixture_frozen': self.api._FROZEN, 'marker': str(marker),
                    'parent_identity': windows._current_identity(),
                    'worker_sha256': sha(Path(fixture_worker.__file__).read_bytes())}
-        path, pin, spec, db = self.specification(changes=changes, bound=False)
+        spec.update(changes)
+        path.write_bytes(canonical(spec))
+        pin = sha(path.read_bytes())
         def bind(identity):
             self.assertFalse(marker.exists())
             with self.Store.open(db, scope=spec['store_scope']) as store:
@@ -207,6 +237,245 @@ class SQLWorkerTests(unittest.TestCase):
         self.assertEqual(result['exit_code'], 0, error.read_text() if error.exists() else result)
         self.assertTrue(result['tree_extinct'])
         self.assertEqual(json.loads(marker.read_bytes()), {'authorized_target': spec['target_key']})
+
+
+class SQLMemberTests(unittest.TestCase):
+    def source(self, *args, **kwargs):
+        return AcquisitionTests.source(self, *args, **kwargs)
+
+    def setUp(self):
+        from tests.test_financial_acquisition_batch import TransactionalHistoricalIssuerTests
+        from bank_quality.financial_acquisition_store import AttemptStore
+        self.fixture = TransactionalHistoricalIssuerTests('runTest')
+        self.fixture.setUp()
+        self.fixture.configure()
+        self.addCleanup(self.fixture.doCleanups)
+        self.api, self.batch, self.root = self.fixture.acquisition, self.fixture.batch, self.fixture.root
+        self.ref = self.fixture.initialize()
+        self.member = json.loads((self.root / self.ref['path']).read_bytes())['members'][0]
+        self.job = self.member['job']
+        self.folder = (self.root / self.member['job_path']).parent
+        self.Store = AttemptStore
+        self.scope = self.batch._transactional_scope(self.ref, self.member)
+        self.calls = []
+        self.mode = 'ok'
+        self.monitor = __import__('unittest.mock', fromlist=['MagicMock']).MagicMock()
+        self.monitor.__enter__.return_value = self.monitor
+        for item in (patch.object(self.api, 'require_supported'),
+                     patch.object(self.api, 'verify_worker_ancestry'),
+                     patch.object(self.api, 'run_contained_attempt', side_effect=self.launch),
+                     patch('bank_quality.archive.fetch_bounded', side_effect=self.fetch),
+                     patch('bank_quality.windows_acquisition._ResourceMonitor', return_value=self.monitor)):
+            item.start()
+            self.addCleanup(item.stop)
+
+    def open(self):
+        return self.Store.open(self.root / self.member['store_path'], scope=self.scope)
+
+    def run_member(self, phase='metadata'):
+        function = getattr(self.api, 'run_transactional_member', None)
+        self.assertTrue(callable(function), 'SQL member coordinator missing')
+        return function(self.root / self.ref['path'], self.ref['sha256'], period=self.member['period'], phase=phase)
+
+    def fetch(self, url, output, attempt, context, *, body_budget_bytes, timeout_seconds):
+        import shutil
+        target = next(t for t in self.api._execution_job(self.job).values() if t['url'] == url)
+        reports = self.job['member']['reports']
+        area = self.job['member']['announced_numeric_areas'][-1]
+        payload = ([{'c0': '1', 'c1': str(context['period'])}] if target['role'] == 'cadaster'
+                   else [{'id': rid, 'td': 3, 'a': area, 'lid': rid} for rid in reports]
+                   if target['role'] == 'dictionary' else {'id': target['area'], 'values': []})
+        if self.mode == 'numeric_schema' and target['role'] == 'numeric':
+            payload = {'id': 999, 'values': []}
+        changes = {'body_budget_bytes': body_budget_bytes}
+        if self.mode == 'retry' and len(self.calls) == 1:
+            changes.update(source_complete=False, outcome='http_error', http_status=502,
+                           diagnostics=[{'code': 'http_status', 'detail': '502'}])
+        ref = self.source(target, payload, **changes)
+        manifest_path = self.root / ref['manifest_path']
+        manifest = json.loads(manifest_path.read_bytes())
+        for name in (manifest['body_path'], manifest['response_metadata_path'], manifest_path.name):
+            shutil.copyfile(manifest_path.parent / name, output / name)
+        return {**manifest, 'manifest_path': manifest_path.name}
+
+    def launch(self, path, pin, *, before_resume, **options):
+        spec = json.loads(path.read_bytes())
+        self.calls.append(spec)
+        before_resume({'pid': 12, 'creation_time': 34, 'contained': True})
+        with self.open() as store:
+            row = store.snapshot()['attempts'][-1]
+            self.assertEqual(row['spec_sha256'], pin)
+            self.assertIsNotNone(row['launcher_identity'])
+        self.api._worker_main(path, pin)
+        if self.mode == 'invalid':
+            (self.root / spec['output_path'] / 'worker-receipt.json').write_bytes(b'{}')
+        return {'identity': {'pid': 12, 'creation_time': 34, 'contained': True}, 'exit_code': 0,
+                'tree_extinct': self.mode != 'unknown', 'deadline_reached': False,
+                'elapsed_seconds': .1, 'deadline_overshoot_seconds': 0, 'job_handle_inherited': False}
+
+    def test_member_metadata_values_resume_reauthenticates_without_new_get(self):
+        a = self.run_member()
+        self.assertEqual(a['phase'], 'metadata')
+        self.assertEqual(len(self.calls), 2)
+        b = self.run_member('values')
+        self.assertEqual(b['phase'], 'complete')
+        count = len(self.calls)
+        self.assertEqual(self.run_member('values'), b)
+        self.assertEqual(len(self.calls), count)
+        with self.open() as store:
+            state = store.snapshot()
+        self.assertFalse(state['operational_state']['pending'])
+        self.assertTrue(all(len(r['result']) == 12 for r in state['attempts']))
+        self.assertEqual(self.monitor.reserve.call_count, count)
+        self.assertEqual(self.monitor.finish.call_count, count)
+        self.assertFalse((self.root / 'data/runs/financial-acquisition-authority').exists())
+
+    def test_invalid_receipt_with_proved_extinction_full_charges_failure(self):
+        self.mode = 'invalid'
+        with self.assertRaises(ValueError):
+            self.run_member()
+        with self.open() as store:
+            state = store.snapshot()
+        row = state['attempts'][0]
+        self.assertEqual(row['observed_bytes'], row['body_budget_bytes'])
+        self.assertGreaterEqual(row['elapsed_ms'], row['deadline_ms'])
+        self.assertEqual(row['result']['status'], 'physical_evidence_invalid')
+        self.assertIsNotNone(state['halt'])
+
+    def test_unknown_tree_retains_pending_and_never_relaunches(self):
+        self.mode = 'unknown'
+        with self.assertRaises(ValueError):
+            self.run_member()
+        with self.open() as store:
+            before = store.snapshot()
+        self.assertEqual(before['attempts'][0]['outcome'], 'pending')
+        with self.assertRaises(ValueError):
+            self.run_member()
+        with self.open() as store:
+            self.assertEqual(store.snapshot(), before)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_crash_after_native_completion_before_finish_recovers_without_get(self):
+        with patch.object(self.Store, 'finish', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_member()
+        with self.open() as store:
+            self.assertEqual(store.snapshot()['attempts'][0]['outcome'], 'pending')
+        self.run_member()
+        self.assertEqual(len(self.calls), 2)
+        with self.open() as store:
+            self.assertEqual(len(store.snapshot()['attempts']), 2)
+
+    def test_crash_before_native_completion_evidence_retains_full_charge(self):
+        original = self.api._write_exclusive
+        def write(path, data):
+            if path.name.startswith('native-'):
+                raise KeyboardInterrupt
+            return original(path, data)
+        with patch.object(self.api, '_write_exclusive', side_effect=write):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_member()
+        with self.assertRaises(ValueError):
+            self.run_member()
+        self.assertEqual(len(self.calls), 1)
+        with self.open() as store:
+            row = store.snapshot()['attempts'][0]
+            self.assertEqual(row['outcome'], 'pending')
+            self.assertEqual(store.snapshot()['usage']['body_bytes'], row['body_budget_bytes'])
+
+    def test_tampered_native_completion_cannot_finish_pending_or_refund(self):
+        with patch.object(self.Store, 'finish', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_member()
+        path = next(self.folder.glob('native-*.json'))
+        value = json.loads(path.read_bytes())
+        value['result']['elapsed_seconds'] = 0
+        path.write_bytes(canonical(value))
+        with self.open() as store:
+            before = store.snapshot()
+        with self.assertRaisesRegex(ValueError, 'pin mismatch'):
+            self.run_member()
+        with self.open() as store:
+            self.assertEqual(store.snapshot(), before)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_finish_rejects_mismatched_physical_counters_and_missing_native_pin(self):
+        with patch.object(self.Store, 'finish', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_member()
+        with self.open() as store:
+            row = store.snapshot()['attempts'][0]
+            result, spec = self.api._sql_native_result(store, self.folder, row)
+            conclusion = self.api._interpret_attempt_result(result, attempt_id=row['attempt_id'],
+                spec_sha256=row['spec_sha256'], output=self.root / spec['output_path'],
+                target=self.job['targets'][0], reserved_bytes=row['body_budget_bytes'])
+            before = store.snapshot()
+            with self.assertRaises(ValueError):
+                store.finish(row['attempt_id'], observed_bytes=conclusion['observed_bytes'] + 1,
+                             elapsed_ms=100, outcome='success', result=conclusion)
+            self.assertEqual(store.snapshot(), before)
+            store._connection.execute('UPDATE attempts SET native_result_sha256=NULL')
+            before = store.snapshot()
+            with self.assertRaises(ValueError):
+                store.finish(row['attempt_id'], observed_bytes=conclusion['observed_bytes'],
+                             elapsed_ms=100, outcome='success', result=conclusion)
+            self.assertEqual(store.snapshot(), before)
+
+    def test_values_requires_physical_a_before_fetch(self):
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            self.run_member('values')
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.folder / 'checkpoint-b.json').exists())
+
+    def test_numeric_schema_failure_halts_without_checkpoint_b(self):
+        self.run_member()
+        self.mode = 'numeric_schema'
+        with self.assertRaisesRegex(ValueError, 'Wrong numeric area'):
+            self.run_member('values')
+        self.assertFalse((self.folder / 'checkpoint-b.json').exists())
+        with self.open() as store:
+            self.assertIsNotNone(store.snapshot()['halt'])
+        count = len(self.calls)
+        with self.assertRaises(ValueError):
+            self.run_member('values')
+        self.assertEqual(len(self.calls), count)
+
+    def test_resume_completed_source_tampering_fails_before_new_fetch(self):
+        self.run_member()
+        with self.open() as store:
+            ref = next(iter(store.snapshot()['operational_state']['sources'].values()))
+        path = self.root / ref['manifest_path']
+        path.write_bytes(path.read_bytes() + b' ')
+        with self.assertRaises(ValueError):
+            self.run_member()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_crash_during_backoff_retains_full_sleep_and_resumes_one_retry(self):
+        self.mode = 'retry'
+        import threading
+        with patch.object(threading.Event, 'wait', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_member()
+        with self.open() as store:
+            before = store.snapshot()
+        self.assertEqual(before['attempts'][-1]['kind'], 'backoff')
+        self.assertEqual(before['attempts'][-1]['outcome'], 'pending')
+        self.run_member()
+        with self.open() as store:
+            state = store.snapshot()
+        self.assertEqual(state['attempts'][1]['elapsed_ms'], state['attempts'][1]['deadline_ms'])
+        self.assertEqual(state['operational_state']['backoffs'], 1)
+        self.assertEqual(len(self.calls), 3)
+
+    def test_retry_uses_durable_backoff_and_remaining_body_cap(self):
+        self.mode = 'retry'
+        with patch.object(self.api.time, 'sleep'):
+            self.run_member()
+        with self.open() as store:
+            rows = store.snapshot()['attempts']
+        self.assertEqual([r['kind'] for r in rows[:3]], ['request', 'backoff', 'request'])
+        self.assertEqual(rows[2]['body_budget_bytes'], rows[0]['body_budget_bytes'] - rows[0]['observed_bytes'])
+        self.assertEqual(rows[1]['outcome'], 'success')
 
 
 class AcquisitionTests(unittest.TestCase):
@@ -1996,6 +2265,43 @@ class AuthorityTests(unittest.TestCase):
                     self.assertEqual(authority.state['attempt_seconds'], 120)
                     self.assertFalse(authority.state['pending'])
 
+    def test_attempt_retry_limit_stays_with_caller_after_physical_interpretation(self):
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/retry-limit'
+        session.mkdir()
+        self.fake_status = 503
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, '_current_identity', return_value={'pid': 1, 'creation_time': 2}), \
+                patch.object(self.api, 'run_contained_attempt', side_effect=self.fake_attempt):
+            self.assertTrue(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
+            self.assertFalse(self.api._attempt(authority, job_path, session, self.job['targets'][0]))
+            self.assertEqual(authority.state['attempts'], 2)
+            self.assertEqual(authority.state['body_bytes'], 2 * len(canonical({'fixture': 'entity body'})))
+            self.assertFalse(authority.records[-1]['retryable'])
+            self.assertFalse(authority.state['sources'])
+            self.assertFalse(authority.state['pending'])
+
+    def test_attempt_inconclusive_extinction_keeps_reservation_pending(self):
+        pin = self.initialize()
+        job_path = self.root / 'data/runs/job.json'
+        job_path.write_bytes(canonical(self.job))
+        session = self.root / 'data/runs/inconclusive-extinction'
+        session.mkdir()
+        def inconclusive(spec_path, digest, *, deadline_seconds, before_resume):
+            before_resume({'pid': 7, 'creation_time': 9, 'contained': True})
+            return {'tree_extinct': False}
+        with self.api.open_authority(self.job, bootstrap_sha256=pin) as authority, \
+                patch.object(self.api, '_current_identity', return_value={'pid': 1, 'creation_time': 2}), \
+                patch.object(self.api, 'run_contained_attempt', side_effect=inconclusive):
+            with self.assertRaisesRegex(ValueError, 'extinction'):
+                self.api._attempt(authority, job_path, session, self.job['targets'][0])
+            self.assertEqual(len(authority.state['pending']), 1)
+            self.assertEqual(authority.state['body_bytes'], 5 * 1024 * 1024)
+            self.assertEqual(authority.state['attempt_seconds'], 120)
+            self.assertEqual(authority.records[-1]['kind'], 'identity')
+
     def test_failed_partial_response_can_be_authenticated_without_eof(self):
         pin = self.initialize()
         job_path = self.root / 'data/runs/job.json'
@@ -2081,6 +2387,123 @@ class AuthorityTests(unittest.TestCase):
             self.assertEqual(authority.state['guard'], 'deadline')
             self.assertEqual(authority.records[-1]['overshoot_microseconds'], 200000)
             self.assertFalse(authority.state['pending'])
+
+
+class AttemptInterpretationTests(unittest.TestCase):
+    """Physical synthetic receipts, without authority, launch or transport."""
+    catalog_source = AcquisitionTests.catalog_source
+    prepare = AcquisitionTests.prepare
+    source = AcquisitionTests.source
+    bounded_source = AcquisitionTests.bounded_source
+    fake_attempt = AuthorityTests.fake_attempt
+
+    def setUp(self):
+        self.api = importlib.import_module('bank_quality.financial_acquisition')
+        AcquisitionTests.setUp(self)
+        self.job = self.prepare()
+        self.target = self.job['targets'][0]
+        self.output = self.root / 'data/runs/attempt-fixture'
+        self.spec_path = self.root / 'data/runs/worker-fixture.json'
+        self.spec_path.parent.mkdir(parents=True)
+        self.spec_path.write_bytes(canonical({'attempt_id': 'fixture',
+            'target_key': self.target['target_key'], 'body_budget_bytes': 4096,
+            'output_path': self.output.relative_to(self.root).as_posix()}))
+        self.spec_pin = sha(self.spec_path.read_bytes())
+        self.result = {'tree_extinct': True, 'deadline_reached': False,
+                       'deadline_overshoot_seconds': 0, 'exit_code': 0, 'elapsed_seconds': 1.25}
+
+    def interpret(self):
+        self.assertTrue(hasattr(self.api, '_interpret_attempt_result'),
+                        'Shared physical attempt interpreter missing')
+        return self.api._interpret_attempt_result(self.result, attempt_id='fixture',
+            spec_sha256=self.spec_pin, output=self.output, target=self.target, reserved_bytes=4096)
+
+    def physical_receipt(self, status=200):
+        self.fake_status = status
+        self.result = self.fake_attempt(self.spec_path, self.spec_pin, deadline_seconds=120,
+                                       before_resume=lambda identity: None)
+        receipt_path = self.output / 'worker-receipt.json'
+        receipt = json.loads(receipt_path.read_bytes())
+        manifest_path = self.root / receipt['manifest_path']
+        return receipt_path, receipt, manifest_path, json.loads(manifest_path.read_bytes())
+
+    def test_success_is_authenticated_with_closed_finish_fields_and_no_writes(self):
+        self.physical_receipt()
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        conclusion = self.interpret()
+        self.assertEqual(set(conclusion), {'observed_bytes', 'observed_attempt_seconds',
+            'actual_elapsed_microseconds', 'overshoot_microseconds', 'status', 'retryable',
+            'source_ref', 'guard', 'attempt_evidence', 'tree_extinct', 'worker_exit_code', 'deadline_reached'})
+        self.assertEqual(conclusion['status'], 'source_complete')
+        self.assertFalse(conclusion['retryable'])
+        self.assertEqual(conclusion['observed_bytes'], len(canonical({'fixture': 'entity body'})))
+        self.assertEqual(conclusion['source_ref']['target_key'], self.target['target_key'])
+        self.assertEqual(conclusion['observed_attempt_seconds'], 2)
+        self.assertEqual(conclusion['actual_elapsed_microseconds'], 1250000)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+
+    def test_failed_response_authenticates_evidence_before_refund(self):
+        self.physical_receipt(status=503)
+        conclusion = self.interpret()
+        self.assertEqual(conclusion['status'], 'http_error')
+        self.assertTrue(conclusion['retryable'])
+        self.assertIsNone(conclusion['source_ref'])
+        self.assertEqual(conclusion['guard'], '')
+        self.assertEqual(conclusion['observed_bytes'], len(canonical({'fixture': 'entity body'})))
+        self.assertEqual(len(conclusion['attempt_evidence']), 4)
+
+    def test_tree_extinction_precedes_receipt_or_elapsed_interpretation(self):
+        self.result = {'tree_extinct': False}
+        with self.assertRaisesRegex(ValueError, 'extinction'):
+            self.interpret()
+
+    def test_deadline_and_worker_failure_keep_reservation_without_receipt(self):
+        for reached, overshoot, exit_code, status, guard in (
+                (True, .2, 0, 'deadline', 'deadline'),
+                (False, .2, 0, 'deadline', 'deadline'),
+                (False, 0, 2, 'worker_failed', 'containment')):
+            with self.subTest(reached=reached, overshoot=overshoot, exit_code=exit_code):
+                self.result.update(deadline_reached=reached, deadline_overshoot_seconds=overshoot,
+                                   exit_code=exit_code, elapsed_seconds=120.2)
+                conclusion = self.interpret()
+                self.assertEqual(conclusion['observed_bytes'], 4096)
+                self.assertEqual((conclusion['status'], conclusion['guard']), (status, guard))
+                self.assertEqual(conclusion['observed_attempt_seconds'], 121)
+                self.assertEqual(conclusion['actual_elapsed_microseconds'], 120200000)
+                self.assertEqual(conclusion['overshoot_microseconds'], int(overshoot * 1000000))
+                self.assertFalse(conclusion['retryable'])
+                self.assertEqual(conclusion['attempt_evidence'], {})
+
+    def test_invalid_physical_evidence_raises_without_conclusion(self):
+        receipt_path, receipt, manifest_path, manifest = self.physical_receipt(status=503)
+        originals = {p: p.read_bytes() for p in self.output.iterdir()}
+        for mutation in ('receipt_json', 'receipt_binding', 'manifest_hash', 'manifest_context',
+                         'manifest_directory', 'body_hash', 'sidecar_hash'):
+            with self.subTest(mutation=mutation):
+                for path, raw in originals.items():
+                    path.write_bytes(raw)
+                changed_receipt, changed_manifest = copy.deepcopy(receipt), copy.deepcopy(manifest)
+                if mutation == 'receipt_json':
+                    receipt_path.write_bytes(b'{')
+                elif mutation == 'receipt_binding':
+                    changed_receipt['spec_sha256'] = '0' * 64
+                    receipt_path.write_bytes(canonical(changed_receipt))
+                elif mutation == 'manifest_hash':
+                    manifest_path.write_bytes(b'{}')
+                elif mutation == 'manifest_directory':
+                    changed_receipt['manifest_path'] = self.spec_path.relative_to(self.root).as_posix()
+                    receipt_path.write_bytes(canonical(changed_receipt))
+                elif mutation == 'body_hash':
+                    (self.output / manifest['body_path']).write_bytes(b'corrupt')
+                elif mutation == 'sidecar_hash':
+                    (self.output / manifest['response_metadata_path']).write_bytes(b'corrupt')
+                else:
+                    changed_manifest['context']['perspective'] = 1004
+                    manifest_path.write_bytes(canonical(changed_manifest))
+                    changed_receipt['manifest_sha256'] = sha(manifest_path.read_bytes())
+                    receipt_path.write_bytes(canonical(changed_receipt))
+                with self.assertRaises(ValueError):
+                    self.interpret()
 
 
 if __name__ == '__main__':

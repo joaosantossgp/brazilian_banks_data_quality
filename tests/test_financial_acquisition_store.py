@@ -321,5 +321,192 @@ os._exit(24)
                               carried_usage=self.zero)
 
 
+
+class OperationalAttemptStoreTests(unittest.TestCase):
+    def setUp(self):
+        import copy
+        from bank_quality import financial_acquisition as acquisition
+        from bank_quality import financial_acquisition_batch as batch
+        from bank_quality.financial_acquisition_store import AttemptStore
+        self.Store = AttemptStore
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / 'attempts.sqlite'
+        self.context = {'index': {'path': 'data/runs/index.json', 'sha256': 'a' * 64},
+                        'logical_id': 'F2-01/201403', 'carry': acquisition._initial_state()}
+        self.policy = dict(batch._POLICIES, metadata_body_bytes=10, numeric_body_bytes=20,
+            deadline_seconds=2, attempt_seconds=8, scheduling_seconds=13,
+            max_backoff_seconds=5, backoff_seconds=5, max_backoffs=1)
+        self.config = {'targets': {'C': {'role': 'metadata'}, 'D': {'role': 'metadata'}},
+                       'policies': self.policy, 'carry': self.context['carry']}
+        self.limits = {'attempts': 4, 'body_bytes': 20, 'attempt_ms': 8000}
+        patcher = patch.object(batch, '_transactional_member_context', return_value=self.config, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.zero = {'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0}
+
+    def create(self):
+        self.assertTrue(hasattr(self.Store, 'reserve_request'), 'Operational request API is missing')
+        store = self.Store.create(self.path, scope='closed', limits=self.limits,
+            carried_usage=self.zero, operational_context=self.context)
+        self.addCleanup(store.close)
+        return store
+
+    def finish(self, store, attempt, *, success=False, elapsed=1):
+        store.finish(attempt, observed_bytes=2, elapsed_ms=elapsed, outcome='success' if success else 'failure',
+            result={'status': 'source_complete' if success else 'synthetic_failure', 'retryable': not success,
+                    'guard': '', 'source_ref': {'path': 'synthetic'} if success else None,
+                    'tree_extinct': True})
+
+    def test_failure_backoff_retry_success_matches_reducer(self):
+        store = self.create()
+        first = store.reserve_request('C')
+        self.finish(store, first)
+        pause = store.reserve_backoff('C')
+        state = store.snapshot()
+        self.assertEqual(state['usage'], {'attempts': 1, 'body_bytes': 2, 'attempt_ms': 1})
+        self.assertEqual(state['operational_state']['backoff_seconds'], 5)
+        with self.assertRaises(ValueError):
+            store.reserve_request('D')
+        store.finish_backoff(pause, elapsed_ms=5000)
+        retry = store.reserve_request('C')
+        self.assertEqual(store.snapshot()['attempts'][-1]['body_budget_bytes'], 8)
+        self.finish(store, retry, success=True)
+        self.assertEqual(store.snapshot()['operational_state']['sources'], {'C': {'path': 'synthetic'}})
+        self.assertEqual(store.snapshot()['usage']['attempts'], 2)
+        with self.assertRaises(ValueError):
+            store.reserve_request('C')
+        with self.assertRaises(ValueError):
+            store.reserve_backoff('C')
+
+    def test_pending_reopen_halt_and_closed_result(self):
+        store = self.create()
+        attempt = store.reserve_request('C')
+        store.close()
+        with self.Store.open(self.path, scope='closed') as reopened:
+            self.assertEqual(reopened.snapshot()['usage'], {'attempts': 1, 'body_bytes': 10, 'attempt_ms': 2000})
+            with self.assertRaises(ValueError):
+                reopened.finish(attempt, observed_bytes=0, elapsed_ms=0, outcome='failure', result={})
+            reopened.halt('inconclusive extinction')
+        with self.Store.open(self.path, scope='closed') as reopened:
+            self.assertEqual(reopened.snapshot()['halt'], 'inconclusive extinction')
+            with self.assertRaises(ValueError):
+                reopened.reserve_request('D')
+
+    def test_completed_backoff_overshoot_blocks_scheduling_without_refund(self):
+        store = self.create()
+        first = store.reserve_request('C')
+        self.finish(store, first)
+        pause = store.reserve_backoff('C')
+        store.finish_backoff(pause, elapsed_ms=13001)
+        self.assertEqual(store.snapshot()['operational_state']['backoff_seconds'], 14)
+        with self.assertRaises(ValueError):
+            store.reserve_request('C')
+
+    def test_operational_store_refuses_generic_reserve(self):
+        store = self.create()
+        with self.assertRaises(ValueError):
+            store.reserve('C', body_budget_bytes=1, deadline_ms=1)
+
+    def test_carried_totals_tampering_is_refused_on_reopen(self):
+        store = self.create()
+        store._connection.execute("UPDATE run_config SET carried_usage_json=?", ('{"attempts":1,"body_bytes":0,"attempt_ms":0}',))
+        with self.assertRaises(ValueError):
+            store.snapshot()
+
+    def test_nonzero_carry_is_charged_per_target_and_scheduling(self):
+        self.config['carry'].update(attempts=1, body_bytes=4, attempt_seconds=2,
+            targets={'C': {'attempts': 1, 'body_bytes': 4, 'retryable': True}})
+        self.zero = {'attempts': 1, 'body_bytes': 4, 'attempt_ms': 2000}
+        store = self.create()
+        attempt = store.reserve_request('C')
+        self.assertEqual(store.snapshot()['attempts'][0]['body_budget_bytes'], 6)
+        self.assertEqual(store.snapshot()['usage'], {'attempts': 2, 'body_bytes': 10, 'attempt_ms': 4000})
+        self.finish(store, attempt)
+        with self.assertRaises(ValueError):
+            store.reserve_request('C')
+
+    def test_two_connections_cannot_spend_last_target_global_or_scheduling(self):
+        for axis in ('target', 'global', 'scheduling'):
+            with self.subTest(axis=axis):
+                self.path = self.path.with_name(axis + '.sqlite')
+                self.config['carry'].update(attempts=0, body_bytes=0, attempt_seconds=0, targets={})
+                if axis == 'target':
+                    self.config['carry']['targets'] = {'C': {'attempts': 1, 'body_bytes': 0, 'retryable': True}}
+                    target_names = ('C', 'C')
+                else:
+                    target_names = ('C', 'D')
+                    self.config['carry']['attempts'] = 3 if axis == 'global' else 0
+                    self.config['carry']['attempt_seconds'] = 6 if axis == 'scheduling' else 0
+                self.zero = {'attempts': self.config['carry']['attempts'], 'body_bytes': 0,
+                             'attempt_ms': self.config['carry']['attempt_seconds'] * 1000}
+                self.create().close()
+                barrier = threading.Barrier(2)
+                def reserve(target):
+                    with self.Store.open(self.path, scope='closed') as store:
+                        barrier.wait(timeout=5)
+                        try:
+                            return store.reserve_request(target)
+                        except ValueError:
+                            return None
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    results = list(pool.map(reserve, target_names))
+                self.assertEqual(sum(value is not None for value in results), 1)
+
+    def test_reducer_equivalence_failure_backoff_retry_success(self):
+        from bank_quality.financial_acquisition import _apply_record, _initial_state
+        store = self.create()
+        first = store.reserve_request('C')
+        self.finish(store, first, elapsed=1001)
+        backoff = store.reserve_backoff('C')
+        store.finish_backoff(backoff, elapsed_ms=5000)
+        second = store.reserve_request('C')
+        self.finish(store, second, success=True, elapsed=1000)
+        expected = _initial_state()
+        transitions = [('reserve', first, {'attempt_delta': 1, 'reserved_bytes': 10, 'reserved_attempt_seconds': 2}),
+            ('finish', first, {'status': 'synthetic_failure', 'retryable': True, 'guard': '', 'source_ref': None,
+                'tree_extinct': True, 'observed_bytes': 2, 'observed_attempt_seconds': 2,
+                'failure_count': 1, 'failure_streak': 1}),
+            ('backoff', backoff, {'reserved_backoff_seconds': 5, 'failure_count': 1, 'failure_streak': 1}),
+            ('backoff_finish', backoff, {'observed_backoff_seconds': 5, 'failure_count': 1, 'failure_streak': 1}),
+            ('reserve', second, {'attempt_delta': 1, 'reserved_bytes': 8, 'reserved_attempt_seconds': 2,
+                'failure_count': 1, 'failure_streak': 1}),
+            ('finish', second, {'status': 'source_complete', 'retryable': False, 'guard': '',
+                'source_ref': {'path': 'synthetic'}, 'tree_extinct': True, 'observed_bytes': 2,
+                'observed_attempt_seconds': 1, 'failure_count': 1, 'failure_streak': 0})]
+        for kind, attempt, fields in transitions:
+            record = dict(kind=kind, attempt_id=attempt, target_key='C', attempt_delta=0,
+                reserved_bytes=0, reserved_attempt_seconds=0, reserved_backoff_seconds=0,
+                failure_count=0, failure_streak=0)
+            record.update(fields)
+            _apply_record(expected, record, self.config['targets'], self.policy, job_contract='financial-acquisition-job-v2')
+        self.assertEqual(store.snapshot()['operational_state'], expected)
+
+    def test_crash_before_finish_commit_preserves_full_pending_reservation(self):
+        store = self.create()
+        attempt = store.reserve_request('C')
+        before = store.snapshot()
+        def interrupt(sql):
+            if sql == 'COMMIT':
+                store._connection.interrupt()
+        store._connection.set_trace_callback(interrupt)
+        with self.assertRaises(sqlite3.OperationalError):
+            self.finish(store, attempt)
+        store._connection.set_trace_callback(None)
+        self.assertEqual(store.snapshot(), before)
+
+    def test_retry_request_cannot_bypass_durable_completed_backoff(self):
+        store = self.create()
+        first = store.reserve_request('C')
+        self.finish(store, first)
+        with self.assertRaises(ValueError):
+            store.reserve_request('C')
+        pause = store.reserve_backoff('C')
+        with self.assertRaises(ValueError):
+            store.reserve_request('C')
+        store.finish_backoff(pause, elapsed_ms=5000)
+        self.assertTrue(store.reserve_request('C'))
+
+
 if __name__ == '__main__':
     unittest.main()

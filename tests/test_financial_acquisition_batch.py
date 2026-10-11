@@ -1060,8 +1060,6 @@ class BatchAuthorityTests(unittest.TestCase):
         self.physical_job_change_refused_at_active_member_boundary(delete=True)
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class PhaseReplayDataTests(unittest.TestCase):
@@ -2774,3 +2772,125 @@ class HistoricalReplacementInitializationTests(unittest.TestCase):
             self.batch.verify_historical_batch(self.root / result['bundle_path'], result['bundle_sha256'],
                 bootstrap_sha256=result['bootstrap_sha256'])
         self.assertEqual(self.protected(), before)
+
+class TransactionalHistoricalIssuerTests(unittest.TestCase):
+    setUp = HistoricalPreparationTests.setUp
+
+    def initialize(self, window='F2-01'):
+        self.assertTrue(hasattr(self.batch, 'initialize_transactional_historical_window'), 'Transactional issuer is missing')
+        return self.batch.initialize_transactional_historical_window(self.index, sha(self.index.read_bytes()),
+            window_id=window, reviewed_code_pins=self.pins,
+            resource_profile_path=self.profile_path, resource_profile_sha256=sha(self.profile_path.read_bytes()))
+
+    def configure(self):
+        self.pins = {'contract': 'financial-acquisition-code-pins-v2', 'reviewed_commit': 'a' * 40,
+            'files': {name: sha(name.encode()) for name in self.batch._CODE_FILES_V2},
+            'runtime': {'path': sys.executable, 'sha256': sha(b'runtime')},
+            'policy_sha256': self.batch._HISTORICAL_POLICY_SHA256}
+        patcher = patch.object(self.batch, '_code_identity_v2', side_effect=self.batch._capture_code_pins_v2)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.profile_path = self.root / 'data/runs/resource.json'
+        self.profile_path.write_bytes(canonical({'contract': 'financial-acquisition-resource-profile-v1',
+            'machine_id': __import__('socket').gethostname(), 'metadata_workers': 1, 'values_workers': 1, 'active_windows': 1,
+            'min_free_physical_bytes': 1, 'min_free_commit_bytes': 1, 'min_free_disk_bytes': 1,
+            'sampling_interval_ms': 250}))
+
+    def test_create_reopen_preserves_pending_and_same_slot(self):
+        self.configure()
+        ref = self.initialize()
+        index = json.loads((self.root / ref['path']).read_bytes())
+        member = index['members'][0]
+        from bank_quality.financial_acquisition_store import AttemptStore
+        context = self.batch._transactional_context(ref, member)
+        with AttemptStore.open(self.root / member['store_path'], scope=self.batch._transactional_scope(ref, member)) as store:
+            attempt = store.reserve_request(member['job']['targets'][0]['target_key'])
+            self.assertEqual(store.snapshot()['operational_context'], context)
+        self.assertEqual(self.initialize(), ref)
+        with AttemptStore.open(self.root / member['store_path'], scope=self.batch._transactional_scope(ref, member)) as store:
+            self.assertEqual(store.snapshot()['attempts'][0]['attempt_id'], attempt)
+        self.assertEqual(len(list(self.root.rglob('attempts.sqlite'))), 4)
+
+    def test_f1_and_partial_or_mismatch_never_get_new_slot(self):
+        self.configure()
+        with self.assertRaises(ValueError):
+            self.initialize('F1-01')
+        folder = self.root / 'data/runs/financial-historical-transactional-F2-01'
+        folder.mkdir()
+        (folder / 'partial').write_bytes(b'preserved')
+        with self.assertRaises(ValueError):
+            self.initialize()
+        self.assertFalse((folder / 'index.json').exists())
+        self.assertFalse(list(folder.rglob('attempts.sqlite')))
+
+    def test_changed_pins_carry_or_index_are_refused_without_additional_db(self):
+        self.configure()
+        ref = self.initialize()
+        self.pins['reviewed_commit'] = 'b' * 40
+        with self.assertRaises(ValueError):
+            self.initialize()
+        path = self.root / ref['path']
+        value = json.loads(path.read_bytes())
+        value['members'][0]['carry']['attempts'] = 1
+        path.write_bytes(canonical(value))
+        with self.assertRaises(ValueError):
+            self.batch.reopen_transactional_historical_window(path, sha(path.read_bytes()))
+        self.assertEqual(len(list(self.root.rglob('attempts.sqlite'))), 4)
+
+    def test_existing_historical_scope_requires_diagnosis_without_opening_it(self):
+        self.configure()
+        historical = self.root / self.batch._historical_window('F2-01')['destination']
+        historical.mkdir()
+        (historical / 'head.json').write_bytes(b'never parse this')
+        with self.assertRaises(ValueError):
+            self.initialize()
+        self.assertFalse((self.root / 'data/runs/financial-historical-transactional-F2-01/index.json').exists())
+
+    def test_interrupted_creation_preserves_index_and_refuses_partial_reopen(self):
+        self.configure()
+        from bank_quality.financial_acquisition_store import AttemptStore
+        original = AttemptStore.create
+        calls = []
+        def interrupted(*args, **kwargs):
+            calls.append(args[0])
+            if len(calls) == 2:
+                raise RuntimeError('synthetic interruption after first durable member')
+            return original(*args, **kwargs)
+        with patch.object(AttemptStore, 'create', side_effect=interrupted), self.assertRaises(RuntimeError):
+            self.initialize()
+        folder = self.root / 'data/runs/financial-historical-transactional-F2-01'
+        before = {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        with self.assertRaises((ValueError, FileNotFoundError)):
+            self.initialize()
+        after = {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        self.assertEqual(after, before)
+        self.assertEqual(len(list(folder.rglob('attempts.sqlite'))), 1)
+
+    def test_sql_context_carry_alteration_is_refused_without_refund(self):
+        self.configure()
+        ref = self.initialize()
+        index = json.loads((self.root / ref['path']).read_bytes())
+        member = index['members'][0]
+        import sqlite3
+        with sqlite3.connect(self.root / member['store_path']) as connection:
+            context = self.batch._transactional_context(ref, member)
+            context['carry']['attempts'] = 1
+            connection.execute('UPDATE run_config SET operational_context_json=?', (canonical(context).decode(),))
+        connection.close()
+        with self.assertRaises(ValueError):
+            self.batch.reopen_transactional_historical_window(self.root / ref['path'], ref['sha256'])
+        self.assertEqual(len(list(self.root.rglob('attempts.sqlite'))), 4)
+
+
+    def test_existing_historical_batch_binding_refuses_zero_carry_without_reading_it(self):
+        self.configure()
+        binding, _ = self.batch._batch_paths(self.batch._historical_window('F2-01')['scope'])
+        binding.parent.mkdir(parents=True)
+        binding.write_bytes(b'never parse this historical binding')
+        with self.assertRaises(ValueError):
+            self.initialize()
+        self.assertFalse((self.root / 'data/runs/financial-historical-transactional-F2-01/index.json').exists())
+
+
+if __name__ == '__main__':
+    unittest.main()

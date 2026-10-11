@@ -152,6 +152,16 @@ O primeiro recorte provou reserva durável, interrupção, reabertura e disputa 
 
 Antes da coleta, a integração terá de transportar explicitamente o consumo anterior, autenticar o worker e conferir a contenção nativa, além de entregar o handoff da sanitização. Consumo histórico desconhecido não recebe zero por omissão; esta prova sintética não reconstrói nem libera o saldo real. Cobertura aceita: 11 de 66 períodos financeiros, 55 restantes. Nenhuma coleta nova pertence a este primeiro recorte. [Claim e allowlist da Issue59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6109467423).
 
+### Ligação operacional por fatias — 2026-10-11
+
+A conta transacional e sua ligação inicial ao worker foram implementadas e revisadas nos commits locais `240d961` e `2cf81c0`. O checkpoint B2a acrescentou contexto pinado, emissão/reabertura no mesmo destino lógico, limites por target e tempo, reserva e conclusão de request/backoff, carry autenticado e interrupção conservadora. Sua execução focal conjunta teve 44 testes em 9,633 segundos, com um skip de criação de link simbólico por privilégio indisponível no Windows. A revisão independente aprovou os quatro arquivos sem achados materiais. A implementação e os testes terminaram às 11h20 BRT, antes da faixa estimada de 11h34–11h44; a revisão estava concluída às 11h24.
+
+A interpretação física de receipt, manifest, corpo, contexto, extinção e tempo foi extraída do executor anterior para um helper puro compartilhado. Esse recorte recebeu revisão independente sem achados materiais e passou em 13 testes em 3,629 segundos, sem skips. Essas duas execuções têm escopos distintos e não constituem PASS global por soma.
+
+O [checkpoint B2b](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6110028191) conecta essa conta ao coletor: contexto obrigatório no worker, conclusão física persistida e retomada de um membro sintético de metadata até valores. A retomada só conclui uma tentativa pendente quando há evidência autenticável da extinção de toda a árvore. A ausência do processo lançador isoladamente não basta. Sem conclusão física comprovada, a reserva continua integralmente debitada e não há nova requisição. A exportação e a ponte para a sanitização existente vêm no checkpoint B2c, após a revisão de B2b.
+
+Os resultados deste registro são locais e offline. A cobertura continua em 11 de 66 períodos financeiros aceitos, com 55 restantes. O cumprimento do prazo desta etapa não recupera o atraso do projeto nem permite estimar a coleta inteira antes do primeiro lote real medido e aceito. Não houve publicação deste delta, coleta nova ou alteração dos dados históricos.
+
 ### Alternativa Base dos Dados sugerida por João
 
 Pesquisa primária e revisão independente confirmaram a tabela `basedosdados.br_bcb_ifdata.relatorio` como candidata para comparação, sem adoção como fonte principal. Os55 períodos da policy instalada são201003–202309, todos dentro da faixa gratuita anunciada na [página da tabela](https://basedosdados.org/dataset/72ffa6fa-7a7c-4949-8631-f0dc4a364b2b?table=0577e21b-c22f-49e7-b4bd-b7e26603e718), observada em2026-10-11. A extensão paga até202606 não é necessária para esse recorte histórico. Anúncio temporal não comprova completude por relatório/instituição/célula.

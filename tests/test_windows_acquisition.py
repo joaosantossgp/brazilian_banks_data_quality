@@ -644,6 +644,9 @@ def _fixture_worker():
         financial._ROOT = Path(spec['fixture_root'])
         financial._FROZEN = {key: tuple(value) for key, value in spec['fixture_frozen'].items()}
         if spec['contract'] == 'financial-acquisition-worker-v4':
+            from bank_quality import financial_acquisition_batch as batch
+            batch._ROOT = financial._ROOT
+            batch._code_identity_v2 = batch._capture_code_pins_v2
             try:
                 _, target = financial._sql_worker_authorization(
                     spec, Path(sys.argv[1]), hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())

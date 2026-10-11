@@ -1121,11 +1121,10 @@ def _sql_worker_authorization(spec, spec_path, spec_sha256):
     _require(_digest(spec['store_sha256']) == _sha(
         Path(__file__).with_name('financial_acquisition_store.py').read_bytes()), 'Worker store pin mismatch')
     from .financial_acquisition_store import AttemptStore
-    from .financial_acquisition_batch import _historical_policy, _HISTORICAL_POLICY_V1
     job_path = _local(spec['job_path'])
     store_path = _local(spec['store_path'])
     destination = _safe_destination(_ROOT / spec['output_path'])
-    _require(job_path.parent == store_path.parent == spec_path.parent,
+    _require(job_path.parent.resolve() == store_path.parent.resolve() == spec_path.parent.resolve(),
              'Worker job/store/spec directories differ')
     _require(type(spec['attempt_id']) is str and re.fullmatch('[0-9a-f]{32}', spec['attempt_id'])
              and destination == job_path.parent / ('attempt-' + spec['attempt_id'])
@@ -1133,23 +1132,22 @@ def _sql_worker_authorization(spec, spec_path, spec_sha256):
     job = _load_job(job_path, spec['job_sha256'])
     _require(job['contract'] == 'financial-acquisition-job-v2', 'SQL worker requires historical job-v2')
     targets = _execution_job(job)
-    budget = _historical_policy(_HISTORICAL_POLICY_V1)['budgets'][job['member']['budget_id']]
-    limits = {'attempts': budget['attempts_max'], 'body_bytes': budget['body_bytes_max'],
-              'attempt_ms': budget['attempt_seconds_max'] * 1000}
-    scope = _sha(_canonical({'job_sha256': job['job_sha256'], 'limits': limits}))
-    _require(spec['store_scope'] == scope, 'Worker store scope differs from installed budget/job')
-    with AttemptStore.open(store_path, scope=scope) as store:
+    with AttemptStore.open(store_path, scope=spec['store_scope']) as store:
         state = store.snapshot()
-    _require(state['limits'] == limits, 'Worker run limits differ from installed budget')
+    _require('operational_context' in state, 'Worker requires pinned operational context')
+    _require(state['halt'] is None, 'Operational member halted')
     rows = [row for row in state['attempts'] if row['attempt_id'] == spec['attempt_id']]
-    _require(len(rows) == 1 and rows[0]['outcome'] == 'pending', 'Worker lacks pending reservation')
+    _require(len(rows) == 1 and rows[0]['kind'] == 'request' and rows[0]['outcome'] == 'pending', 'Worker lacks pending reservation')
     row = rows[0]
     target = targets.get(spec['target_key'])
     _require(target is not None and row['target'] == spec['target_key'], 'Worker target differs from reservation/job')
+    if target['role'] == 'numeric':
+        resolved = _sql_resolution(job, job_path.parent, state['operational_state']['sources'], require_checkpoint=True)
+        _require(target in resolved['numeric_targets'], 'Numeric target outside authenticated checkpoint A')
     _require(type(spec['body_budget_bytes']) is int
              and 0 < spec['body_budget_bytes'] <= _body_cap(target, job['policies'])
              and row['body_budget_bytes'] == spec['body_budget_bytes'], 'Worker body budget differs')
-    _require(type(spec['deadline_ms']) is int and spec['deadline_ms'] == budget['deadline_seconds'] * 1000
+    _require(type(spec['deadline_ms']) is int and spec['deadline_ms'] == job['policies']['deadline_seconds'] * 1000
              and row['deadline_ms'] == spec['deadline_ms'], 'Worker deadline differs from installed policy')
     identity = row['launcher_identity']
     _require(row['spec_sha256'] == spec_sha256 and type(identity) is dict
@@ -1217,6 +1215,267 @@ def _retryable(manifest):
     return False
 
 
+def _interpret_attempt_result(result, *, attempt_id, spec_sha256, output, target, reserved_bytes):
+    """Read/authenticate physical evidence without changing authority or files.
+
+    Retry limits belong to the caller. Inconclusive extinction/evidence raises;
+    deadline or failed worker conservatively retains the full body reservation.
+    """
+    _require(result['tree_extinct'], 'Worker tree extinction not verified')
+    observed, status, retryable, source, guard = reserved_bytes, 'worker_failed', False, None, 'containment'
+    evidence = {}
+    # A missing/inconclusive receipt never proves zero bytes and never refunds.
+    if result['deadline_reached'] or result['deadline_overshoot_seconds'] > 0:
+        status, guard = 'deadline', 'deadline'
+    elif result['exit_code'] == 0:
+        receipt_path = _local((output / 'worker-receipt.json').relative_to(_ROOT).as_posix())
+        receipt = _json(receipt_path.read_bytes())
+        _require(receipt['attempt_id'] == attempt_id and receipt['spec_sha256'] == spec_sha256, 'Worker receipt mismatch')
+        manifest_path = _local(receipt['manifest_path'])
+        _require(manifest_path.parent == output, 'Worker manifest outside immutable attempt directory')
+        manifest_raw = manifest_path.read_bytes()
+        _require(_sha(manifest_raw) == _digest(receipt['manifest_sha256']), 'Attempt manifest hash mismatch')
+        manifest = _json(manifest_raw)
+        evidence = {'worker_receipt_path': receipt_path.relative_to(_ROOT).as_posix(),
+                    'worker_receipt_sha256': _sha(receipt_path.read_bytes()), 'manifest_path': receipt['manifest_path'],
+                    'manifest_sha256': receipt['manifest_sha256']}
+        _require(manifest.get('contract') == 'bounded-http-archive-v1' and manifest.get('url') == target['url']
+                 and manifest.get('method') == 'GET'
+                 and manifest.get('context') == {'period': target['period'], 'perspective': 1005, 'role': target['role']}
+                 and manifest.get('body_budget_bytes') == reserved_bytes, 'Attempt manifest context mismatch')
+        bytes_seen = manifest.get('bytes_observed')
+        _require(type(bytes_seen) is int and 0 <= bytes_seen <= reserved_bytes, 'Attempt observed body counter invalid')
+        # Validate saved body and sidecar even for a failed request before refund.
+        _require(manifest.get('body_available') is True and manifest.get('bytes') == bytes_seen,
+                 'Inconclusive stored byte count')
+        body = _saved_body(manifest, manifest_path, manifest.get('sha256'))
+        _require(len(body) == bytes_seen, 'Attempt body byte count mismatch')
+        observed = bytes_seen
+        source = {**target, 'manifest_path': receipt['manifest_path'], 'manifest_sha256': receipt['manifest_sha256'],
+                  'body_sha256': manifest['sha256'], 'provenance_sha256': _sha(_canonical(manifest)), 'context': _native(manifest['context'])}
+        if manifest.get('source_complete') is True and manifest.get('outcome') == 'ok':
+            _authenticated(source, expected=target)
+            status, guard = 'source_complete', ''
+        else:
+            _failed_attempt_evidence(manifest, manifest_path)
+            source = None
+            status, retryable = manifest.get('outcome', 'transport_error'), _retryable(manifest)
+            guard = '' if retryable else 'transport'
+    return {'observed_bytes': observed, 'observed_attempt_seconds': math.ceil(result['elapsed_seconds']),
+            'actual_elapsed_microseconds': math.ceil(result['elapsed_seconds'] * 1000000),
+            'overshoot_microseconds': math.ceil(result['deadline_overshoot_seconds'] * 1000000),
+            'status': status, 'retryable': retryable, 'source_ref': source, 'guard': guard,
+            'attempt_evidence': evidence, 'tree_extinct': True, 'worker_exit_code': result['exit_code'],
+            'deadline_reached': result['deadline_reached']}
+
+
+def _sql_write(path, value):
+    """Revalidate an existing derived checkpoint or write it exactly once."""
+    if path.exists():
+        _require(_local(path.relative_to(_ROOT).as_posix()).read_bytes() == _canonical(value),
+                 'Transactional checkpoint differs from authenticated sources')
+    else:
+        _write_exclusive(path, value)
+
+
+def _sql_resolution(job, folder, sources, *, require_checkpoint=False):
+    refs = {t['target_key']: sources[t['target_key']] for t in job['targets'] if t['target_key'] in sources}
+    resolved = resolve_sources(job, refs)
+    if require_checkpoint:
+        for name, expected in (('checkpoint-a.json', resolved['checkpoints'][0]), ('resolution.json', resolved)):
+            raw = _local((folder / name).relative_to(_ROOT).as_posix()).read_bytes()
+            _require(raw == _canonical(expected), 'Checkpoint A/resolution differs from physical sources')
+    return resolved
+
+
+def _sql_native_result(store, folder, row):
+    """A launcher disappearing alone never establishes owned-tree extinction."""
+    _require(row['native_result_sha256'] is not None, 'Pending request has no pinned Native tree completion')
+    path = _local((folder / ('native-' + row['attempt_id'] + '.json')).relative_to(_ROOT).as_posix())
+    raw = path.read_bytes()
+    _require(_sha(raw) == row['native_result_sha256'], 'Native completion pin mismatch')
+    value = json.loads(raw)
+    spec_path = _local((folder / ('worker-' + row['attempt_id'] + '.json')).relative_to(_ROOT).as_posix())
+    _require(_sha(spec_path.read_bytes()) == row['spec_sha256'], 'Pending spec pin mismatch')
+    spec = json.loads(spec_path.read_bytes())
+    _require(type(value) is dict and set(value) == {'contract', 'attempt_id', 'spec_sha256', 'output_path', 'result'}
+             and value['contract'] == 'financial-acquisition-native-completion-v1'
+             and value['attempt_id'] == row['attempt_id'] and value['spec_sha256'] == row['spec_sha256']
+             and value['output_path'] == spec['output_path']
+             and value['output_path'] == (folder / ('attempt-' + row['attempt_id'])).relative_to(_ROOT).as_posix(),
+             'Native completion binding mismatch')
+    result = value['result']
+    _require(type(result) is dict and set(result) == {'identity', 'exit_code', 'tree_extinct', 'deadline_reached',
+        'elapsed_seconds', 'deadline_overshoot_seconds', 'job_handle_inherited'}
+        and result['identity'] == row['launcher_identity'] and result['tree_extinct'] is True
+        and result['job_handle_inherited'] is False and type(result['exit_code']) is int
+        and type(result['deadline_reached']) is bool
+        and all(type(result[k]) in (int, float) and math.isfinite(result[k]) and result[k] >= 0
+                for k in ('elapsed_seconds', 'deadline_overshoot_seconds')),
+        'Pending Native tree extinction/evidence not verified')
+    return result, spec
+
+
+def _finish_sql(store, folder, row, target, policy):
+    result, spec = _sql_native_result(store, folder, row)
+    invalid = None
+    try:
+        conclusion = _interpret_attempt_result(result, attempt_id=row['attempt_id'], spec_sha256=row['spec_sha256'],
+            output=_ROOT / spec['output_path'], target=target, reserved_bytes=row['body_budget_bytes'])
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        invalid = str(error)
+        elapsed = max(row['deadline_ms'] / 1000, result['elapsed_seconds'])
+        conclusion = {'observed_bytes': row['body_budget_bytes'], 'observed_attempt_seconds': math.ceil(elapsed),
+            'actual_elapsed_microseconds': math.ceil(result['elapsed_seconds'] * 1000000),
+            'overshoot_microseconds': math.ceil(result['deadline_overshoot_seconds'] * 1000000),
+            'status': 'physical_evidence_invalid', 'retryable': False, 'source_ref': None, 'guard': 'containment',
+            'attempt_evidence': {}, 'tree_extinct': True, 'worker_exit_code': result['exit_code'],
+            'deadline_reached': result['deadline_reached']}
+    state = store.snapshot()['operational_state']
+    conclusion['retryable'] = (conclusion['retryable'] and state['targets'][target['target_key']]['attempts'] < policy['attempts']
+                              and conclusion['observed_bytes'] < row['body_budget_bytes'])
+    elapsed_ms = max(math.ceil(result['elapsed_seconds'] * 1000), row['deadline_ms'] if invalid else 0)
+    # Seconds in the shared reducer remain conservatively rounded; SQL retains ms.
+    conclusion['observed_attempt_seconds'] = (elapsed_ms + 999) // 1000
+    _require(len(conclusion) == 12, 'Closed physical conclusion required')
+    store.finish(row['attempt_id'], observed_bytes=conclusion['observed_bytes'], elapsed_ms=elapsed_ms,
+                 outcome='success' if conclusion['status'] == 'source_complete' else 'failure', result=conclusion)
+    if invalid:
+        store.halt('Invalid physical attempt evidence: ' + invalid)
+        raise ValueError('Invalid physical attempt evidence: ' + invalid)
+    return conclusion['retryable']
+
+
+def _recover_sql_pending(store, folder, targets, policy):
+    for row in store.snapshot()['attempts']:
+        if row['outcome'] != 'pending':
+            continue
+        if row['kind'] == 'backoff':
+            store.finish_backoff(row['attempt_id'], elapsed_ms=row['deadline_ms'])
+        else:
+            # Missing/unknown completion is kept pending in its original account.
+            _finish_sql(store, folder, row, targets[row['target']], policy)
+
+
+def _attempt_sql(store, job, folder, target, monitor, cancelled):
+    _require(not cancelled.is_set(), 'Transactional acquisition cancelled')
+    attempt = store.reserve_request(target['target_key'])
+    state = store.snapshot()
+    row = next(r for r in state['attempts'] if r['attempt_id'] == attempt)
+    monitor.reserve({'attempt_id': attempt, 'reserved_bytes': row['body_budget_bytes'],
+                     'reserved_attempt_seconds': (row['deadline_ms'] + 999) // 1000})
+    monitor.sample()
+    spec_path = folder / ('worker-' + attempt + '.json')
+    output = folder / ('attempt-' + attempt)
+    from . import financial_acquisition_store
+    spec = {'contract': 'financial-acquisition-worker-v4', 'job_path': (folder / 'job.json').relative_to(_ROOT).as_posix(),
+        'job_sha256': job['job_sha256'], 'store_path': (folder / 'attempts.sqlite').relative_to(_ROOT).as_posix(),
+        'store_scope': state['scope'], 'store_sha256': _sha(Path(financial_acquisition_store.__file__).read_bytes()),
+        'attempt_id': attempt, 'target_key': target['target_key'], 'body_budget_bytes': row['body_budget_bytes'],
+        'deadline_ms': row['deadline_ms'], 'parent_identity': _current_identity(),
+        'worker_sha256': _sha(Path(__file__).read_bytes()), 'application_sha256': _sha(Path(sys.executable).read_bytes()),
+        'output_path': output.relative_to(_ROOT).as_posix()}
+    _write_exclusive(spec_path, spec)
+    spec_pin = _sha(spec_path.read_bytes())
+    result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=row['deadline_ms'] / 1000,
+        before_resume=lambda identity: store.bind_worker(attempt, spec_sha256=spec_pin, launcher_identity=identity),
+        cancel_event=cancelled)
+    completion = folder / ('native-' + attempt + '.json')
+    _write_exclusive(completion, {'contract': 'financial-acquisition-native-completion-v1',
+        'attempt_id': attempt, 'spec_sha256': spec_pin, 'output_path': spec['output_path'], 'result': result})
+    store.bind_native_result(attempt, _sha(completion.read_bytes()))
+    row = next(r for r in store.snapshot()['attempts'] if r['attempt_id'] == attempt)
+    retryable = _finish_sql(store, folder, row, target, job['policies'])
+    monitor.finish(attempt)
+    return retryable
+
+
+def _obtain_sql(store, job, folder, target, monitor, cancelled):
+    key = target['target_key']
+    while True:
+        state = store.snapshot()
+        source = state['operational_state']['sources'].get(key)
+        if source:
+            _authenticated(source, expected=target)
+            return
+        requests = [r for r in state['attempts'] if r['kind'] == 'request' and r['target'] == key]
+        if requests and requests[-1]['outcome'] == 'failure':
+            _require(requests[-1]['result']['retryable'], 'Target failed without retry permission')
+            last = state['attempts'][-1]
+            if last['kind'] != 'backoff' or last['target'] != key:
+                backoff = store.reserve_backoff(key)
+                began = time.perf_counter()
+                # Cancellation leaves the durable entire backoff charged.
+                cancelled.wait(job['policies']['max_backoff_seconds'])
+                elapsed_ms = max(job['policies']['max_backoff_seconds'] * 1000,
+                                 math.ceil((time.perf_counter() - began) * 1000))
+                store.finish_backoff(backoff, elapsed_ms=elapsed_ms)
+        if not _attempt_sql(store, job, folder, target, monitor, cancelled):
+            source = store.snapshot()['operational_state']['sources'].get(key)
+            _require(source is not None, 'Source request failed')
+            _authenticated(source, expected=target)
+            return
+
+
+def run_transactional_member(index_path, index_sha256, *, period, phase):
+    """Serial one-member acquisition; window barrier/export belong to the batch."""
+    require_supported()
+    from .financial_acquisition_store import AttemptStore
+    from . import financial_acquisition_batch as batch
+    from .windows_acquisition import _ResourceMonitor, _resource_profile
+    import threading
+    _require(phase in ('metadata', 'values'), 'Unknown transactional phase')
+    ref = batch._reference(Path(index_path).absolute().relative_to(_ROOT.absolute()).as_posix(), _digest(index_sha256))
+    index = batch._verified_transactional_index(ref)
+    matches = [m for m in index['members'] if type(period) is int and m['period'] == period]
+    _require(len(matches) == 1, 'Member outside installed transactional window')
+    member = matches[0]
+    folder = _local(member['job_path']).parent
+    profile = _resource_profile(batch._read(index['resource_profile']))
+    _require(profile['metadata_workers'] == profile['values_workers'] == profile['active_windows'] == 1,
+             'Transactional member requires serial resource profile')
+    cancelled = threading.Event()
+    with _claim(folder / 'member.lock'), AttemptStore.open(_local(member['store_path']),
+            scope=batch._transactional_scope(ref, member)) as store:
+        _require(store.snapshot()['halt'] is None, 'Transactional member halted')
+        job = member['job']
+        targets = _execution_job(job)
+        _recover_sql_pending(store, folder, targets, job['policies'])
+        try:
+            with _ResourceMonitor(profile, folder, cancelled) as monitor:
+                if phase == 'metadata':
+                    for target in job['targets']:
+                        _obtain_sql(store, job, folder, target, monitor, cancelled)
+                    resolved = _sql_resolution(job, folder, store.snapshot()['operational_state']['sources'])
+                    _sql_write(folder / 'checkpoint-a.json', resolved['checkpoints'][0])
+                    _sql_write(folder / 'resolution.json', resolved)
+                    result = resolved['checkpoints'][0]
+                else:
+                    resolved = _sql_resolution(job, folder, store.snapshot()['operational_state']['sources'], require_checkpoint=True)
+                    for target in resolved['numeric_targets']:
+                        _obtain_sql(store, job, folder, target, monitor, cancelled)
+                        source = store.snapshot()['operational_state']['sources'][target['target_key']]
+                        body, _ = _authenticated(source, expected=target)
+                        origins = [n['origin'] for r in resolved['resolutions'] for n in r['nodes']
+                                   if n['kind'] == 'numeric' and n['origin']['area'] == target['area']]
+                        validation = validate_numeric_source(body, area=target['area'], required_origins=origins)
+                        _sql_write(folder / ('numeric-' + str(target['area']) + '-validation.json'), validation)
+                    sources = store.snapshot()['operational_state']['sources']
+                    checkpoint = resolved['checkpoints'][0]
+                    projection = ('source_id', 'role', 'area', 'native_file', 'catalog_pointer', 'manifest_path',
+                                  'manifest_sha256', 'body_sha256', 'provenance_sha256')
+                    result = {**checkpoint, 'phase': 'complete',
+                        'checkpoint_a_sha256': _sha((folder / 'checkpoint-a.json').read_bytes()),
+                        'sources': sorted([{k: source[k] for k in projection} for source in sources.values()],
+                                          key=lambda source: source['source_id'])}
+                    _sql_write(folder / 'checkpoint-b.json', result)
+        except (ValueError, OSError, RuntimeError) as error:
+            cancelled.set()
+            store.halt(type(error).__name__ + ': ' + str(error))
+            raise
+        return result
+
+
 def _attempt(authority, job_path, session, target):
     coordinator = getattr(authority, 'coordinator', None)
     _require(coordinator is None or not coordinator.cancel_event.is_set(), 'Batch transport cancelled')
@@ -1252,54 +1511,14 @@ def _attempt(authority, job_path, session, target):
     options = {} if coordinator is None else {'cancel_event': coordinator.cancel_event}
     result = run_contained_attempt(spec_path, spec_pin, deadline_seconds=authority.policies['deadline_seconds'],
                                    before_resume=before_resume, **options)
-    _require(result['tree_extinct'], 'Worker tree extinction not verified')
-    observed, status, retryable, source, guard = reservation['reserved_bytes'], 'worker_failed', False, None, 'containment'
-    evidence = {}
-    # A missing/inconclusive receipt never proves zero bytes and never refunds.
-    if result['deadline_reached'] or result['deadline_overshoot_seconds'] > 0:
-        status, guard = 'deadline', 'deadline'
-    elif result['exit_code'] == 0:
-        receipt_path = _local((output / 'worker-receipt.json').relative_to(_ROOT).as_posix())
-        receipt = _json(receipt_path.read_bytes())
-        _require(receipt['attempt_id'] == attempt and receipt['spec_sha256'] == spec_pin, 'Worker receipt mismatch')
-        manifest_path = _local(receipt['manifest_path'])
-        _require(manifest_path.parent == output, 'Worker manifest outside immutable attempt directory')
-        manifest_raw = manifest_path.read_bytes()
-        _require(_sha(manifest_raw) == _digest(receipt['manifest_sha256']), 'Attempt manifest hash mismatch')
-        manifest = _json(manifest_raw)
-        evidence = {'worker_receipt_path': receipt_path.relative_to(_ROOT).as_posix(),
-                    'worker_receipt_sha256': _sha(receipt_path.read_bytes()), 'manifest_path': receipt['manifest_path'],
-                    'manifest_sha256': receipt['manifest_sha256']}
-        _require(manifest.get('contract') == 'bounded-http-archive-v1' and manifest.get('url') == target['url']
-                 and manifest.get('method') == 'GET'
-                 and manifest.get('context') == {'period': target['period'], 'perspective': 1005, 'role': target['role']}
-                 and manifest.get('body_budget_bytes') == reservation['reserved_bytes'], 'Attempt manifest context mismatch')
-        bytes_seen = manifest.get('bytes_observed')
-        _require(type(bytes_seen) is int and 0 <= bytes_seen <= reservation['reserved_bytes'], 'Attempt observed body counter invalid')
-        # Validate saved body and sidecar even for a failed request before refund.
-        _require(manifest.get('body_available') is True and manifest.get('bytes') == bytes_seen,
-                 'Inconclusive stored byte count')
-        body = _saved_body(manifest, manifest_path, manifest.get('sha256'))
-        _require(len(body) == bytes_seen, 'Attempt body byte count mismatch')
-        observed = bytes_seen
-        source = {**target, 'manifest_path': receipt['manifest_path'], 'manifest_sha256': receipt['manifest_sha256'],
-                  'body_sha256': manifest['sha256'], 'provenance_sha256': _sha(_canonical(manifest)), 'context': _native(manifest['context'])}
-        if manifest.get('source_complete') is True and manifest.get('outcome') == 'ok':
-            _authenticated(source, expected=target)
-            status, guard = 'source_complete', ''
-        else:
-            _failed_attempt_evidence(manifest, manifest_path)
-            source = None
-            status, retryable = manifest.get('outcome', 'transport_error'), _retryable(manifest)
-            guard = '' if retryable else 'transport'
+    conclusion = _interpret_attempt_result(result, attempt_id=attempt, spec_sha256=spec_pin,
+                                           output=output, target=target, reserved_bytes=reservation['reserved_bytes'])
     used_attempts = authority.state['targets'][target['target_key']]['attempts']
-    retryable = retryable and used_attempts < authority.policies['attempts'] and observed < reservation['reserved_bytes']
+    retryable = (conclusion['retryable'] and used_attempts < authority.policies['attempts']
+                 and conclusion['observed_bytes'] < reservation['reserved_bytes'])
+    conclusion['retryable'] = retryable
     authority.commit('finish', attempt_id=attempt, target_key=target['target_key'], session_id=session.name,
-                     observed_bytes=observed, observed_attempt_seconds=math.ceil(result['elapsed_seconds']),
-                     actual_elapsed_microseconds=math.ceil(result['elapsed_seconds'] * 1000000),
-                     overshoot_microseconds=math.ceil(result['deadline_overshoot_seconds'] * 1000000),
-                     status=status, retryable=retryable, source_ref=source, guard=guard, attempt_evidence=evidence,
-                     tree_extinct=True, worker_exit_code=result['exit_code'], deadline_reached=result['deadline_reached'])
+                     **conclusion)
     if monitor is not None:
         monitor.finish(attempt)
     return retryable
