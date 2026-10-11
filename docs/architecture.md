@@ -42,6 +42,8 @@ Este é o contrato estrutural do projeto, solicitado em 2026-10-03. Toda Issue u
 | `data/raw/`, `data/derived/`, `data/runs/`, `data/curated/` | Dados locais ignorados, com contratos de imutabilidade/proveniência e destino de execução novo quando exigido. Não mover bruto ou sobrescrever artefatos aceitos para organizar pastas. |
 | `.scratch/`, `.superpowers/`, `.tools/`, `.playwright-cli/`, `.venv/`, `.worktrees/` | Preparação, evidência privada, ferramentas e ambientes locais ignorados. Não são trackers públicos nem destinos de entrega. |
 
+Cadastro temporal OData,2026-10-11, [Issue86](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/86): `bank_quality/ifdata_cadastro.py` importa os 16 campos nativos do pacote capturado e expõe cadastro/vínculos declarados e join temporal com valores autenticados. `scripts/import-ifdata-cadastro.py` oferece build/query/audit; `tests/test_ifdata_cadastro.py` cobre preservação, integridade e não multiplicação do join. Fonte nova em `data/raw/ifdata-cadastro-20261011/`, cadastro/manifest e auditoria em `data/curated/ifdata-cadastro-20261011/`; nota única em `docs/engineering/ifdata-cadastro-20261011.md`. Módulo adjacente ao leitor OData, sem dependência, servidor, camada ou alteração dos valores aceitos. Vínculos literais não certificam identidade com emissores nem elegibilidade acadêmica; Root integra documentação/Git.
+
 ### Entrada, revisão e integração estrutural
 
 1. **Issue:** preencher `Impacto na arquitetura: nenhum` com motivo, ou listar arquivos/pastas criados, movidos ou removidos, responsabilidade/destino canônico, dependências, compartilhamentos e documentação afetada. Isso complementa a allowlist; uma área ou skill não autoriza criar estrutura.
