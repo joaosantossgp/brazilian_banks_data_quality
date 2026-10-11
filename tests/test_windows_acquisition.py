@@ -415,6 +415,60 @@ class WindowsAcquisitionTests(unittest.TestCase):
             self.assert_extinct(captured[0])
 
     @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
+    def test_v4_sql_binding_is_committed_before_resume(self):
+        from bank_quality.financial_acquisition_store import AttemptStore
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            spec, pin = self.spec(root, contract='financial-acquisition-worker-v4')
+            db = root / 'attempts.sqlite'
+            with AttemptStore.create(db, scope='synthetic/native',
+                    limits={'attempts': 1, 'body_bytes': 10, 'attempt_ms': 120000},
+                    carried_usage={'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0}) as store:
+                attempt = store.reserve('stable-target', body_budget_bytes=10, deadline_ms=120000)
+                def bind(identity):
+                    self.assertFalse((root / 'worker.json').exists())
+                    store.bind_worker(attempt, spec_sha256=pin, launcher_identity=identity)
+                    with AttemptStore.open(db, scope='synthetic/native') as reader:
+                        row = reader.snapshot()['attempts'][0]
+                        self.assertEqual(row['spec_sha256'], pin)
+                        self.assertEqual(row['launcher_identity'], identity)
+                        self.assertEqual(row['outcome'], 'pending')
+                    self.assertFalse((root / 'worker.json').exists())
+                with patch.object(api, '_WORKER_MODULE', 'tests.test_windows_acquisition'):
+                    result = api.run_contained_attempt(spec, pin, deadline_seconds=120, before_resume=bind)
+                self.assertEqual(result['exit_code'], 0)
+                self.assertTrue(result['tree_extinct'])
+                self.assertTrue((root / 'worker.json').exists())
+                self.assertEqual(store.snapshot()['usage'], {'attempts': 1, 'body_bytes': 10, 'attempt_ms': 120000})
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
+    def test_v4_failed_sql_binding_extinguishes_suspended_launcher(self):
+        from bank_quality.financial_acquisition_store import AttemptStore
+        api = importlib.import_module('bank_quality.windows_acquisition')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            spec, pin = self.spec(root, contract='financial-acquisition-worker-v4')
+            with AttemptStore.create(root / 'attempts.sqlite', scope='synthetic/native',
+                    limits={'attempts': 1, 'body_bytes': 10, 'attempt_ms': 120000},
+                    carried_usage={'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0}) as store:
+                attempt = store.reserve('stable-target', body_budget_bytes=10, deadline_ms=120000)
+                captured = []
+                def fail(identity):
+                    captured.append(identity)
+                    store.bind_worker(attempt, spec_sha256='invalid', launcher_identity=identity)
+                with patch.object(api, '_WORKER_MODULE', 'tests.test_windows_acquisition'):
+                    with self.assertRaisesRegex(ValueError, 'SHA-256'):
+                        api.run_contained_attempt(spec, pin, deadline_seconds=120, before_resume=fail)
+                self.assertEqual(len(captured), 1)
+                self.assert_extinct(captured[0])
+                self.assertFalse((root / 'worker.json').exists())
+                row = store.snapshot()['attempts'][0]
+                self.assertIsNone(row['spec_sha256'])
+                self.assertIsNone(row['launcher_identity'])
+                self.assertEqual(row['outcome'], 'pending')
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 API host required')
     def test_cancellation_extinguishes_two_active_trees(self):
         from concurrent.futures import ThreadPoolExecutor
         api = importlib.import_module('bank_quality.windows_acquisition')
@@ -589,7 +643,15 @@ def _fixture_worker():
         from bank_quality import financial_acquisition as financial
         financial._ROOT = Path(spec['fixture_root'])
         financial._FROZEN = {key: tuple(value) for key, value in spec['fixture_frozen'].items()}
-        _, target = financial._worker_authorization(spec)
+        if spec['contract'] == 'financial-acquisition-worker-v4':
+            try:
+                _, target = financial._sql_worker_authorization(
+                    spec, Path(sys.argv[1]), hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+            except Exception as error:
+                _publish_json(Path(spec['marker'] + '.error'), {'error': str(error)})
+                raise
+        else:
+            _, target = financial._worker_authorization(spec)
         _publish_json(Path(spec['marker']), {'authorized_target': target['target_key']})
         return
     if spec.get('spawn_child'):

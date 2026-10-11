@@ -230,7 +230,7 @@ def run_contained_attempt(spec_path: Path, spec_sha256: str, *, deadline_seconds
     spec = json.loads(raw)
     application = Path(sys.executable).resolve()
     worker = Path(importlib.util.find_spec(_WORKER_MODULE).origin)
-    if (spec.get('contract') not in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
+    if (spec.get('contract') not in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3', 'financial-acquisition-worker-v4')
             or spec.get('application_sha256') != hashlib.sha256(application.read_bytes()).hexdigest()
             or spec.get('worker_sha256') != hashlib.sha256(worker.read_bytes()).hexdigest()):
         raise ValueError('Fixed worker/application pin mismatch')

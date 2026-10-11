@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -41,6 +42,61 @@ class AttemptStoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reopened.reserve('D', body_budget_bytes=41, deadline_ms=1)
             self.assertEqual(len(reopened.snapshot()['attempts']), 1)
+
+    def test_bind_worker_is_durable_single_use_and_preserves_full_reservation(self):
+        store = self.create()
+        attempt = store.reserve('C', body_budget_bytes=60, deadline_ms=700)
+        identity = {'pid': 12, 'creation_time': 34, 'contained': True}
+        store.bind_worker(attempt, spec_sha256='a' * 64, launcher_identity=identity)
+        with self.Store.open(self.path, scope='synthetic/run') as reopened:
+            state = reopened.snapshot()
+            row = state['attempts'][0]
+            self.assertEqual(row['spec_sha256'], 'a' * 64)
+            self.assertEqual(row['launcher_identity'], identity)
+            self.assertEqual(row['outcome'], 'pending')
+            self.assertEqual(state['usage'], {'attempts': 1, 'body_bytes': 60, 'attempt_ms': 700})
+            with self.assertRaises(ValueError):
+                reopened.bind_worker(attempt, spec_sha256='a' * 64, launcher_identity=identity)
+            with self.assertRaises(ValueError):
+                reopened.reserve('C', body_budget_bytes=1, deadline_ms=1)
+
+    def test_invalid_binding_never_writes_either_field(self):
+        store = self.create()
+        attempt = store.reserve('C', body_budget_bytes=10, deadline_ms=100)
+        pending = store.snapshot()
+        identity = {'pid': 12, 'creation_time': 34, 'contained': True}
+        invalid = [('absent', 'a' * 64, identity), (attempt, 'A' * 64, identity),
+                   (attempt, 'a' * 63, identity)]
+        invalid += [(attempt, 'a' * 64, changed) for changed in (
+            dict(identity, pid=True), dict(identity, creation_time=0),
+            dict(identity, contained=1), dict(identity, extra=0), None)]
+        for target, pin, launcher in invalid:
+            with self.subTest(target=target, pin=pin, launcher=launcher), self.assertRaises(ValueError):
+                store.bind_worker(target, spec_sha256=pin, launcher_identity=launcher)
+            self.assertEqual(store.snapshot(), pending)
+        store.finish(attempt, observed_bytes=0, elapsed_ms=0, outcome='failure', result=None)
+        finished = store.snapshot()
+        with self.assertRaises(ValueError):
+            store.bind_worker(attempt, spec_sha256='a' * 64, launcher_identity=identity)
+        self.assertEqual(store.snapshot(), finished)
+
+    def test_binding_crash_before_commit_rolls_back_both_fields(self):
+        store = self.create()
+        attempt = store.reserve('C', body_budget_bytes=10, deadline_ms=100)
+        script = '''import os, sys
+from bank_quality.financial_acquisition_store import AttemptStore
+store = AttemptStore.open(sys.argv[1], scope='synthetic/run')
+store._connection.set_trace_callback(lambda sql: os._exit(71) if sql == 'COMMIT' else None)
+store.bind_worker(sys.argv[2], spec_sha256='a'*64,
+                  launcher_identity={'pid': 12, 'creation_time': 34, 'contained': True})
+'''
+        result = subprocess.run([sys.executable, '-c', script, str(self.path), attempt], capture_output=True)
+        self.assertEqual(result.returncode, 71, result.stderr.decode())
+        with self.Store.open(self.path, scope='synthetic/run') as reopened:
+            row = reopened.snapshot()['attempts'][0]
+            self.assertIsNone(row['spec_sha256'])
+            self.assertIsNone(row['launcher_identity'])
+            self.assertEqual(row['outcome'], 'pending')
 
     def test_explicit_carry_consumes_all_three_limits_without_new_rows(self):
         for field in ('attempts', 'body_bytes', 'attempt_ms'):

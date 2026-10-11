@@ -7,6 +7,7 @@ SQLite transactions do not cover those artifacts. Use one connection per thread.
 from contextlib import contextmanager
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import stat
@@ -112,7 +113,8 @@ class AttemptStore:
                     attempt_id TEXT PRIMARY KEY, target TEXT NOT NULL,
                     body_budget_bytes INTEGER NOT NULL, deadline_ms INTEGER NOT NULL,
                     outcome TEXT NOT NULL CHECK(outcome IN ('pending','success','failure')),
-                    observed_bytes INTEGER, elapsed_ms INTEGER, result_json TEXT)''')
+                    observed_bytes INTEGER, elapsed_ms INTEGER, result_json TEXT,
+                    spec_sha256 TEXT, launcher_identity_json TEXT)''')
                 store._connection.execute('INSERT INTO run_config VALUES (1, ?, ?, ?)',
                                           (scope, _json(limits), _json(carried_usage)))
             return store
@@ -164,6 +166,8 @@ class AttemptStore:
         for row in rows:
             attempt = dict(row)
             result = attempt.pop('result_json')
+            launcher = attempt.pop('launcher_identity_json')
+            attempt['launcher_identity'] = json.loads(launcher) if launcher is not None else None
             attempt['result'] = json.loads(result) if result is not None else None
             attempts.append(attempt)
             pending = attempt['outcome'] == 'pending'
@@ -191,6 +195,27 @@ class AttemptStore:
                 VALUES (?, ?, ?, ?, 'pending')''',
                 (attempt_id, target, body_budget_bytes, deadline_ms))
         return attempt_id
+
+    def bind_worker(self, attempt_id, *, spec_sha256, launcher_identity):
+        """Commit the sole Native launcher binding before its suspended resume."""
+        attempt_id = _identifier(attempt_id)
+        if type(spec_sha256) is not str or not re.fullmatch('[0-9a-f]{64}', spec_sha256):
+            raise ValueError('Expected a closed SHA-256 pin')
+        if (type(launcher_identity) is not dict
+                or set(launcher_identity) != {'pid', 'creation_time', 'contained'}
+                or type(launcher_identity['pid']) is not int or launcher_identity['pid'] <= 0
+                or type(launcher_identity['creation_time']) is not int or launcher_identity['creation_time'] <= 0
+                or launcher_identity['contained'] is not True):
+            raise ValueError('Expected a contained Native launcher identity')
+        identity_json = _json(launcher_identity)
+        with self._transaction(write=True):
+            row = self._connection.execute('SELECT * FROM attempts WHERE attempt_id=?',
+                                           (attempt_id,)).fetchone()
+            if (row is None or row['outcome'] != 'pending' or row['spec_sha256'] is not None
+                    or row['launcher_identity_json'] is not None):
+                raise ValueError('Attempt is absent, finished or already bound')
+            self._connection.execute('''UPDATE attempts SET spec_sha256=?, launcher_identity_json=?
+                WHERE attempt_id=?''', (spec_sha256, identity_json, attempt_id))
 
     def finish(self, attempt_id, *, observed_bytes, elapsed_ms, outcome, result):
         attempt_id = _identifier(attempt_id)

@@ -1115,6 +1115,52 @@ def _worker_authorization(spec):
     return job, targets[spec['target_key']]
 
 
+def _sql_worker_authorization(spec, spec_path, spec_sha256):
+    """Authenticate a bound pending SQL reservation, without legacy authority."""
+    # Authenticate the physical store implementation before importing or opening it.
+    _require(_digest(spec['store_sha256']) == _sha(
+        Path(__file__).with_name('financial_acquisition_store.py').read_bytes()), 'Worker store pin mismatch')
+    from .financial_acquisition_store import AttemptStore
+    from .financial_acquisition_batch import _historical_policy, _HISTORICAL_POLICY_V1
+    job_path = _local(spec['job_path'])
+    store_path = _local(spec['store_path'])
+    destination = _safe_destination(_ROOT / spec['output_path'])
+    _require(job_path.parent == store_path.parent == spec_path.parent,
+             'Worker job/store/spec directories differ')
+    _require(type(spec['attempt_id']) is str and re.fullmatch('[0-9a-f]{32}', spec['attempt_id'])
+             and destination == job_path.parent / ('attempt-' + spec['attempt_id'])
+             and not destination.exists(), 'Worker output must be new literal attempt destination')
+    job = _load_job(job_path, spec['job_sha256'])
+    _require(job['contract'] == 'financial-acquisition-job-v2', 'SQL worker requires historical job-v2')
+    targets = _execution_job(job)
+    budget = _historical_policy(_HISTORICAL_POLICY_V1)['budgets'][job['member']['budget_id']]
+    limits = {'attempts': budget['attempts_max'], 'body_bytes': budget['body_bytes_max'],
+              'attempt_ms': budget['attempt_seconds_max'] * 1000}
+    scope = _sha(_canonical({'job_sha256': job['job_sha256'], 'limits': limits}))
+    _require(spec['store_scope'] == scope, 'Worker store scope differs from installed budget/job')
+    with AttemptStore.open(store_path, scope=scope) as store:
+        state = store.snapshot()
+    _require(state['limits'] == limits, 'Worker run limits differ from installed budget')
+    rows = [row for row in state['attempts'] if row['attempt_id'] == spec['attempt_id']]
+    _require(len(rows) == 1 and rows[0]['outcome'] == 'pending', 'Worker lacks pending reservation')
+    row = rows[0]
+    target = targets.get(spec['target_key'])
+    _require(target is not None and row['target'] == spec['target_key'], 'Worker target differs from reservation/job')
+    _require(type(spec['body_budget_bytes']) is int
+             and 0 < spec['body_budget_bytes'] <= _body_cap(target, job['policies'])
+             and row['body_budget_bytes'] == spec['body_budget_bytes'], 'Worker body budget differs')
+    _require(type(spec['deadline_ms']) is int and spec['deadline_ms'] == budget['deadline_seconds'] * 1000
+             and row['deadline_ms'] == spec['deadline_ms'], 'Worker deadline differs from installed policy')
+    identity = row['launcher_identity']
+    _require(row['spec_sha256'] == spec_sha256 and type(identity) is dict
+             and set(identity) == {'pid', 'creation_time', 'contained'}
+             and type(identity['pid']) is int and identity['pid'] > 0
+             and type(identity['creation_time']) is int and identity['creation_time'] > 0
+             and identity['contained'] is True, 'Worker lacks durable spec/launcher binding')
+    verify_worker_ancestry(identity, spec['parent_identity'])
+    return job, target
+
+
 def _worker_main(spec_path, spec_sha256):
     """Internal known worker: standalone invocation cannot bypass reservation."""
     require_supported()
@@ -1122,13 +1168,19 @@ def _worker_main(spec_path, spec_sha256):
     raw = path.read_bytes()
     _require(_sha(raw) == _digest(spec_sha256), 'Worker spec hash mismatch')
     spec = _json(raw)
+    _require(type(spec) is dict, 'Worker spec must be an object')
     version2 = spec.get('contract') in ('financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
-    _require(set(spec) == ({'batch_context'} if version2 else set()) | {'contract', 'job_path', 'job_sha256', 'bootstrap_sha256', 'attempt_id', 'target_key',
-                          'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
-             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3')
+    version4 = spec.get('contract') == 'financial-acquisition-worker-v4'
+    fields = {'contract', 'job_path', 'job_sha256', 'attempt_id', 'target_key',
+              'body_budget_bytes', 'parent_identity', 'application_sha256', 'worker_sha256', 'output_path'}
+    fields |= {'store_path', 'store_scope', 'store_sha256', 'deadline_ms'} if version4 else {'bootstrap_sha256'}
+    fields |= {'batch_context'} if version2 else set()
+    _require(set(spec) == fields
+             and spec['contract'] in ('financial-acquisition-worker-v1', 'financial-acquisition-worker-v2', 'financial-acquisition-worker-v3', 'financial-acquisition-worker-v4')
              and spec['worker_sha256'] == _sha(Path(__file__).read_bytes())
              and spec['application_sha256'] == _sha(Path(sys.executable).read_bytes()), 'Worker contract/runtime pin mismatch')
-    job, target = _worker_authorization(spec)
+    job, target = (_sql_worker_authorization(spec, path, spec_sha256) if version4
+                   else _worker_authorization(spec))
     destination = _safe_destination(_ROOT / spec['output_path'])
     _require(not destination.exists(), 'Worker destination must be new')
     destination.mkdir()

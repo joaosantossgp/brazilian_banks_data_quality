@@ -55,6 +55,160 @@ def catalog_entry(period):
     return {'dt': period, 'files': files}
 
 
+class SQLWorkerTests(unittest.TestCase):
+    """New synthetic stores/catalogs; no frozen operational jobs or transport."""
+
+    def setUp(self):
+        from bank_quality import financial_acquisition_store as store
+        from bank_quality import financial_acquisition_batch as batch
+        self.api = importlib.import_module('bank_quality.financial_acquisition')
+        self.fixture = AcquisitionTests('runTest')
+        self.fixture.api = self.api
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.root, self.Store, self.batch = self.fixture.root.resolve(), store.AttemptStore, batch
+        self.api._ROOT = self.root
+        self.number = 0
+        self.job = batch._compile_historical(self.fixture.document['catalogs'], 'F1-02')['members'][0]['job']
+        budget = batch._HISTORICAL_POLICY_V1['budgets'][self.job['member']['budget_id']]
+        self.limits = {'attempts': budget['attempts_max'], 'body_bytes': budget['body_bytes_max'],
+                       'attempt_ms': budget['attempt_seconds_max'] * 1000}
+        self.identity = {'pid': 12, 'creation_time': 34, 'contained': True}
+
+    def specification(self, *, changes=None, bound=True, finished=False, limits=None, row_changes=None):
+        import sys
+        self.number += 1
+        folder = self.root / f'data/runs/sql-{self.number}'
+        folder.mkdir(parents=True)
+        (folder / 'job.json').write_bytes(canonical(self.job))
+        limits = limits or self.limits
+        scope = sha(canonical({'job_sha256': self.job['job_sha256'], 'limits': limits}))
+        db = folder / 'attempts.sqlite'
+        target = self.job['targets'][0]['target_key']
+        reservation = {'body_budget_bytes': 100, 'deadline_ms': 120000, **(row_changes or {})}
+        with self.Store.create(db, scope=scope, limits=limits,
+                               carried_usage={'attempts': 0, 'body_bytes': 0, 'attempt_ms': 0}) as ledger:
+            attempt = ledger.reserve(target, **reservation)
+            spec = {'contract': 'financial-acquisition-worker-v4',
+                    'job_path': (folder / 'job.json').relative_to(self.root).as_posix(),
+                    'job_sha256': self.job['job_sha256'], 'store_path': db.relative_to(self.root).as_posix(),
+                    'store_scope': scope, 'attempt_id': attempt, 'target_key': target,
+                    'body_budget_bytes': 100, 'deadline_ms': 120000,
+                    'parent_identity': {'pid': 9, 'creation_time': 10},
+                    'application_sha256': sha(Path(sys.executable).read_bytes()),
+                    'worker_sha256': sha(Path(self.api.__file__).read_bytes()),
+                    'store_sha256': sha(Path(importlib.import_module('bank_quality.financial_acquisition_store').__file__).read_bytes()),
+                    'output_path': (folder / ('attempt-' + attempt)).relative_to(self.root).as_posix(),
+                    **(changes or {})}
+            path = folder / 'spec.json'
+            # Raw, deliberately noncanonical bytes must be the durable pin.
+            path.write_text(json.dumps(spec, indent=2), encoding='utf-8')
+            pin = sha(path.read_bytes())
+            if bound:
+                ledger.bind_worker(attempt, spec_sha256=pin, launcher_identity=self.identity)
+            if finished:
+                ledger.finish(attempt, observed_bytes=0, elapsed_ms=0, outcome='failure', result=None)
+        return path, pin, spec, db
+
+    def invoke(self, path, pin):
+        return self.api._worker_main(path, pin)
+
+    def test_v4_valid_raw_pin_reaches_same_transport_boundary(self):
+        self.assertTrue(callable(getattr(self.Store, 'bind_worker', None)))
+        path, pin, spec, db = self.specification()
+        class BoundaryReached(Exception):
+            pass
+        with patch.object(self.api, 'require_supported'), \
+                patch.object(self.api, 'verify_worker_ancestry') as ancestry, \
+                patch.object(self.api, '_worker_authorization', side_effect=AssertionError('legacy authority opened')), \
+                patch('bank_quality.archive.fetch_bounded', side_effect=BoundaryReached) as fetch:
+            with self.assertRaises(BoundaryReached):
+                self.invoke(path, pin)
+            ancestry.assert_called_once_with(self.identity, spec['parent_identity'])
+            self.assertEqual(fetch.call_args.args[0], self.job['targets'][0]['url'])
+            self.assertEqual(fetch.call_args.kwargs['body_budget_bytes'], 100)
+        with self.Store.open(db, scope=spec['store_scope']) as ledger:
+            self.assertEqual(ledger.snapshot()['attempts'][0]['outcome'], 'pending')
+            with self.assertRaises(ValueError):
+                ledger.reserve(spec['target_key'], body_budget_bytes=1, deadline_ms=1)
+
+    def test_v4_mutated_authorization_never_reaches_transport(self):
+        mutations = [dict(target_key='unknown'), dict(store_scope='wrong'), dict(job_sha256='0' * 64),
+                     dict(worker_sha256='0' * 64), dict(application_sha256='0' * 64),
+                     dict(store_sha256='0' * 64), dict(body_budget_bytes=101), dict(body_budget_bytes=True),
+                     dict(deadline_ms=119000), dict(deadline_ms=True), dict(output_path='data/runs/wrong'),
+                     dict(bootstrap_sha256='0' * 64), dict(contract='financial-acquisition-worker-v5')]
+        cases = [{'changes': change} for change in mutations] + [dict(bound=False), dict(finished=True),
+                 dict(row_changes={'deadline_ms': 119000}), dict(row_changes={'body_budget_bytes': 99}),
+                 dict(limits=dict(self.limits, attempts=self.limits['attempts'] + 1))]
+        for case in cases:
+            with self.subTest(case=case):
+                path, pin, _, _ = self.specification(**case)
+                with patch.object(self.api, 'require_supported'), patch.object(self.api, 'verify_worker_ancestry'), \
+                        patch('bank_quality.archive.fetch_bounded') as fetch:
+                    with self.assertRaises(ValueError):
+                        self.invoke(path, pin)
+                    fetch.assert_not_called()
+
+    def test_v4_binding_pin_launcher_parent_and_paths_are_authoritative(self):
+        import sqlite3
+        for mutation in ('pin', 'launcher', 'ancestry', 'job-directory', 'store-directory', 'spec-directory', 'output-exists', 'job-v1'):
+            with self.subTest(mutation=mutation):
+                path, pin, spec, db = self.specification()
+                if mutation in ('pin', 'launcher'):
+                    with sqlite3.connect(db) as conn:
+                        if mutation == 'pin':
+                            conn.execute("UPDATE attempts SET spec_sha256=?", ('0' * 64,))
+                        else:
+                            conn.execute("UPDATE attempts SET launcher_identity_json=?", ('{"pid":true,"creation_time":34,"contained":true}',))
+                elif mutation == 'output-exists':
+                    (self.root / spec['output_path']).mkdir()
+                elif mutation == 'job-v1':
+                    changed = dict(self.job, contract='financial-acquisition-job-v1')
+                    (self.root / spec['job_path']).write_bytes(canonical(changed))
+                elif mutation.endswith('directory'):
+                    other = path.parent / 'other'
+                    other.mkdir()
+                    if mutation == 'spec-directory':
+                        path = path.rename(other / path.name)
+                    else:
+                        key = 'job_path' if mutation == 'job-directory' else 'store_path'
+                        original = self.root / spec[key]
+                        relocated = original.rename(other / original.name)
+                        spec[key] = relocated.relative_to(self.root).as_posix()
+                        path.write_bytes(canonical(spec))
+                        pin = sha(path.read_bytes())
+                        with sqlite3.connect(db if mutation == 'job-directory' else relocated) as conn:
+                            conn.execute('UPDATE attempts SET spec_sha256=?', (pin,))
+                ancestry = patch.object(self.api, 'verify_worker_ancestry',
+                                        side_effect=ValueError('ancestry') if mutation == 'ancestry' else None)
+                with patch.object(self.api, 'require_supported'), ancestry, patch('bank_quality.archive.fetch_bounded') as fetch:
+                    with self.assertRaises(ValueError):
+                        self.invoke(path, pin)
+                    fetch.assert_not_called()
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Real Win32 ancestry required')
+    def test_v4_native_fixture_proves_sql_binding_and_live_ancestry_without_get(self):
+        from bank_quality import windows_acquisition as windows
+        from tests import test_windows_acquisition as fixture_worker
+        marker = self.root / 'data/runs/authorized.json'
+        changes = {'fixture_authorization': True, 'fixture_root': str(self.root),
+                   'fixture_frozen': self.api._FROZEN, 'marker': str(marker),
+                   'parent_identity': windows._current_identity(),
+                   'worker_sha256': sha(Path(fixture_worker.__file__).read_bytes())}
+        path, pin, spec, db = self.specification(changes=changes, bound=False)
+        def bind(identity):
+            self.assertFalse(marker.exists())
+            with self.Store.open(db, scope=spec['store_scope']) as store:
+                store.bind_worker(spec['attempt_id'], spec_sha256=pin, launcher_identity=identity)
+        with patch.object(windows, '_WORKER_MODULE', 'tests.test_windows_acquisition'):
+            result = windows.run_contained_attempt(path, pin, deadline_seconds=120, before_resume=bind)
+        error = Path(str(marker) + '.error')
+        self.assertEqual(result['exit_code'], 0, error.read_text() if error.exists() else result)
+        self.assertTrue(result['tree_extinct'])
+        self.assertEqual(json.loads(marker.read_bytes()), {'authorized_target': spec['target_key']})
+
+
 class AcquisitionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
