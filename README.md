@@ -35,6 +35,34 @@ O pacote não contém cadastro institucional completo. A consulta usa os código
 
 Os 428 gzip recebidos passaram na conferência de hashes/tamanhos. Pilotos foram revisados antes da expansão; a conferência integral dos resultados e a integração estão registradas na [PR 84](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/84) e no [plano vigente](docs/superpowers/plans/2026-10-05-financial-historical-acquisition-remaining.md). Conversão financeira: 194,844 segundos; os três complementos, em sequência: 236,969 segundos. São medidas desta máquina e pacote. Pacote, Parquet e credenciais ficam fora do GitHub.
 
+## Catálogo temporal de variáveis
+
+O catálogo dos quatro conjuntos está em `data/curated/ifdata-variable-catalog-20261011/`, com duas tabelas SQL e cópias CSV:
+
+- `catalogo_variaveis`: 438 combinações literais de variável/contexto/definição; nome, descrição/composição, código, grupo, períodos observados, extremos, variantes e alertas.
+- `cobertura_variaveis`: 11.331 combinações definição/trimestre, com registros, saldos presentes/null, códigos distintos e registros sem código. Reconciliam os 18.228.826 registros da base.
+
+| Conjunto | Definições/contextos | Linhas de cobertura |
+|---|---:|---:|
+| financial | 196 | 5.140 |
+| individual | 193 | 5.080 |
+| capital | 37 | 927 |
+| segmentation | 12 | 184 |
+
+2010–2024 é a janela principal da monografia; `periodos_2010_2024` e `periodos_2025_2026` permitem separar o complemento. Uma definição literal pode ser observada em muitos trimestres. As 438 linhas não representam 438 séries econômicas harmonizadas.
+
+```powershell
+# Procurar lucro líquido e examinar mudanças de composição/código.
+.venv/Scripts/python.exe scripts/catalog-ifdata-variables.py query data/curated/ifdata-variable-catalog-20261011 "SELECT Conta, NomeColuna, DescricaoColuna, primeira_referencia, ultima_referencia FROM catalogo_variaveis WHERE dataset='financial' AND NumeroRelatorio='1' AND lower(NomeColuna) LIKE '%lucro%' ORDER BY primeira_referencia"
+
+# Reproduzir em destino novo, usando somente os Parquet já aceitos.
+.venv/Scripts/python.exe scripts/catalog-ifdata-variables.py build data/curated/ifdata-odata-20261011 data/curated/ifdata-variable-catalog-reproducao
+```
+
+As cópias `catalogo_variaveis.csv` e `cobertura_variaveis.csv` podem ser importadas como CSV UTF-8. `variantes_no_contexto` sinaliza diferentes nomes/descrições no mesmo dataset/tipo/relatório/Conta/Grupo. `codigos_com_mesmo_nome` ajuda a investigar códigos diferentes com rótulo igual. `periodos_sem_registro_entre_extremos` mostra somente lacunas observadas entre primeira e última aparição de cada definição, dentro do eixo disponível do conjunto; não identifica ausência estrutural. `atravessa_2025` sinaliza contexto presente dos dois lados da fronteira2025.
+
+A comparabilidade fica `nao_certificada`: estabilidade literal e cobertura não comprovam unidade, janela de fluxo, mensuração ou perímetro. O catálogo preserva descrições e auxilia a pesquisa dos componentes de indicadores, sem calcular/adotar indicadores ou inventar equivalências. [Fontes, dicionário e exemplos observados](docs/engineering/ifdata-variable-catalog-20261011.md).
+
 **Retomada — 2026-10-06:** a [Release de snapshot](https://github.com/joaosantossgp/brazilian_banks_data_quality/releases/tag/snapshot-ifdata-11-20261006) transporta os dados locais sob criptografia, com `RETOMADA.md`, hashes e helpers de restauração em staging novo. O transporte foi validado no receptor e os11 conjuntos aceitos passaram na leitura integral/consultas; o candidato59 foi reconciliado em branch própria, com compatibilidade de runtime histórico, revisão/checks e recursos ainda necessários antes de coletar. A [nota59](docs/engineering/financial-historical-acquisition-remaining-20261005.md) registra provas e limitações. O clone ou download do ZIP de código não traz a base local; chave e pacote aberto permanecem privados e não entram no GitHub. Cobertura permanece11/66, sem nova coleta59.
 
 **Direção aprovada — 2026-10-04:** a frente financeira final cobre Resumo, Ativo, Passivo e DRE oficiais, com todas as variáveis disponíveis e contratos próprios, nas referências trimestrais disponíveis do alvo2010–2026. O piloto de oito variáveis é uma primeira fatia, sem comprovar o histórico completo. A execução avança pelas Issues do [mapa2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2), com decisões técnicas autônomas registradas, testes/revisão e paralelismo medido entre lotes independentes. Decisões de objetivo/conteúdo final, metodologia acadêmica e mudanças críticas permanecem com João.
