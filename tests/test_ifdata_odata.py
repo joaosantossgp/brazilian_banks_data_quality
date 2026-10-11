@@ -75,6 +75,24 @@ class ODataImportTests(unittest.TestCase):
             self.assertEqual(conn.execute('select Grupo, Saldo from ifdata order by source_row').fetchall(),
                              [('', '-0.000'), ('\x00', '1e-20')])
 
+    def test_native_nullable_strings_preserved_without_dropping_rows(self):
+        # Captured 201909 has CodInst=null. Edm.String properties also allow
+        # null in labels; preserving these rows must not invent an identity.
+        row = json.loads(self.row('null'))
+        for field in ('CodInst', 'NomeRelatorio', 'Grupo', 'Conta',
+                      'NomeColuna', 'DescricaoColuna'):
+            row[field] = None
+        self.rows = [json.dumps(row), self.row('0')]
+        self.write_package()
+        result = self.api().import_package(self.root, self.output)
+        self.assertEqual(result['rows'], 2)
+        with self.api().open_dataset(self.output) as conn:
+            self.assertEqual(conn.execute(
+                'select CodInst, NomeRelatorio, Grupo, Conta, NomeColuna, '
+                'DescricaoColuna, Saldo from ifdata where source_row=\'1\'').fetchone(),
+                (None,) * 7)
+            self.assertEqual(conn.execute('select count(*) from ifdata').fetchone()[0], 2)
+
     def test_rejects_bad_hash_counts_context_schema_and_values(self):
         cases = ['hash', 'page_count', 'entry_count', 'size', 'context', 'period', 'type', 'saldo', 'missing', 'duplicate', 'nan', 'path', 'gzip']
         for case in cases:
@@ -128,4 +146,3 @@ class ODataImportTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

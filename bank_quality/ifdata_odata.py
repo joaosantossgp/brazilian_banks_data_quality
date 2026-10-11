@@ -92,7 +92,9 @@ def _rows(raw, entry, page, reports):
         if not isinstance(row, dict) or set(row) != set(FIELDS):
             raise ValueError(f'Unexpected row schema at row {index}')
         for field in FIELDS[1:-1]:
-            if row[field] is None and field == 'Grupo':
+            # Native Edm.String properties are nullable. Context and report
+            # selectors must remain present so a row can be attributed safely.
+            if row[field] is None and field not in ('AnoMes', 'NumeroRelatorio'):
                 continue
             if type(row[field]) is not str:
                 raise ValueError(f'Invalid {field} at row {index}')

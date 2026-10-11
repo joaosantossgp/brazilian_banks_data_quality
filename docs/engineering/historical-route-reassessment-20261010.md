@@ -1,5 +1,21 @@
 # Reavaliação da rota histórica — 2026-10-10
 
+## Importação offline substitui a rota principal — 2026-10-11
+
+João forneceu pacote já capturado do serviço oficial IfDataValores e pediu operação simples em Python. [Plano vigente](../superpowers/plans/2026-10-05-financial-historical-acquisition-remaining.md): receber/conferir → leitor comum JSON/gzip → Parquet/consulta → complementos → conferência final. As alternativas transacionais abaixo são histórico; concluir coleta/retomada/SQL ou configurar BigQuery deixa de ser requisito.
+
+Inventário declara55faltantes no tipo2,428consultas e56.298.508registros entre todos os tipos. Dois gzip físicos201003/tipo2 e202312/tipo2 passaram hash/leitura. Comparação202312:84.300 valores idênticos e duas diferenças decimais finais entre84.302correspondências únicas;16.584posições sem correspondência e1.382com colisão na chave diagnóstica reduzida. Não adotar normalização de códigos como vínculo nem obrigar vintages a coincidir. Importar os campos/valores literais evita forçar a fonte nova pelo contrato antigo.
+
+Revisadas nove Issues abertas:59recebimento,60importação,61consulta,63complementos,64conferência,2mapa;3unidade/amostra,14indicadores e17governança ficam fora da dependência dos dados.16/62encerradas são referências existentes, sem duplicação. Inventário por arquivo/resumo de cobertura e revisões por resultado bastam. PR83/alterações pendentes preservadas.
+
+Estimativa6–11horas, primeiro lote útil2–4horas, recalibrar com throughput real. Planejamento não aceita períodos novos, não publica endereço privado nem pacote e não altera o método acadêmico.
+
+
+Resultado2026-10-11: os quatro conjuntos foram convertidos, total18.228.826registros. Financeiro66trimestres/7.945.863linhas em194,844s; complementos8.679.083individual+1.344.190Capital+259.690Segmentação em236,969s. Conferência independente integral financeira APP; complementos completos APP: todas10.282.963linhas/16campos comparadas literalmente, hashes/cobertura348/348, após pilotos APP. A rota simples entregou dados consultáveis em minutos de processamento, superando a estimativa inicial; publicação/CI na PR84.
+
+---
+
+
 Pesquisa e replanejamento na [Issue59](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/59#issuecomment-6097602099), solicitados por João para reduzir demora e complexidade. As duas recomendações foram aprovadas em 2026-10-10; a aprovação da rota não significa que seus gates técnicos já passaram. Base ca63ee9674f58f9a80221af721fe6ebfc00025d3; checkpoint aeaf50877c30cb5844c2806a50d3f42668e098fa. Root integra a documentação; pesquisa independente somente leitura conferiu as alternativas. Nenhum GET, teste demorado, alteração de autoridade ou dado nesta pesquisa.
 
 ## Evidência e diagnóstico
