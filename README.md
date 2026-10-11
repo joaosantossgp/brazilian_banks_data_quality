@@ -75,6 +75,31 @@ Base local de engenharia para a monografia de João sobre bancos brasileiros com
 
 Checkout no computador autorizado, na raiz deste repositório. A fundação e o piloto foram integrados em `main` pelo [PR 1](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/1), commit `3234c20`, com [CI aprovado](https://github.com/joaosantossgp/brazilian_banks_data_quality/actions/runs/37048733876). O Project privado não torna privado o repositório público nem suas Issues.
 
+## Cadastro temporal e vínculos
+
+O cadastro recebido está em `data/curated/ifdata-cadastro-20261011/`: **512.959 registros, 6.517 códigos distintos e 106 trimestres (200003–202606)**. A view `cadastro` preserva os 16 campos nativos e a origem. A view `vinculos` expõe separadamente as relações financeiras e prudenciais declaradas em cada data-base; não define identidade com emissores/holdings ou amostra acadêmica.
+
+```powershell
+.venv/Scripts/python.exe scripts/import-ifdata-cadastro.py query data/curated/ifdata-cadastro-20261011 "SELECT CodInst, Data, NomeInstituicao, CodConglomeradoFinanceiro, CodConglomeradoPrudencial FROM cadastro WHERE Data = '202412' LIMIT 10"
+```
+
+Para consultar valores com cadastro, informe o conjunto nativo. A view `ifdata_cadastrado` faz `LEFT JOIN` por `CodInst` e `AnoMes = Data`, preservando todas as linhas e sinalizando `cadastro_encontrado`:
+
+```powershell
+.venv/Scripts/python.exe scripts/import-ifdata-cadastro.py query data/curated/ifdata-cadastro-20261011 "SELECT AnoMes, CodInst, NomeInstituicao, Conta, Saldo, cadastro_encontrado FROM ifdata_cadastrado WHERE AnoMes = '202412' LIMIT 10" --values data/curated/ifdata-odata-20261011/financial
+.venv/Scripts/python.exe scripts/import-ifdata-cadastro.py audit data/curated/ifdata-cadastro-20261011 data/curated/ifdata-odata-20261011
+```
+
+A auditoria dos quatro conjuntos preservou **18.228.826 linhas**, com **4.464 sem cadastro no mesmo trimestre**, incluindo 972 com código nulo na fonte. O conjunto individual teve correspondência integral. Os relatórios locais `coverage.csv`, `unmatched.csv`, `declared_links.csv` e `link-audit.json` detalham resultados; ausência permanece explícita. `CnpjInstituicaoLider` recebido tem oito caracteres quando preenchido: não completar para 14 nem assumir identidade jurídica. `DataInicioAtividade=180001` é preservado sem interpretar como início real.
+
+Para reproduzir a importação, use destino novo:
+
+```powershell
+.venv/Scripts/python.exe scripts/import-ifdata-cadastro.py build data/raw/ifdata-cadastro-20261011/ifdata_cadastro data/curated/ifdata-cadastro-nova-execucao
+```
+
+[Execução, cobertura e limites do cadastro](docs/engineering/ifdata-cadastro-20261011.md). Dados continuam locais/ignorados; JSONs são fonte autoritativa para distinguir vazio e nulo.
+
 ## Entradas e contrato único
 
 - [Arquitetura atual, alvo e contratos](docs/architecture.md)
