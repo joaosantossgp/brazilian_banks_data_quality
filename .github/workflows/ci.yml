@@ -31,3 +31,52 @@ jobs:
         run: node tests/test-budget.cjs
       - name: Portal readiness tests
         run: node --test tests/test-portal-ready.cjs
+
+  windows-native-tests:
+    name: Windows native offline tests
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install offline Parquet dependency
+        run: |
+          python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-duckdb.txt
+      - name: Native claims, ancestry, containment and extinction
+        shell: pwsh
+        run: |
+          @'
+          import os, sys, unittest
+          sys.path.insert(0, 'tests')
+          assert os.name == 'nt', 'Native Windows host required'
+          names = [
+              'test_financial_acquisition.HeadReplacementTests.test_native_own_handle_closes_between_retries_and_same_image_is_published',
+              'test_financial_acquisition.HeadReplacementTests.test_native_own_handle_kept_open_preserves_evidence_after_bounded_failure',
+              'test_financial_acquisition.AuthorityTests.test_live_standalone_worker_cannot_claim_own_identity',
+              'test_financial_acquisition.AuthorityTests.test_contained_fixture_proves_current_reserve_and_launcher_ancestry',
+              'test_financial_acquisition_batch.BatchSchedulerTests.test_parallel_scheduler_barrier_and_member_isolation',
+              'test_financial_acquisition_batch.BatchSchedulerTests.test_live_batch_coordinator_excludes_second_owner',
+              'test_financial_acquisition_batch.HistoricalReplacementInitializationTests.test_native_original_claims_are_released_before_common_initialization',
+              'test_financial_catalog.CatalogMetadataBoundaryTests.test_windows_junction_directory_and_root_rejected',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_identity_commit_callback_before_resume',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_identity_commit_failure_kills_suspended_worker_without_get',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_cancellation_extinguishes_two_active_trees',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_deadline_kills_owned_tree',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_parent_crash_after_creation_before_resume',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_parent_crash_after_resume_kills_launcher_and_grandchild',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_parent_crash_extinguishes_two_active_worker_trees',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_callback_failure_cancels_other_active_tree',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_claim_excludes_second_process_and_releases_after_crash',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_job_list_failure_no_process_or_get',
+              'test_windows_acquisition.WindowsAcquisitionTests.test_resume_failure_kills_suspended_worker',
+              'test_windows_financial_pipeline.WindowsPipelineTests.test_pipeline_worker_is_born_contained_and_descendants_are_extinct_on_guard',
+          ]
+          suite = unittest.defaultTestLoader.loadTestsFromNames(names)
+          assert suite.countTestCases() == 20, 'Native test inventory changed'
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
+          '@ | python -B -
