@@ -77,6 +77,23 @@ class ODataImportTests(unittest.TestCase):
                     self.api().import_package(self.root, target, **selection)
                 self.assertFalse((target / 'manifest.json').exists())
 
+    def test_rejects_invalid_manifest_period_and_type_even_when_body_matches(self):
+        for field, value in [('periodo', 201013), ('tipo', 5),
+                             ('periodo', '201003'), ('tipo', '2'), ('tipo', True)]:
+            with self.subTest(field=field, value=value):
+                self.rows = [self.row('1')]
+                if field == 'periodo' and value == 201013:
+                    self.rows = [self.rows[0].replace('201003', '201013')]
+                if field == 'tipo' and value == 5:
+                    self.rows = [self.rows[0].replace('"TipoInstituicao": 2', '"TipoInstituicao": 5')]
+                self.write_package()
+                self.manifest[0][field] = value
+                self.save_manifest()
+                target = self.output / f'{field}-{value}'
+                with self.assertRaisesRegex(ValueError, 'Invalid manifest'):
+                    self.api().import_package(self.root, target)
+                self.assertFalse((target / 'manifest.json').exists())
+
     def test_requires_requested_period_type_combinations(self):
         # Both axes exist, but (201003, 3) and (201006, 2) do not.
         raw = gzip.decompress((self.root / 'dados/page.json.gz').read_bytes())

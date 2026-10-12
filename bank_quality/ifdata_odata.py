@@ -134,6 +134,10 @@ def import_package(root, output, periods=None, types=None, reports=None):
             continue
         if types is not None and str(entry.get('tipo')) not in types:
             continue
+        if type(entry.get('periodo')) is not int or not re.fullmatch(r'[0-9]{4}(03|06|09|12)', str(entry['periodo'])):
+            raise ValueError('Invalid manifest period')
+        if type(entry.get('tipo')) is not int or entry['tipo'] not in (1, 2, 3, 4):
+            raise ValueError('Invalid manifest type')
         selected.append(entry)
     contexts = {(str(e.get('periodo')), str(e.get('tipo'))) for e in selected}
     missing_periods = (periods or set()) - {p for p, _ in contexts}
