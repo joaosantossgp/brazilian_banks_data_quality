@@ -596,6 +596,29 @@ class AcquisitionTests(unittest.TestCase):
             self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
 
 
+    def test_public_recent_member_contract_is_finite_pure_and_isolated(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.assertTrue(callable(getattr(batch, 'recent_member_contract', None)),
+                        'Public recent member contract is absent')
+        with patch.object(batch, '_path', side_effect=AssertionError('Contract must not read files')):
+            for period in (202406, 202409, 202506, 202509, 202512, 202603, 202606):
+                scope = 'financial-recent-202312-202606-v1/' + str(period)
+                contract = batch.recent_member_contract(scope)
+                self.assertEqual(set(contract), {'period', 'policies'})
+                self.assertEqual(contract['period'], period)
+                self.assertEqual(contract['policies']['numeric_body_bytes'], 64 * 1024 * 1024)
+                contract['policies']['numeric_body_bytes'] = 0
+                contract['period'] = 0
+                self.assertEqual(batch.recent_member_contract(scope)['period'], period)
+                self.assertEqual(batch.recent_member_contract(scope)['policies']['numeric_body_bytes'], 64 * 1024 * 1024)
+            for scope in ('issue50/financial-202403-1005-native-four',
+                          'financial-recent-202312-202606-v1/202403',
+                          'financial-recent-202312-202606-v1/202609',
+                          'financial-recent-202312-202606-v1/0202406',
+                          'financial-recent-202312-202606-v1/202406/nonce', None, True, []):
+                with self.subTest(scope=scope):
+                    self.assertIsNone(batch.recent_member_contract(scope))
+
     def test_new_batch_scope_prepare_is_exact_singleton_without_execution_permission(self):
         self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
         job = self.prepare((202406,))

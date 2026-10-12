@@ -100,6 +100,20 @@ def _same(actual, expected, message):
     _require(_canonical(actual) == _canonical(expected), message)
 
 
+def recent_member_contract(acquisition_scope: str) -> dict | None:
+    """Return an isolated finite recent v1 contract, without granting execution.
+
+    Unknown scopes/types are not members. Candidate preparation and executable
+    job verification retain their separate checks and coordinator capability.
+    """
+    if type(acquisition_scope) is not str:
+        return None
+    for period in _ACQUIRE:
+        if acquisition_scope == _SCOPE + '/' + str(period):
+            return {'period': period, 'policies': copy.deepcopy(_POLICIES)}
+    return None
+
+
 def _relative_name(name):
     _require(type(name) is str and name and '\\' not in name and ':' not in name
              and all(p not in ('', '.', '..') for p in name.split('/')), 'Path escape or absolute path')
