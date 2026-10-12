@@ -5,7 +5,7 @@
 **Goal:** testar os oito candidatos com saídas SQL/estatísticas/visuais nas duas unidades aprovadas por João, preservando contextos e motivos de não cálculo.
 **Architecture:** módulo adjacente aos leitores autenticados existentes gera componentes e resultados em destino novo ignorado. Mesma tabela alimenta CSV/Parquet, estatística e painel HTML local; sem servidor ou dependência adicional.
 **Tech Stack:** Python 3.12, DuckDB existente, Decimal, HTML/SVG/JavaScript nativos.
-**Spec:** contrato aprovado no diálogo e [Issue88](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/88), proposta [14](../engineering/academic-indicators-components-20261004.md).
+**Spec:** contrato aprovado no diálogo e [Issue88](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/88), proposta [14](../../engineering/academic-indicators-components-20261004.md).
 
 ## Restrições e ownership
 

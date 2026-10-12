@@ -72,12 +72,12 @@ Não criar Wiki, outro Project, ADR duplicando a spec, suite de testes de texto 
 # Arquitetura e contratos
 
 ## Referência de decisões
-O contrato aprovado é [fundação de governança, pesquisa e rigor](superpowers/specs/2026-10-02-governance-research-design.md).
-Termos de domínio ficam no [glossário](../GLOSSARY.md); tarefas seguem o [tracker](agents/issue-tracker.md).
+O contrato aprovado é [fundação de governança, pesquisa e rigor](../specs/2026-10-02-governance-research-design.md).
+Termos de domínio ficam no [glossário](../../../GLOSSARY.md); tarefas seguem o [tracker](../../agents/issue-tracker.md).
 
 ## Comportamento implementado
 `bank_quality/archive.py` conserva respostas/proveniência; `ifdata.py` e `portal.py` implementam aquisição limitada; `inventory.py` e `coverage.py` inventariam valores/cobertura; `metadata.py` trata evidência cadastral; `replay.py` reproduz o derivado do bruto verificado.
-O código atual cobre os lotes individuais/Resumo 201012, 202312 e 202412. O [ledger de execução](engineering/expansion-execution.md) registra evidência e limitações.
+O código atual cobre os lotes individuais/Resumo 201012, 202312 e 202412. O [ledger de execução](../../engineering/expansion-execution.md) registra evidência e limitações.
 
 ## Base alvo, ainda não implementada
 Aquisição IF.data -> bruto imutável/versionado -> inventários por referência/perspectiva/relatório -> metadados temporais CVM/B3 e vínculos comprovados -> recortes documentados para monografia e outros projetos.
