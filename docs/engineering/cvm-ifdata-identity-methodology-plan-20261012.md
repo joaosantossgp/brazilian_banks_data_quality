@@ -135,3 +135,76 @@ Na conferência inicial, #91 (revisão da base) estava em execução com allowli
 Conferir links locais, inventário da allowlist e coerência entre fontes/afirmações/pendências; revisão independente em snapshot exato antes da publicação. Texto não exige suíte de software. Revisões posteriores desta frente atualizam esta nota com data, fonte/localizador, alteração, motivo, decisão e limites, referenciando evidência especializada sem duplicá-la. O pedido de documentação vale para esta frente; não foi gravado como alteração de memória global.
 
 Histórico inicial: 2026-10-12 — direção de João registrada, contratos existentes reutilizados, fontes CVM/FMI consultadas e primeira rota proposta. Estado de revisão/publicação e hash do snapshot serão registrados na Issue 99; nenhuma aprovação final de método é declarada neste arquivo.
+
+## Execução do goal — 2026-10-12
+
+João aprovou prosseguir e pediu um goal no app; execução na [Issue102](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102), [plano](../superpowers/plans/2026-10-12-cvm-ifdata-front.md), em worktree isolada. A nota inicial99 foi integrada pela PR100 no merge `6535862eed9bce9cfaaaa29b9064cfc8045a5a65`; CI pós-merge `38283327420` concluiu SUCCESS. Isso conclui a entrega documental inicial, não esta nova frente inteira.
+
+A pesquisa [A1 de fontes](cvm-historical-sources-20261012.md) recebeu revisão independente PASS no SHA256 `c51d2c17fd7d661afd0ac8b54d9c76753b8a30860744d3ab98f92052c4af8236`. Recomenda núcleo CAD + quinze FCA2010–2024, 7.393.039bytes anunciados em HEAD, sem adquirir FRE no núcleo. A [pesquisa B1 metodológica](institution-type-indicator-methodology-20261012.md) também recebeu revisão independente PASS no SHA256 `6187461f020b0ae945d182fb923d707dbb511460b95f0d213f85b0ae74897baa`, com métodos/amostras/fórmulas conferidos nas fontes originais. Os dois documentos conservam fontes, localizadores e limites próprios; PASS documental não valida método acadêmico, bindings ou dados empíricos IF.data.
+
+Após contrato específico registrado na Issue102 e revisão independente do script/contrato, Root capturou **somente CAD + FCA2010 + FCA2024**, em destino novo ignorado `data/raw/cvm-identity-20261012/pilot/`. Três respostas HTTP200 completas, 1.493.831/337.720/391.992bytes. Índice SHA256 `f57abde651523cbf6f7bde5e7247cf890f18c5f65fc3b557b5bce2deefab7be8`. Diagnóstico privado SHA256 `3092e3b67e2a8e75a8d3c4bd298cb9b188ff7ed57189fb6787c8ab92c26868bf`; **ainda não é admissão/expansão ou identidade aceita**. Transportes/corpos/manifests e headers permanecem privados; não publicar cookies ou dados pessoais incidentais.
+
+| Fonte/membro diagnosticado | Registros lógicos × campos observados |
+|---|---:|
+| CAD atual | 2.678 × 47 |
+| FCA2010 índice / geral / valores mobiliários | 1.096 × 9 / 646 × 26 / 635 × 18 |
+| FCA2024 índice / geral / valores mobiliários | 1.287 × 9 / 733 × 26 / 1.023 × 18 |
+
+Achados observados no piloto, sujeitos à revisão independente do diagnóstico antes da admissão:
+
+- CAD contém **CD_CVM1279 cancelado e19348 ativo para o mesmo CNPJ completo60.872.504/0001-23**. CNPJ identifica a pessoa jurídica, mas não basta como chave única do registro CVM; preservar ambos, códigos e eventos, sem deduplicar por CNPJ/status atual ou inventar continuidade histórica. Localizador: CAD corpo pinado pelo índice, `CD_CVM IN ('1279','19348')`.
+- FCA geral dos três emissores tem `Data_Referencia=2010-01-01` e `2024-01-01`, versões/documentos próprios. Isso não prova relação jurídica ou elegibilidade em31dezembro desses anos. Localizadores: geral2010 registros lógicos1/511/515, IDs3724/1739/1836; geral2024 registros1/615/619, IDs135645/137121/141278. Documentos, referência e vigência não são intercambiáveis.
+- Os sete membros selecionados têm larguras coerentes no parsing diagnóstico, sem bytes0x80–0x9F. Latin1 é perfil operacional candidato explícito; esse diagnóstico não comprova encoding oficial de todos os anos. A revisão do perfil, esquemas, chaves e datas precede projeção/admissão.
+
+Root também reautenticou o corpo CAD legado de2026-10-01, SHA256 `5b648b892a52706b09da97241514743e3682b35b6c8781742fe384b1e50f8796`, e consultou cadastroIFdata existente pelo leitor autenticado em201012/202312/202412, sem modificar dados. A consulta confirma candidatos individuais/financeiros/prudenciais separados; não converte código de oito dígitos em CNPJ completo nem resolve relações. A tentativa exploratória de ler CAD legado como UTF8 falhou; o diagnóstico identificou charset ausente no header e a convençãoLatin1 do leitor legado existente. A correção ficou explícita no baseline privado, sem fallback de admissão ou claim de encoding oficial.
+
+A revisão independente do piloto confirmou o diagnóstico e achou multiplicidade cadastral/documental, duplicatas físicas e conflito de CNPJ em documento2010 fora dos três casos. O [contrato A2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102#issuecomment-6129455312) exige preservação literal e relatório desses conflitos, sem fallback por ID ou deduplicação. A captura adicional terminou: **16 fontes CAD + FCA2010–2024, 7.393.039bytes**, índice externo SHA256 `3a04c6ca7858728845b130bfcc97960b78880d1f10efd43f1954845683e98473`. Revisor reautenticou16manifests/corpos/respostas, quinzeZIPs/CRC e46CSV selecionados; schemas coincidem com o piloto, nenhum byteC1. Captura/contrato PASS, ainda sem admissão de pacote ou vínculo jurídico.
+
+Gates previstos naquele checkpoint: revisão independente da implementação offline; piloto/replay; admissão/verificação/replay das16fontes; relatório datado dos seis casos, mantendo unknown se as fontes não satisfizerem o contrato de identidade. Esses recortes foram concluídos conforme as seções seguintes. Composição/checks/publicação são os gates de encerramento; seu estado final, hashes e resultados ficam na Issue102 e fronteira#2. Nenhuma escolha acadêmica ou amostra foi adotada.
+
+### Prova delimitada A2: seis casos
+
+O pesquisador reautenticou fontes CVM do piloto e cadastro IF.data existente via `open_cadastro`, comparando também cada linha com os JSONs brutos. Nenhum novoGET para esta prova. As referências pedidas são2010-12-31/2024-12-31; todas as linhas FCA abaixo declaram janeiro1. Localizadores são registros lógicos1-based excluindo cabeçalho, no membro `fca_cia_aberta_geral_ANO.csv`; códigos preservam o texto nativo.
+
+| Caso/data | CNPJ completo CVM / código FCA | Geral: linha / versão / documento | Códigos IF.data candidatos | Relação aceita |
+|---|---|---|---|---|
+| BB201012 | 00.000.000/0001-91 /001023 | 1 /5 /3724 | 00000000; C0049906 | unknown |
+| Bradesco201012 | 60.746.948/0001-12 /000906 | 511 /2 /1739 | 60746948; C0010045 | unknown |
+| Itaú201012 | 60.872.504/0001-23 /019348 | 515 /2 /1836 | holding60872504; operadora60701190; C0010069 | unknown |
+| BB202412 | 00.000.000/0001-91 /001023 | 1 /3 /135645 | 00000000; C0049906 | unknown |
+| Bradesco202412 | 60.746.948/0001-12 /000906 | 615 /2 /137121 | 60746948; C0010045 | unknown |
+| Itaú202412 | 60.872.504/0001-23 /019348 | 619 /3 /141278 | holding60872504; operadora60701190; C0010069 | unknown |
+
+O namespace investigado é o recurso `IFDATA/v1/IfDataCadastro`; código individual e líder têm8caracteres, conglomerado tem códigoC. Nenhum é convertido em CNPJ14. Brutos IF.data `json/201012.json` SHA256 `73f0fe02ecd9fe625e235a03fa9c03d94eadc96eee06276c0155d799eb71c9a0` e `json/202412.json` SHA256 `9b5ee21a572fbdbc8de6e5071fb7986b024292691edc42530b9a6ee36560436e` foram reconferidos. CVM está ancorada no índice piloto acima. Diagnóstico detalhado privado dos casos SHA256 `9efa6748f1ac0e8945ac87bd9e7d9ddde4e61e81157f5968e04fc07110af8914` conserva fontes/UTC/ordinais/validador e respostas.
+
+Foram executadas14chamadas reais de `metadata.identity_evidence`, cobrindo as ocorrências individuais/financeiras desses casos. Sem objeto completo de prova de relação e sem CNPJ14da segunda ponta, todas retornaram unknown. Motivos: identidades jurídicas incompletas, relação sem correspondência das pontas/namespace/código, tipo de relação ausente, prova sem atributos exigidos de fonte primária/URL/hash/UTC/localizador e sem escopo temporal que cubra dezembro31. Isso descreve o objeto de prova ausente na chamada; **não significa que os arquivos CVM sejam inautênticos ou que as entidades não estejam relacionadas**. Registro histórico e listagem histórica continuam unknown separadamente.
+
+O caso Itaú exige distinguir holding/operadora/conglomerado e investigar registros1279/19348 e datas divergentes de listagem2010/2024. Não preencher ticker2010vazio com2024nem tomar ausência de datafim como vigência comprovada até dezembro. Próximo recorte documental mínimo: fonte oficial datada com ambas as pontas completas e código/namespaceIFdata, ato/FRE de controle da holding quando pertinente e evidência explícita cobrindo a referência. Conglomerado requer prova de membros/líder/perímetro; não recebe CNPJ jurídico inventado. Critério de capital aberto/listagem e unidade final seguem decisão#3, sem escolher a amostra pelos vínculos mais fáceis.
+
+### Pacote completo de metadados: resultado local
+
+O build das16fontes e seu replay produziram manifesto idêntico SHA256 `5abaef4891fdf9eb8eb86aecedbce7694005d98999b85561881018b71c3b79a7`. Diretório novo `data/curated/cvm-identity-20261012/`, com quatroCSVUTF8textuais, quality.json e manifest.json; replay em destino irmão com sufixo-replay. Total47.516linhas: cadastro2.678, documentos23.490, geral10.240, instrumentos11.108. O índice contém CADatual + exatamente15FCA2010–2024; isso descreve arquivos capturados, não cobertura completa de eventos/versões nem amostra financeira.
+
+Quality registra21.343correspondências documentais e cinco conflitosCNPJ em quarentena, preservando77duplicatas literais de instrumentos. Zero chaves incompletas do índice e zero intervalos invertidos foram observados neste corpus; testes sintéticos cobrem esses casos. Cadastro tem2.531CNPJs distintos/2.567paresCNPJ–CVM/2.678triplasCNPJ–CVM–mercado; chave física continua fonte+membro+ordinal, sem deduplicação.
+
+| Ano / ID / versão | Membro e linha lógica em quarentena | CNPJ declarado / CNPJ no índice |
+|---|---|---|
+| 2010 /359 /1 | geral500; valor_mobiliario479 | 60.398.369/0001-26 /60.398.369/0004-79 |
+| 2011 /11617 /1 | geral483 | 33.937.681/0003-30 /33.937.681/0001-78 |
+| 2023 /131922 /3 | geral454; valor_mobiliario615 | 27.743.642/0002-18 /27.743.642/0001-37 |
+
+Os CSVs preservam registros literais; `quality.json` identifica cada fonte/ano/membro/ordinal e impede interpretar conflito como relação documental comprovada. `matched` significa somente correspondência da chave documental completa entre seções, não identidade CVM–IF.data ou elegibilidade acadêmica. Não usar uma tabela isolada sem consultar o ledger de qualidade.
+
+Comandos no checkout com Python local disponível:
+
+```powershell
+python -B scripts/import-cvm-metadata.py verify data/curated/cvm-identity-20261012 --manifest-sha256 5abaef4891fdf9eb8eb86aecedbce7694005d98999b85561881018b71c3b79a7
+python -B scripts/import-cvm-metadata.py build data/raw/cvm-identity-20261012/source-index.json NOVO_DESTINO --index-sha256 3a04c6ca7858728845b130bfcc97960b78880d1f10efd43f1954845683e98473
+python -B -m unittest discover -s tests -p test_cvm_metadata.py -v
+```
+
+Nunca reutilizar destino de build aceito. Verificação é offline e não depende de nova resposta da CVM; manifest e índice exigem os hashes externos acima. CAD projeta18campos autorizados sem contatos, FCA conserva esquemas nativos, parser operacionalLatin1 semC1/campo128KiB; divergência exige revisão. A decisão de manter outras instituições foraIFdata fora do caminho crítico está fundamentada na pesquisaB1, com esforço ainda não medido. A bibliografia e as fichas metodológicas entregues são subsídios à#3, não indicadores já calculados.
+
+Revisão independente concluída por fatias: A1/B1, captura, seis casos, código corrigido, piloto/replay e pacote completo/replay receberam PASS. O revisor comparou todas as linhas às46fontesCSV selecionadas e recomputou qualidade/quarentena. O findingP2 de chave incompleta foi reproduzido em seis subcasos antes da correção, confirmado por17testes e12contraprovas independentes depois; nenhum build real precedeu esse PASS. Recibo local `data/runs/cvm-identity-receipt-20261012.json`, SHA256 `41da6bb483ab3aa8567a63aadf89c5d8eaa9b125f945cf1be01a4e59b3a76275`, registra aceite literal e limites, sem provar publicação remota. Software/CLI/teste mantêm pins de revisão no registro da Issue102.
+
+A composição incorporou main após PR103 da frente95. Houve conflito apenas na entrada arquitetural adjacente; manteve-se integralmente a descrição financeira nova e acrescentou-se a responsabilidadeCVM. Código financeiro não integra o diff desta frente. Publicação, SHA entregue, CI e encerramento do goal são conferidos na Issue102; a aprovação local não é estado remoto.
