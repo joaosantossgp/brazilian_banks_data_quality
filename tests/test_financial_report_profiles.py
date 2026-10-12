@@ -1063,7 +1063,10 @@ class BatchAcquisitionBridgeTests(unittest.TestCase):
     def test_batch_bridge_projects_all_seven_without_rewriting_originals(self):
         with acquisition_batch_bridge() as f:
             before = self.snapshot(f)
-            result = self.compose(f)
+            self.assertTrue(callable(getattr(f.batch, 'verified_recent_capture', None)))
+            with patch.object(f.batch, 'verified_recent_capture', wraps=f.batch.verified_recent_capture) as capture:
+                result = self.compose(f)
+            self.assertEqual(capture.call_count, 1)
             self.assertEqual(before, self.snapshot(f))
             self.assertEqual(set(result), {'contract', 'batch', 'source_state', 'source_state_files', 'members', 'limitations'})
             self.assertEqual(result['contract'], 'ifdata-financial-acquisition-batch-bridge-v1')
@@ -1126,6 +1129,35 @@ class BatchAcquisitionBridgeTests(unittest.TestCase):
             before = self.snapshot(f)
             with self.assertRaises(ValueError): self.compose(f)
             self.assertEqual(before, self.snapshot(f))
+
+    def test_batch_bridge_does_not_project_unverified_capture(self):
+        with acquisition_batch_bridge() as f:
+            value = copy.deepcopy(f.handoff)
+            value['entries'][2]['metadata_receipt']['sha256'] = '0' * 64
+            with patch.object(profiles, '_project_acquisition_handoffs',
+                              wraps=profiles._project_acquisition_handoffs) as project:
+                with self.assertRaises(ValueError):
+                    self.compose(f, value)
+            project.assert_not_called()
+
+    def test_batch_bridge_rejects_authority_or_registry_changed_during_projection(self):
+        for source in ('authority', 'registry'):
+            with self.subTest(source=source), acquisition_batch_bridge() as f:
+                name = ('bank_quality/financial-reports-registry.json' if source == 'registry'
+                        else f.bundle['members'][0]['authority_path'] + '/head.json')
+                path = f.root / name
+                body = path.read_bytes()
+                original = profiles._project_acquisition_handoffs
+                def changed_during_projection(*args):
+                    result = original(*args)
+                    path.write_bytes(body + b' ')
+                    return result
+                with patch.object(profiles, '_project_acquisition_handoffs',
+                                  side_effect=changed_during_projection) as project:
+                    with self.assertRaisesRegex(ValueError, 'changed during projection'):
+                        self.compose(f)
+                self.assertGreater(project.call_count, 0)
+                path.write_bytes(body)
 
     def test_batch_bridge_opens_authority_once_for_all_members(self):
         with acquisition_batch_bridge() as f:

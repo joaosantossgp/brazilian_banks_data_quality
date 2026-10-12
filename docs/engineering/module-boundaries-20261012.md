@@ -32,3 +32,19 @@ A conferência usa pins capturados na base anterior e `_check_code` real: espera
 - **C — contratos finitos acquisition↔batch:** reduzir dependência circular das constantes/políticas de execução. Exige identidade de execução, ownership e tratamento de pins explícitos; não é uma extração mecânica de constantes.
 
 B/C exigem contrato, allowlist, regressões e revisão próprios antes da escrita. A conclusão de A não encerra a Issue95 nem comprova que o pacote inteiro foi modularizado. Código legado ativo e evidências anteriores permanecem preservados.
+
+## Fatia B: snapshot sob a autoridade corrente
+
+[Contrato B](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/95#issuecomment-6129092513), base `ae25c25`, branch `codex/module-boundaries-bc-20261012`. A allowlist reutiliza os mesmos cinco arquivos de A; sem novo módulo, camada ou dependência. A prova corrente v1 não é substituída por `verify_historical_capture`, que autentica evidência histórica sob contrato distinto e sem claim do runtime antigo.
+
+`verified_recent_capture(bundle_path, handoff_path, *, bundle_sha256, bootstrap_sha256, handoff_sha256, authoring_state_paths=())` é um contexto público no batch. Autentica a janela finita e todas as entradas, mantém uma única claim durante prova e projeção e entrega um snapshot independente. Preserva o inventário físico anterior: bundle, handoff, registry de autoria, código pinado, bootstraps, journals, heads, jobs, bindings, checkpoints e receipts. Paths adicionais são relativos e confinados, acrescentam imagens antes/depois e não concedem autoridade. Na saída, reconfere bytes imutáveis e imagens; a projeção só pode ser retornada depois da saída bem-sucedida.
+
+Profiles conserva a seleção do descritor instalado e a projeção das fontes. Não recebe o objeto `_Batch`, handles, callbacks de execução ou journals mutáveis. O retorno da ponte conserva contrato, shape, seleção, fontes, hashes, contadores e sequências; não concede aquisição, recuperação, admissão ou comparabilidade.
+
+Plano de execução e checkpoints:
+
+- B1: três testes RED pela ausência da API; extração da prova existente; GREEN com arquivos reais, abertura/prova únicas, isolamento do snapshot, mudança do registry detectada na saída e liberação da claim após erro. Checkpoint `a4dbf18`; revisão independente antes da migração.
+- B2: regressão causal do caller deve falhar antes da migração; consumir apenas o contexto público; manter testes de adulteração/pending/halt e acrescentar ausência de projeção em falha inicial e recusa de mudança durante a projeção. Conferir `python -B -m unittest discover -s tests -p test_financial_report_profiles.py -k AcquisitionBridgeTests -v`, diff/allowlist, pins e revisão independente da composição antes de C.
+- Integração: CI integral Ubuntu/Windows e pós-merge; árvores revista/integrada equivalentes. Evidências de tempos, SHA e estados remotos na Issue95/PR, sem antecipar PASS.
+
+Os pins de batch/profiles mudam novamente; valem as mesmas restrições de A. Os nove outros módulos pinados e fixtures históricas permanecem intactos até uma eventual allowlist posterior explícita. Nenhum plano aceito é regravado.
