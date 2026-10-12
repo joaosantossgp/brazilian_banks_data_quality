@@ -505,4 +505,3 @@ def verify_cvm_metadata(output: str | Path, expected_manifest_sha256: str) -> di
     if len(raw) != item.get('bytes') or quality.get('contract') != 'cvm-identity-quality-v1':
         raise ValueError('Quality evidence mismatch')
     return manifest
-
