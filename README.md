@@ -100,6 +100,36 @@ Para reproduzir a importação, use destino novo:
 
 [Execução, cobertura e limites do cadastro](docs/engineering/ifdata-cadastro-20261011.md). Dados continuam locais/ignorados; JSONs são fonte autoritativa para distinguir vazio e nulo.
 
+## Piloto de indicadores consultável
+
+A [Issue 88](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/88) implementa oito candidatos: ROE, ROA, margem líquida, crédito/depósitos, provisão/crédito, PL/ativo, Basileia e capital principal. ROE e ROA têm duas variantes de média: abertura/fechamento e trimestral com pesos iguais, incluindo a abertura. As saídas ficam em `data/curated/ifdata-indicator-pilot-20261011/`.
+
+```powershell
+# Consultar valores, componentes e motivos de não cálculo.
+.venv/Scripts/python.exe scripts/pilot-ifdata-indicators.py query data/curated/ifdata-indicator-pilot-20261011 "SELECT dataset, unit_class, code, period, indicator, method, numerator, denominator, value, status FROM results WHERE period='202412' AND indicator='roe' LIMIT 20"
+
+# Examinar cobertura: n inclui resultados calculáveis e indisponíveis.
+.venv/Scripts/python.exe scripts/pilot-ifdata-indicators.py query data/curated/ifdata-indicator-pilot-20261011 "SELECT dataset, indicator, method, status, sum(n) AS n FROM coverage GROUP BY ALL ORDER BY ALL"
+
+# Reproduzir em um destino novo; sem coletar dados ou alterar fontes.
+.venv/Scripts/python.exe scripts/pilot-ifdata-indicators.py build data/curated/ifdata-odata-20261011 data/curated/ifdata-cadastro-20261011 data/curated/ifdata-indicator-pilot-reproducao --opening-root data/curated/ifdata-indicator-opening-200912-20261011
+```
+
+| Tabela SQL / arquivo | Uso |
+|---|---|
+| `results` / `results.parquet` | Uma linha por conjunto/código/trimestre/indicador/método; componentes literais, resultado textual, fórmula, janela, versão, cadastro e evidência JSON completa. |
+| `wide` / `wide.parquet` | Uma linha por unidade/trimestre, com colunas de valor, estado e versão para cada indicador/método. |
+| `coverage` / `coverage.parquet` | Contagens por contexto, trimestre, indicador, método, versão e estado. |
+| `statistics` / `statistics.parquet` | Contagem total/válida, média, desvio padrão, mínimo, quartis, mediana e máximo. Aproximação DOUBLE explícita, sem excluir extremos. |
+
+Cada tabela tem cópia CSV UTF-8. `results.csv` omite os três campos JSON `numerator_definition`, `denominator_definition` e `mean_stock_inputs`; o Parquet mantém a evidência completa. Os números de cálculo permanecem texto decimal com precisão de divisão de 100 algarismos significativos; para análise, use `Decimal(value)` em Python. O painel e as estatísticas usam aproximações gráficas/numéricas, sem substituir esses valores.
+
+Abra `painel.html` localmente no navegador para filtrar contexto, indicador/método, versão, trimestre e instituição, explorar séries, distribuição, dispersão e motivos de indisponibilidade. O painel funciona offline e exporta os valores do recorte mostrado; suas versões separam definições e durações distintas.
+
+Financeiro, individual e prudencial têm populações próprias: `dataset` identifica a fonte e `unit_class` distingue conglomerado, independente, individual e cadastro desconhecido. Não some essas populações. Índices prudenciais não são copiados para unidades financeiras. A população técnica não é a amostra final de empresas de capital aberto.
+
+Fluxos de março/setembro cobrem três meses; junho/dezembro, seis meses do semestre correspondente. Os retornos não são anualizados. A abertura de 2025 atravessa regime não conciliado e fica indisponível; margem e provisão/crédito de 2025–2026 também permanecem sem cálculo quando não há componente conciliado. Ausências, duplicatas, denominadores zero e definições desconhecidas têm motivos explícitos; sinais negativos são preservados. [Fundamentos e evidência do piloto](docs/engineering/ifdata-indicator-pilot-20261011.md).
+
 ## Entradas e contrato único
 
 - [Arquitetura atual, alvo e contratos](docs/architecture.md)
