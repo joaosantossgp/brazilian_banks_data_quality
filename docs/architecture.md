@@ -2,7 +2,7 @@
 
 ## Leitura corrente da arquitetura — 2026-10-12
 
-A rota atual de consulta é valores OData → Parquet textual autenticado → cadastro temporal e catálogo → piloto de indicadores. Cada dataset mantém seu namespace/perímetro. O [review físico e dicionário](engineering/repository-review-20261012.md) apresenta módulos, schemas, chaves observadas, cardinalidade e limites, com [mapa de arquitetura](agents/assets/repository-architecture-20261012.svg) e [mapa das tabelas](agents/assets/ifdata-tables-20261012.svg), ambos também em PNG embutido no relatório.
+A rota atual de consulta parte dos valores OData convertidos em Parquet textual autenticado. O catálogo deriva desses valores; o piloto usa valores, cadastro temporal e aberturas de estoque. O cadastro também sustenta a consulta conjunta por código/data. Cada dataset mantém seu namespace/perímetro. O [review físico e dicionário](engineering/repository-review-20261012.md) apresenta módulos, schemas, chaves observadas, cardinalidade e limites, com [mapa de arquitetura](agents/assets/repository-architecture-20261012.svg) e [mapa das tabelas](agents/assets/ifdata-tables-20261012.svg), ambos embutidos como SVG no relatório, com versões PNG vinculadas.
 
 O [README](../README.md#guia-de-leitura-atual--2026-10-12) contém a matriz de CLIs/contratos e comandos de entrada. A [organização canônica](#organização-dos-arquivos-e-pastas) abaixo define destinos e responsabilidades. Relatório e quatro assets do review reutilizam `docs/engineering/` e `docs/agents/assets/`, sem nova camada. Os readers, adapters e perfis do portal continuam ativos para seus contratos históricos; não foram substituídos por equivalência econômica com OData.
 
