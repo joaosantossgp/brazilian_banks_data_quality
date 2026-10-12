@@ -1180,9 +1180,13 @@ class AcquisitionBridgeTests(unittest.TestCase):
             self.assertEqual(before, self.snapshot(f))
 
     def test_native_positive_preserves_sources_counters_and_separate_links(self):
+        from bank_quality import financial_acquisition_batch as batch
         with acquisition_bridge() as f:
             before = self.snapshot(f)
-            result = self.compose(f)
+            with patch.object(batch, 'verify_trusted_202403_sources',
+                              wraps=batch.verify_trusted_202403_sources) as verify:
+                result = self.compose(f)
+            verify.assert_called_once_with(f.entry)
             self.assertEqual(before, self.snapshot(f))
             expected_selection = {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]}
             self.assertEqual(result['selection'], expected_selection)
@@ -1243,6 +1247,8 @@ class AcquisitionBridgeTests(unittest.TestCase):
                 self.assertNotEqual(alternate.bootstrap, f.bootstrap)
                 batch._TRUSTED_REUSE[202403]['entry'] = installed_entry
                 with patch.object(batch, '_sources403') as helper:
+                    with self.assertRaisesRegex(ValueError, 'trusted202403'):
+                        batch.verify_trusted_202403_sources(alternate.entry)
                     with self.assertRaisesRegex(ValueError, 'trusted202403'): self.compose(alternate)
                     helper.assert_not_called()
 

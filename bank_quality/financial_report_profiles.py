@@ -583,10 +583,9 @@ def compose_acquisition_handoffs(source_entry_path: Path, *, source_entry_sha256
              and value['contract'] == 'ifdata-financial-acquisition-bridge-input-v1',
              'Invalid acquisition bridge input contract/shape')
     entry = value['entry']
-    _same(entry, batch._TRUSTED_REUSE[202403]['entry'], 'Acquisition bridge differs from trusted202403 entry')
-    # This helper proves physical originalB -> originalA, receipt prefixes and
-    # CURRENT journal/counters. The trusted anchor must precede that proof.
-    verified = batch._sources403(entry)
+    # Batch owns both the installed capture anchor and its complete physical
+    # proof. Profile authoring retains input pinning and handoff projection.
+    verified = batch.verify_trusted_202403_sources(entry)
     evidence = entry['evidence']
     originals = {}
     for phase, key in (('metadata', 'checkpoint_a'), ('complete', 'checkpoint_b')):
