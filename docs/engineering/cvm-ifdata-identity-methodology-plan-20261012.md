@@ -180,3 +180,31 @@ O namespace investigado é o recurso `IFDATA/v1/IfDataCadastro`; código individ
 Foram executadas14chamadas reais de `metadata.identity_evidence`, cobrindo as ocorrências individuais/financeiras desses casos. Sem objeto completo de prova de relação e sem CNPJ14da segunda ponta, todas retornaram unknown. Motivos: identidades jurídicas incompletas, relação sem correspondência das pontas/namespace/código, tipo de relação ausente, prova sem atributos exigidos de fonte primária/URL/hash/UTC/localizador e sem escopo temporal que cubra dezembro31. Isso descreve o objeto de prova ausente na chamada; **não significa que os arquivos CVM sejam inautênticos ou que as entidades não estejam relacionadas**. Registro histórico e listagem histórica continuam unknown separadamente.
 
 O caso Itaú exige distinguir holding/operadora/conglomerado e investigar registros1279/19348 e datas divergentes de listagem2010/2024. Não preencher ticker2010vazio com2024nem tomar ausência de datafim como vigência comprovada até dezembro. Próximo recorte documental mínimo: fonte oficial datada com ambas as pontas completas e código/namespaceIFdata, ato/FRE de controle da holding quando pertinente e evidência explícita cobrindo a referência. Conglomerado requer prova de membros/líder/perímetro; não recebe CNPJ jurídico inventado. Critério de capital aberto/listagem e unidade final seguem decisão#3, sem escolher a amostra pelos vínculos mais fáceis.
+
+### Pacote completo de metadados: resultado local
+
+O build das16fontes e seu replay produziram manifesto idêntico SHA256 `5abaef4891fdf9eb8eb86aecedbce7694005d98999b85561881018b71c3b79a7`. Diretório novo `data/curated/cvm-identity-20261012/`, com quatroCSVUTF8textuais, quality.json e manifest.json; replay em destino irmão com sufixo-replay. Total47.516linhas: cadastro2.678, documentos23.490, geral10.240, instrumentos11.108. O índice contém CADatual + exatamente15FCA2010–2024; isso descreve arquivos capturados, não cobertura completa de eventos/versões nem amostra financeira.
+
+Quality registra21.343correspondências documentais e cinco conflitosCNPJ em quarentena, preservando77duplicatas literais de instrumentos. Zero chaves incompletas do índice e zero intervalos invertidos foram observados neste corpus; testes sintéticos cobrem esses casos. Cadastro tem2.531CNPJs distintos/2.567paresCNPJ–CVM/2.678triplasCNPJ–CVM–mercado; chave física continua fonte+membro+ordinal, sem deduplicação.
+
+| Ano / ID / versão | Membro e linha lógica em quarentena | CNPJ declarado / CNPJ no índice |
+|---|---|---|
+| 2010 /359 /1 | geral500; valor_mobiliario479 | 60.398.369/0001-26 /60.398.369/0004-79 |
+| 2011 /11617 /1 | geral483 | 33.937.681/0003-30 /33.937.681/0001-78 |
+| 2023 /131922 /3 | geral454; valor_mobiliario615 | 27.743.642/0002-18 /27.743.642/0001-37 |
+
+Os CSVs preservam registros literais; `quality.json` identifica cada fonte/ano/membro/ordinal e impede interpretar conflito como relação documental comprovada. `matched` significa somente correspondência da chave documental completa entre seções, não identidade CVM–IF.data ou elegibilidade acadêmica. Não usar uma tabela isolada sem consultar o ledger de qualidade.
+
+Comandos no checkout com Python local disponível:
+
+```powershell
+python -B scripts/import-cvm-metadata.py verify data/curated/cvm-identity-20261012 --manifest-sha256 5abaef4891fdf9eb8eb86aecedbce7694005d98999b85561881018b71c3b79a7
+python -B scripts/import-cvm-metadata.py build data/raw/cvm-identity-20261012/source-index.json NOVO_DESTINO --index-sha256 3a04c6ca7858728845b130bfcc97960b78880d1f10efd43f1954845683e98473
+python -B -m unittest discover -s tests -p test_cvm_metadata.py -v
+```
+
+Nunca reutilizar destino de build aceito. Verificação é offline e não depende de nova resposta da CVM; manifest e índice exigem os hashes externos acima. CAD projeta18campos autorizados sem contatos, FCA conserva esquemas nativos, parser operacionalLatin1 semC1/campo128KiB; divergência exige revisão. A decisão de manter outras instituições foraIFdata fora do caminho crítico está fundamentada na pesquisaB1, com esforço ainda não medido. A bibliografia e as fichas metodológicas entregues são subsídios à#3, não indicadores já calculados.
+
+Revisão independente concluída por fatias: A1/B1, captura, seis casos, código corrigido, piloto/replay e pacote completo/replay receberam PASS. O revisor comparou todas as linhas às46fontesCSV selecionadas e recomputou qualidade/quarentena. O findingP2 de chave incompleta foi reproduzido em seis subcasos antes da correção, confirmado por17testes e12contraprovas independentes depois; nenhum build real precedeu esse PASS. Recibo local `data/runs/cvm-identity-receipt-20261012.json`, SHA256 `41da6bb483ab3aa8567a63aadf89c5d8eaa9b125f945cf1be01a4e59b3a76275`, registra aceite literal e limites, sem provar publicação remota. Software/CLI/teste mantêm pins de revisão no registro da Issue102.
+
+A composição incorporou main após PR103 da frente95. Houve conflito apenas na entrada arquitetural adjacente; manteve-se integralmente a descrição financeira nova e acrescentou-se a responsabilidadeCVM. Código financeiro não integra o diff desta frente. Publicação, SHA entregue, CI e encerramento do goal são conferidos na Issue102; a aprovação local não é estado remoto.

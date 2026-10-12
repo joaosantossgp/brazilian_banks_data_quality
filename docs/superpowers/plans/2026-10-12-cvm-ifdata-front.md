@@ -47,12 +47,12 @@
 
 **Owner:** Root. **Dependência:** A1 revisada. O contrato público da Issue102 será ampliado antes de qualquer aquisição de datasets/edição de código, com inventário exato dos paths e fontes, recursos medidos e checks. A aprovação para prosseguir nesta conversa cobre executar a frente; não elimina o gate técnico de fechar esse contrato com os esquemas reais.
 
-- [ ] Após A1, registrar seleção finita e os destinos novos de bruto/derivado/curado, preservando existentes.
-- [ ] Inspecionar `bank_quality/archive.py`, `bank_quality/metadata.py` e leitores de cadastro existentes; reutilizar transporte/validação em vez de criar caminho paralelo.
-- [ ] Delimitar base de metadados e prova BB/Bradesco/Itaú, com datas explícitas e pontas completas, sem preencher CNPJ por prefixo.
-- [ ] Para software necessário, escrever plano técnico concreto com assinaturas/fixtures/testes causais e allowlist antes da edição; TDD e revisão pertinentes.
-- [ ] Capturar fontes com URL/parâmetros/status/headers/UTC/hash e limites; validar schema/ZIP/contagens/chaves/revisões. Falhas preservadas; não promover corpo incompleto a fonte aceita.
-- [ ] Produzir relações comprovadas ou lacunas por caso/data, conferir cardinalidade e não duplicação; revisor independente compara fontes e resultados antes de expandir.
+- [x] Após A1, registrar seleção finita e os destinos novos de bruto/derivado/curado, preservando existentes.
+- [x] Inspecionar `bank_quality/archive.py`, `bank_quality/metadata.py` e leitores de cadastro existentes; reutilizar transporte/validação em vez de criar caminho paralelo.
+- [x] Delimitar base de metadados e prova BB/Bradesco/Itaú, com datas explícitas e pontas completas, sem preencher CNPJ por prefixo.
+- [x] Para software necessário, escrever plano técnico concreto com assinaturas/fixtures/testes causais e allowlist antes da edição; TDD e revisão pertinentes.
+- [x] Capturar fontes com URL/parâmetros/status/headers/UTC/hash e limites; validar schema/ZIP/contagens/chaves/revisões. Falhas preservadas; não promover corpo incompleto a fonte aceita.
+- [x] Produzir relações comprovadas ou lacunas por caso/data, conferir cardinalidade e não duplicação; revisor independente compara fontes e resultados antes de expandir.
 
 **Saída:** pacote de metadados verificável e prova delimitada, sem amostra/joins financeiros acadêmicos aprovados por implicação. Se fonte não provar relação, entregar desconhecido e motivo verificável.
 
