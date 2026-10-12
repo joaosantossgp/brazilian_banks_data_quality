@@ -1,5 +1,15 @@
 # Arquitetura e contratos
 
+## Leitura corrente da arquitetura — 2026-10-12
+
+A rota atual de consulta parte dos valores OData convertidos em Parquet textual autenticado. O catálogo deriva desses valores; o piloto usa valores, cadastro temporal e aberturas de estoque. O cadastro também sustenta a consulta conjunta por código/data. Cada dataset mantém seu namespace/perímetro. O [review físico e dicionário](engineering/repository-review-20261012.md) apresenta módulos, schemas, chaves observadas, cardinalidade e limites, com [mapa de arquitetura](agents/assets/repository-architecture-20261012.svg) e [mapa das tabelas](agents/assets/ifdata-tables-20261012.svg), ambos embutidos como SVG no relatório, com versões PNG vinculadas.
+
+O [README](../README.md#guia-de-leitura-atual--2026-10-12) contém a matriz de CLIs/contratos e comandos de entrada. A [organização canônica](#organização-dos-arquivos-e-pastas) abaixo define destinos e responsabilidades. Relatório e quatro assets do review reutilizam `docs/engineering/` e `docs/agents/assets/`, sem nova camada. Os readers, adapters e perfis do portal continuam ativos para seus contratos históricos; não foram substituídos por equivalência econômica com OData.
+
+Os registros datados abaixo documentam a evolução e o recorte de cada entrega. “Não implementado” em um registro antigo refere-se ao seu contrato/data; o modelo lógico aprovado continua conceitual e não deve ser confundido com o schema físico corrente. Pendências e sequência técnica são verificadas nas Issues92–95 e no mapa2.
+
+## Registros de evolução por contrato
+
 **Metadados prudenciais — Issue63, fatia A de 2026-10-10:** o [plano](superpowers/plans/2026-10-10-prudential-segmentation.md) reutiliza `financial_report_profiles.py` para selecionar e compilar metadados O/D autenticados de Segmentação1009/202312/102, distinguindo atributos, flags e medidas. O candidato incompleto não instala perfil nem habilita admissão/Parquet; cadastro, população e largura reais continuam pendentes. `tests/test_prudential_segmentation_profiles.py` verifica essa fronteira com fixtures autocontidas. O mecanismo comum e a tabela finita de famílias/épocas permitem expansão por metadados, sem fluxo manual por período. Sem novo módulo, registry, raiz, camada, dependência ou transporte; contratos e portas1005/1006 permanecem próprios. Root integra plano/arquitetura/Git; execução e revisão de código têm allowlist delimitada.
 
 **Extensão individual histórica — Issue63, contrato2026-10-10:** o [plano](superpowers/plans/2026-10-10-individual-historical-extension.md) reutiliza `financial_report_profiles.py`, `financial_reports.py` e `financial_reports_parquet.py` para seleção/autoria/admissão/consulta1006. Metadata instalada própria em `individual-reports-registry.json` e `individual-reports-profiles/`: a nova subpasta contém perfis históricos gerados, paralela à coleção financeira, sem nova camada. Oferta finita66refs e ativação/aceite são estados distintos; primeiro lote201012/202312. Autoria compila de fontes pinadas, consulta carrega perfil congelado sem depender do bruto. Perfil/contratos/defaults individuais202412 e namespace1005 permanecem próprios. Três testes individuais adjacentes; contrato/plano/evidência único no destino canônico. Root integra documentação/Git; código e dados avançam somente após checks/revisão por fatias. Nenhuma raiz, módulo, CLI, dependência, transporte, proteção ou pipeline novo; sem GET ou sobrescrita de artefatos aceitos. Esta entrada registra responsabilidade/organização antes da implementação, não afirma oferta inteira aceita.
@@ -86,7 +96,7 @@ O código cobre lotes **individual/Resumo 201012, 202312 e 202412**. O padrão o
 
 Corpos/manifests e índices locais → verificação de integridade → inventários/cobertura/metadados → replay/relatórios de evidência. Arquivos brutos não são publicação automática; os destinos de replay devem preservar derivados aceitos. Comandos offline estão no [README](../README.md#comandos-locais-verificados).
 
-## Base alvo, ainda não implementada
+## Modelo lógico aprovado e implementações históricas do portal
 
 O [modelo lógico aprovado por João em 2026-10-04](superpowers/specs/2026-10-04-logical-data-model-design.md), preparado na [Issue 27](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/27), define grão, chaves, fontes/revisões, ocorrências/bindings/células, metadados temporais e recortes, com [ER em SVG](agents/assets/logical-data-model.svg) e [PNG](agents/assets/logical-data-model.png). A aprovação é da especificação lógica; não afirma schema implantado, novos joins, coleta, migração ou método. O ADR 0001 continua a decisão de armazenamento vigente.
 

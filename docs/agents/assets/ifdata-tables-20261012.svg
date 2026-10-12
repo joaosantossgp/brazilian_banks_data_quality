@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1260" role="img" aria-labelledby="ifdata_tables_20261012_title ifdata_tables_20261012_desc">
+<title id="ifdata_tables_20261012_title">Como as tabelas e views se conectam</title>
+<desc id="ifdata_tables_20261012_desc">Mapa das estruturas atuais. As conexões são joins/derivações do código; não há PK/FK físicas implantadas. 4.464 valores sem cadastro foram preservados. JSON de componentes mantém proveniência; não existe FK simples ao catálogo.</desc>
+<defs><marker id="ifdata_tables_20261012_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#4f5d75"/></marker></defs>
+<rect width="1600" height="1260" fill="#f5f5f5"/>
+<text x="40" y="68" font-family="Georgia,serif" font-size="40" fill="#2d3142">Como as tabelas e views se conectam</text>
+<text x="40" y="108" font-family="Segoe UI,Arial,sans-serif" font-size="20" fill="#4f5d75">Mapa das estruturas atuais. As conexões são joins/derivações do código; não há PK/FK físicas implantadas.</text>
+<path d="M1000 280H1080" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M440 400V432Q440 440 448 440H1292a8 8 0 0 1 16 0H1432Q1440 440 1440 432V400" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M40 340H24Q16 340 16 348V1002Q16 1010 24 1010H40" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M260 900V760" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M1300 400V540" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M1080 650H1000" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M1300 760V900" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<path d="M1440 760V812Q1440 820 1432 820H1308a8 8 0 0 0 -16 0H788Q780 820 780 828V900" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#ifdata_tables_20261012_arrow)"/>
+<rect x="40" y="180" width="440" height="220" rx="6" fill="#faf0ed" stroke="#bf4520" stroke-width="2"/>
+<text x="60" y="208" font-family="Consolas,monospace" font-size="14" fill="#5a6580">UM DATASET POR CONEXÃO</text>
+<text x="60" y="242" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata</text>
+<line x1="60" x2="460" y1="260" y2="260" stroke="#bfc0c0"/>
+<text x="60" y="290" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">CodInst + AnoMes + tipo + relatório</text>
+<text x="60" y="318" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Conta / Grupo / nome / descrição</text>
+<text x="60" y="346" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Saldo textual + 6 campos de origem</text>
+<text x="60" y="374" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">18.228.826 registros; 16 colunas</text>
+<rect x="560" y="180" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="580" y="208" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PARQUET → VIEW</text>
+<text x="580" y="242" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">cadastro</text>
+<line x1="580" x2="980" y1="260" y2="260" stroke="#bfc0c0"/>
+<text x="580" y="290" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Chave validada: CodInst + Data</text>
+<text x="580" y="318" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Nome, tipo, situação e vínculos</text>
+<text x="580" y="346" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">16 campos nativos + 5 de origem</text>
+<text x="580" y="374" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">512.959 registros; 21 colunas</text>
+<rect x="1080" y="180" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="1100" y="208" font-family="Consolas,monospace" font-size="14" fill="#5a6580">VIEW TRANSITÓRIA</text>
+<text x="1100" y="242" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata_cadastrado</text>
+<line x1="1100" x2="1500" y1="260" y2="260" stroke="#bfc0c0"/>
+<text x="1100" y="290" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">LEFT JOIN: CodInst; AnoMes=Data</text>
+<text x="1100" y="318" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Cada valor encontra 0 ou 1 cadastro</text>
+<text x="1100" y="346" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">cadastro_encontrado mantém ausências</text>
+<text x="1100" y="374" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Não cria arquivo nem soma populações</text>
+<rect x="40" y="540" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="60" y="568" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PARQUET / CSV → VIEW</text>
+<text x="60" y="602" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">catalogo_variaveis</text>
+<line x1="60" x2="460" y1="620" y2="620" stroke="#bfc0c0"/>
+<text x="60" y="650" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">8 dimensões literais = definição</text>
+<text x="60" y="678" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Períodos, variantes e limites</text>
+<text x="60" y="706" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">438 linhas; 23 colunas</text>
+<text x="60" y="734" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Comparabilidade não certificada</text>
+<rect x="40" y="900" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="60" y="928" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PARQUET / CSV → VIEW</text>
+<text x="60" y="962" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">cobertura_variaveis</text>
+<line x1="60" x2="460" y1="980" y2="980" stroke="#bfc0c0"/>
+<text x="60" y="1010" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">8 dimensões + AnoMes</text>
+<text x="60" y="1038" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">registros / com_valor / sem_valor</text>
+<text x="60" y="1066" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">11.331 linhas; 14 colunas</text>
+<text x="60" y="1094" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Join literal trata null como igual</text>
+<rect x="1080" y="540" width="440" height="220" rx="6" fill="#faf0ed" stroke="#bf4520" stroke-width="2"/>
+<text x="1100" y="568" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PARQUET / CSV → VIEW</text>
+<text x="1100" y="602" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">results</text>
+<line x1="1100" x2="1500" y1="620" y2="620" stroke="#bfc0c0"/>
+<text x="1100" y="650" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">dataset + code + period</text>
+<text x="1100" y="678" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">+ indicator + method: chave validada</text>
+<text x="1100" y="706" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">value / status / version / componentes</text>
+<text x="1100" y="734" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">2.199.078 linhas; 32 colunas</text>
+<rect x="1080" y="900" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="1100" y="928" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PIVÔ DE RESULTS</text>
+<text x="1100" y="962" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">wide</text>
+<line x1="1100" x2="1500" y1="980" y2="980" stroke="#bfc0c0"/>
+<text x="1100" y="1010" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Uma linha por unidade/referência</text>
+<text x="1100" y="1038" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Valor + status + versão por variante</text>
+<text x="1100" y="1066" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">270.659 linhas; 38 colunas</text>
+<text x="1100" y="1094" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Não misturar versões ou perspectivas</text>
+<rect x="560" y="540" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="580" y="568" font-family="Consolas,monospace" font-size="14" fill="#5a6580">AGREGAÇÃO DE RESULTS</text>
+<text x="580" y="602" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">coverage</text>
+<line x1="580" x2="980" y1="620" y2="620" stroke="#bfc0c0"/>
+<text x="580" y="650" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">11 dimensões de contexto + status</text>
+<text x="580" y="678" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">n = quantidade de resultados</text>
+<text x="580" y="706" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">5.130 linhas; 13 colunas</text>
+<text x="580" y="734" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Soma de n = 2.199.078</text>
+<rect x="560" y="900" width="440" height="220" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="580" y="928" font-family="Consolas,monospace" font-size="14" fill="#5a6580">AGREGAÇÃO DE RESULTS</text>
+<text x="580" y="962" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">statistics</text>
+<line x1="580" x2="980" y1="980" y2="980" stroke="#bfc0c0"/>
+<text x="580" y="1010" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Mesmas 11 dimensões, sem status</text>
+<text x="580" y="1038" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">n_total / n_valid / n_calculated</text>
+<text x="580" y="1066" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Média, dispersão e percentis DOUBLE</text>
+<text x="580" y="1094" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">2.534 linhas; 21 colunas</text>
+<line x1="40" y1="1164" x2="1560" y2="1164" stroke="#bfc0c0"/>
+<text x="40" y="1200" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#4f5d75">4.464 valores sem cadastro foram preservados. JSON de componentes mantém proveniência; não existe FK simples ao catálogo.</text>
+<text x="40" y="1232" font-family="Consolas,monospace" font-size="15" fill="#5a6580">BASE 6dd1827 · 12/10/2026 · fluxos de leitura/derivação; sem migração de dados</text>
+</svg>

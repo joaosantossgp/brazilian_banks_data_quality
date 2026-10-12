@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080" role="img" aria-labelledby="repository_architecture_20261012_title repository_architecture_20261012_desc">
+<title id="repository_architecture_20261012_title">Arquitetura em uso: duas rotas, contratos próprios</title>
+<desc id="repository_architecture_20261012_desc">A base atual usa OData capturado. O portal anterior permanece para snapshots, replay e contratos aceitos. Setas = importação, leitura ou geração. Dados aceitos e manifests ficam locais; código/docs ficam no Git.</desc>
+<defs><marker id="repository_architecture_20261012_arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#4f5d75"/></marker></defs>
+<rect width="1600" height="1080" fill="#f5f5f5"/>
+<text x="40" y="68" font-family="Georgia,serif" font-size="40" fill="#2d3142">Arquitetura em uso: duas rotas, contratos próprios</text>
+<text x="40" y="108" font-family="Segoe UI,Arial,sans-serif" font-size="20" fill="#4f5d75">A base atual usa OData capturado. O portal anterior permanece para snapshots, replay e contratos aceitos.</text>
+<path d="M320 260H400" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M680 260H760" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M1080 260H1160" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M180 360V432Q180 440 188 440H712Q720 440 720 448V592Q720 600 728 600H760" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M1000 360V412Q1000 420 1008 420H1352Q1360 420 1360 428V500" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M1080 600H1160" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<path d="M1360 700V800" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#repository_architecture_20261012_arrow)"/>
+<rect x="40" y="160" width="280" height="200" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="60" y="188" font-family="Consolas,monospace" font-size="14" fill="#5a6580">ENTRADA LOCAL</text>
+<text x="60" y="222" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">Pacotes recebidos</text>
+<line x1="60" x2="300" y1="240" y2="240" stroke="#bfc0c0"/>
+<text x="60" y="270" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Valores e cadastro</text>
+<text x="60" y="298" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">JSON/gzip + índices</text>
+<text x="60" y="326" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Brutos em data/raw/</text>
+<rect x="400" y="160" width="280" height="200" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="420" y="188" font-family="Consolas,monospace" font-size="14" fill="#5a6580">IMPORTAÇÃO</text>
+<text x="420" y="222" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata_odata</text>
+<line x1="420" x2="660" y1="240" y2="240" stroke="#bfc0c0"/>
+<text x="420" y="270" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Hashes + schema + tokens</text>
+<text x="420" y="298" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Saldo textual exato</text>
+<text x="420" y="326" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">CLI import-ifdata.py</text>
+<rect x="760" y="160" width="320" height="200" rx="6" fill="#faf0ed" stroke="#bf4520" stroke-width="2"/>
+<text x="780" y="188" font-family="Consolas,monospace" font-size="14" fill="#5a6580">PARQUET + MANIFEST</text>
+<text x="780" y="222" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">Quatro conjuntos</text>
+<line x1="780" x2="1060" y1="240" y2="240" stroke="#bfc0c0"/>
+<text x="780" y="270" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">financial / individual</text>
+<text x="780" y="298" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">capital / segmentation</text>
+<text x="780" y="326" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">18.228.826 linhas</text>
+<rect x="1160" y="160" width="400" height="200" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="1180" y="188" font-family="Consolas,monospace" font-size="14" fill="#5a6580">CATÁLOGO</text>
+<text x="1180" y="222" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata_variable_catalog</text>
+<line x1="1180" x2="1540" y1="240" y2="240" stroke="#bfc0c0"/>
+<text x="1180" y="270" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">438 definições literais</text>
+<text x="1180" y="298" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">11.331 coberturas temporais</text>
+<text x="1180" y="326" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Sem harmonização automática</text>
+<rect x="760" y="500" width="320" height="200" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="780" y="528" font-family="Consolas,monospace" font-size="14" fill="#5a6580">CADASTRO + VIEWS</text>
+<text x="780" y="562" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata_cadastro</text>
+<line x1="780" x2="1060" y1="580" y2="580" stroke="#bfc0c0"/>
+<text x="780" y="610" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">512.959 registros</text>
+<text x="780" y="638" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Chave CodInst + Data</text>
+<text x="780" y="666" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Join exato por referência</text>
+<rect x="1160" y="500" width="400" height="200" rx="6" fill="#faf0ed" stroke="#bf4520" stroke-width="2"/>
+<text x="1180" y="528" font-family="Consolas,monospace" font-size="14" fill="#5a6580">MOTOR EXPLORATÓRIO</text>
+<text x="1180" y="562" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">ifdata_indicators</text>
+<line x1="1180" x2="1540" y1="580" y2="580" stroke="#bfc0c0"/>
+<text x="1180" y="610" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">results / wide</text>
+<text x="1180" y="638" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">coverage / statistics</text>
+<text x="1180" y="666" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">2.199.078 resultados</text>
+<rect x="1160" y="800" width="400" height="160" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="1180" y="828" font-family="Consolas,monospace" font-size="14" fill="#5a6580">CONSUMO LOCAL</text>
+<text x="1180" y="862" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">SQL, CSV e painel</text>
+<line x1="1180" x2="1540" y1="880" y2="880" stroke="#bfc0c0"/>
+<text x="1180" y="910" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">DuckDB em memória</text>
+<text x="1180" y="938" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">HTML offline; 211 MB</text>
+<rect x="40" y="500" width="640" height="200" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="2"/>
+<text x="60" y="528" font-family="Consolas,monospace" font-size="14" fill="#5a6580">CONTRATOS ANTERIORES — ROTA SEPARADA</text>
+<text x="60" y="562" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="600" fill="#2d3142">Portal, admissão, pipeline e catálogo</text>
+<line x1="60" x2="660" y1="580" y2="580" stroke="#bfc0c0"/>
+<text x="60" y="610" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">financial* + perfis + adapters; inventário individual</text>
+<text x="60" y="638" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Aquisição/batch/Windows: autoridade e contenção</text>
+<text x="60" y="666" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#2d3142">Legados com uso ativo; não unir ao OData por nome</text>
+<line x1="40" y1="984" x2="1560" y2="984" stroke="#bfc0c0"/>
+<text x="40" y="1020" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#4f5d75">Setas = importação, leitura ou geração. Dados aceitos e manifests ficam locais; código/docs ficam no Git.</text>
+<text x="40" y="1052" font-family="Consolas,monospace" font-size="15" fill="#5a6580">BASE 6dd1827 · 12/10/2026 · fluxos de leitura/derivação; sem migração de dados</text>
+</svg>
