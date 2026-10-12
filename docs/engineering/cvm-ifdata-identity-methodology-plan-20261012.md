@@ -160,7 +160,7 @@ Root também reautenticou o corpo CAD legado de2026-10-01, SHA256 `5b648b892a527
 
 A revisão independente do piloto confirmou o diagnóstico e achou multiplicidade cadastral/documental, duplicatas físicas e conflito de CNPJ em documento2010 fora dos três casos. O [contrato A2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102#issuecomment-6129455312) exige preservação literal e relatório desses conflitos, sem fallback por ID ou deduplicação. A captura adicional terminou: **16 fontes CAD + FCA2010–2024, 7.393.039bytes**, índice externo SHA256 `3a04c6ca7858728845b130bfcc97960b78880d1f10efd43f1954845683e98473`. Revisor reautenticou16manifests/corpos/respostas, quinzeZIPs/CRC e46CSV selecionados; schemas coincidem com o piloto, nenhum byteC1. Captura/contrato PASS, ainda sem admissão de pacote ou vínculo jurídico.
 
-Próximos gates efetivos: revisão independente da implementação offline; piloto/replay; admissão/verificação/replay das16fontes; relatório datado dos seis casos, mantendo unknown se as fontes não satisfizerem o contrato de identidade; composição e publicação revisadas. Estado final, hashes e resultados são registrados na Issue102 e fronteira#2. Nenhuma escolha acadêmica ou amostra foi adotada.
+Gates previstos naquele checkpoint: revisão independente da implementação offline; piloto/replay; admissão/verificação/replay das16fontes; relatório datado dos seis casos, mantendo unknown se as fontes não satisfizerem o contrato de identidade. Esses recortes foram concluídos conforme as seções seguintes. Composição/checks/publicação são os gates de encerramento; seu estado final, hashes e resultados ficam na Issue102 e fronteira#2. Nenhuma escolha acadêmica ou amostra foi adotada.
 
 ### Prova delimitada A2: seis casos
 
