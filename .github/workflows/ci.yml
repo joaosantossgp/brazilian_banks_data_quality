@@ -44,7 +44,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install offline Parquet dependency
-        run: python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-duckdb.txt
+        run: |
+          python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-duckdb.txt
       - name: Native claims, ancestry, containment and extinction
         shell: pwsh
         run: |
