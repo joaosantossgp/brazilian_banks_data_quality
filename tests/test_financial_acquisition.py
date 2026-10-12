@@ -596,6 +596,54 @@ class AcquisitionTests(unittest.TestCase):
             self.prepare(reuse_index=reuse, reuse_index_sha256=sha(reuse.read_bytes()))
 
 
+    def test_public_recent_member_contract_is_finite_pure_and_isolated(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.assertTrue(callable(getattr(batch, 'recent_member_contract', None)),
+                        'Public recent member contract is absent')
+        with patch.object(batch, '_path', side_effect=AssertionError('Contract must not read files')):
+            for period in (202406, 202409, 202506, 202509, 202512, 202603, 202606):
+                scope = 'financial-recent-202312-202606-v1/' + str(period)
+                contract = batch.recent_member_contract(scope)
+                self.assertEqual(set(contract), {'period', 'policies'})
+                self.assertEqual(contract['period'], period)
+                self.assertEqual(contract['policies']['numeric_body_bytes'], 64 * 1024 * 1024)
+                contract['policies']['numeric_body_bytes'] = 0
+                contract['period'] = 0
+                self.assertEqual(batch.recent_member_contract(scope)['period'], period)
+                self.assertEqual(batch.recent_member_contract(scope)['policies']['numeric_body_bytes'], 64 * 1024 * 1024)
+            for scope in ('issue50/financial-202403-1005-native-four',
+                          'financial-recent-202312-202606-v1/202403',
+                          'financial-recent-202312-202606-v1/202609',
+                          'financial-recent-202312-202606-v1/0202406',
+                          'financial-recent-202312-202606-v1/202406/nonce', None, True, []):
+                with self.subTest(scope=scope):
+                    self.assertIsNone(batch.recent_member_contract(scope))
+
+    def test_recent_contract_used_for_candidate_and_execution(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        entries = copy.deepcopy(self.catalogs['old'])
+        entry = next(e for e in entries if e['dt'] == 202406)
+        entry['files'].extend({'f': f'ifdata/202406/dados202406_{area}.json'} for area in (2, 4, 5))
+        self.trusted_catalog_mutation('old', entries)
+        contract = batch.recent_member_contract(self.document['acquisition_scope'])
+        with patch.object(batch, 'recent_member_contract', wraps=batch.recent_member_contract) as lookup:
+            job = self.prepare((202406,), limits=contract['policies'])
+            targets = self.api._execution_job(job)
+        self.assertEqual(lookup.call_count, 2)
+        self.assertEqual([call.args for call in lookup.call_args_list],
+                         [(self.document['acquisition_scope'],)] * 2)
+        self.assertFalse(job['executable'])
+        self.assertEqual(len(targets), 7)
+
+    def test_recent_candidate_limits_are_not_execution_authority(self):
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        job = self.prepare((202406,), limits={'attempts': 1})
+        self.assertFalse(job['executable'])
+        self.assertEqual(job['policies'], {'attempts': 1})
+        with self.assertRaisesRegex(ValueError, 'Closed batch policies differ'):
+            self.api._execution_job(job)
+
     def test_new_batch_scope_prepare_is_exact_singleton_without_execution_permission(self):
         self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
         job = self.prepare((202406,))

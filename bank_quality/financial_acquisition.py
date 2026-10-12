@@ -346,14 +346,14 @@ def prepare_job(catalog_index: Path, catalog_index_sha256: str, periods: tuple[i
              and index['contract'] == INDEX_CONTRACT, 'Invalid catalog index schema')
     _require(index['selection'] == {'perspective': 1005, 'reports': 'native-four'}, 'Wrong closed financial selection')
     from . import financial_acquisition_batch as batch
-    scopes = {batch._SCOPE + '/' + str(p): p for p in batch._ACQUIRE}
+    member_contract = batch.recent_member_contract(index['acquisition_scope'])
     _require(type(index['acquisition_scope']) is str and (index['acquisition_scope'].startswith('issue50/')
-                  or index['acquisition_scope'] in scopes)
+                  or member_contract is not None)
              and len(index['acquisition_scope']) > 8, 'Invalid acquisition_scope')
     _require(isinstance(periods, tuple) and periods and all(type(p) is int and p in _MEMBERS for p in periods)
              and len(set(periods)) == len(periods), 'Select an explicit unique subset of the frozen 66 periods')
-    if index['acquisition_scope'] in scopes:
-        _require(periods == (scopes[index['acquisition_scope']],), 'New scope requires exact matching singleton period')
+    if member_contract is not None:
+        _require(periods == (member_contract['period'],), 'New scope requires exact matching singleton period')
     _require(isinstance(limits, dict), 'Limits must be an object')
     # Execution logistics never alter the identity of a candidate's finite budget.
     policies = {key: _native(value) for key, value in limits.items()
@@ -571,8 +571,8 @@ def _execution_job(job):
              and job.get('job_sha256') == _job_hash(job), 'Job hash/schema mismatch')
     scope = job.get('acquisition_scope')
     from . import financial_acquisition_batch as batch
-    scopes = {batch._SCOPE + '/' + str(p): p for p in batch._ACQUIRE}
-    period = 202403 if scope == _SCOPE else scopes.get(scope)
+    member_contract = batch.recent_member_contract(scope)
+    period = 202403 if scope == _SCOPE else member_contract['period'] if member_contract is not None else None
     _require(period is not None and len(job.get('descriptors', [])) == 1, 'Execution outside fixed acquisition scopes')
     _require(isinstance(job.get('policies'), dict) and all(key in _POLICIES and type(value) is int
              and 0 < value <= _POLICIES[key] for key, value in job['policies'].items()), 'Execution policies exceed fixed caps')
@@ -581,7 +581,7 @@ def _execution_job(job):
                              'policies', 'targets', 'job_sha256', 'executable'}
                  and type(job['version']) is int and job['version'] == 1 and job['executable'] is False,
                  'Closed batch member job schema required')
-        _require(_canonical(job['policies']) == _canonical(batch._POLICIES), 'Closed batch policies differ')
+        _require(_canonical(job['policies']) == _canonical(member_contract['policies']), 'Closed batch policies differ')
     catalogs = _catalogs(job['catalogs'])
     name = 'new' if period >= 202503 else 'old'
     descriptor = _descriptor(catalogs[name], job['catalogs'][name], period)
