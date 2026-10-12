@@ -277,6 +277,18 @@ def _sources403(entry):
             'not_financial_admission': True}
 
 
+def verify_trusted_202403_sources(entry: dict) -> dict:
+    """Prove the installed 202403 capture, checking its anchor before any I/O.
+
+    This read-only boundary cannot adopt a caller-supplied capture or grant
+    acquisition/admission authority. Physical bodies, receipts and current
+    journal state remain subject to the existing complete source proof.
+    The returned proof is independent of the input and installed anchor.
+    """
+    _same(entry, _TRUSTED_REUSE[202403]['entry'], 'Acquisition bridge differs from trusted202403 entry')
+    return copy.deepcopy(_sources403(entry))
+
+
 def _reuse(entries):
     _require(type(entries) is list and len(entries) == 4, 'Exactly four reuse entries required')
     by_period = {}
