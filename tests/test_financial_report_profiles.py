@@ -998,6 +998,56 @@ class HistoricalAcquisitionBridgeTests(unittest.TestCase):
 
 
 class BatchAcquisitionBridgeTests(unittest.TestCase):
+    def capture(self, f):
+        self.assertTrue(callable(getattr(f.batch, 'verified_recent_capture', None)),
+                        'Authenticated recent capture context is absent')
+        return f.batch.verified_recent_capture(
+            f.root / f.refs['bundle_path'], f.root / f.handoff_pin['path'],
+            bundle_sha256=f.refs['bundle_sha256'], bootstrap_sha256=f.refs['bootstrap_sha256'],
+            handoff_sha256=f.handoff_pin['sha256'],
+            authoring_state_paths=('bank_quality/financial-reports-registry.json',))
+
+    def test_public_recent_capture_proves_once_and_isolates_snapshot(self):
+        with acquisition_batch_bridge() as f:
+            before = self.snapshot(f)
+            with patch.object(f.batch, '_open_batch', wraps=f.batch._open_batch) as opened, \
+                 patch.object(f.batch, '_finished_proofs', wraps=f.batch._finished_proofs) as proofs:
+                with self.capture(f) as proof:
+                    self.assertEqual(len(proof['members']), 7)
+                    self.assertEqual(proof['source_state']['status'], 'verified')
+                    self.assertEqual([m['acquisition_evidence'] for m in proof['members']],
+                                     [e for e in f.handoff['entries'] if e['state'] == 'acquired_validated_sources'])
+                    for member in proof['members']:
+                        self.assertEqual(member['originals']['complete']['checkpoint_a_sha256'],
+                                         member['acquisition_evidence']['checkpoint_a']['sha256'])
+                    proof['source_state_files'].clear()
+                    proof['members'][0]['originals']['metadata'].clear()
+                self.assertEqual(opened.call_count, 1)
+                self.assertEqual(proofs.call_count, 1)
+            self.assertEqual(before, self.snapshot(f))
+            with self.capture(f) as again:
+                self.assertTrue(again['source_state_files'])
+                self.assertTrue(again['members'][0]['originals']['metadata'])
+
+    def test_public_recent_capture_rejects_changed_registry_on_exit(self):
+        with acquisition_batch_bridge() as f:
+            path = f.root / 'bank_quality/financial-reports-registry.json'
+            body = path.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'changed during projection'):
+                with self.capture(f):
+                    path.write_bytes(body + b' ')
+            path.write_bytes(body)
+            with self.capture(f) as proof:
+                self.assertEqual(len(proof['members']), 7)
+
+    def test_public_recent_capture_releases_claim_after_projection_error(self):
+        with acquisition_batch_bridge() as f:
+            with self.assertRaisesRegex(RuntimeError, 'projection failed'):
+                with self.capture(f):
+                    raise RuntimeError('projection failed')
+            with self.capture(f) as proof:
+                self.assertEqual(proof['source_state']['status'], 'verified')
+
     snapshot = lambda self, f: {p.relative_to(f.root).as_posix(): sha(p.read_bytes())
                                for p in f.root.rglob('*') if p.is_file()}
 
@@ -1013,7 +1063,10 @@ class BatchAcquisitionBridgeTests(unittest.TestCase):
     def test_batch_bridge_projects_all_seven_without_rewriting_originals(self):
         with acquisition_batch_bridge() as f:
             before = self.snapshot(f)
-            result = self.compose(f)
+            self.assertTrue(callable(getattr(f.batch, 'verified_recent_capture', None)))
+            with patch.object(f.batch, 'verified_recent_capture', wraps=f.batch.verified_recent_capture) as capture:
+                result = self.compose(f)
+            self.assertEqual(capture.call_count, 1)
             self.assertEqual(before, self.snapshot(f))
             self.assertEqual(set(result), {'contract', 'batch', 'source_state', 'source_state_files', 'members', 'limitations'})
             self.assertEqual(result['contract'], 'ifdata-financial-acquisition-batch-bridge-v1')
@@ -1076,6 +1129,35 @@ class BatchAcquisitionBridgeTests(unittest.TestCase):
             before = self.snapshot(f)
             with self.assertRaises(ValueError): self.compose(f)
             self.assertEqual(before, self.snapshot(f))
+
+    def test_batch_bridge_does_not_project_unverified_capture(self):
+        with acquisition_batch_bridge() as f:
+            value = copy.deepcopy(f.handoff)
+            value['entries'][2]['metadata_receipt']['sha256'] = '0' * 64
+            with patch.object(profiles, '_project_acquisition_handoffs',
+                              wraps=profiles._project_acquisition_handoffs) as project:
+                with self.assertRaises(ValueError):
+                    self.compose(f, value)
+            project.assert_not_called()
+
+    def test_batch_bridge_rejects_authority_or_registry_changed_during_projection(self):
+        for source in ('authority', 'registry'):
+            with self.subTest(source=source), acquisition_batch_bridge() as f:
+                name = ('bank_quality/financial-reports-registry.json' if source == 'registry'
+                        else f.bundle['members'][0]['authority_path'] + '/head.json')
+                path = f.root / name
+                body = path.read_bytes()
+                original = profiles._project_acquisition_handoffs
+                def changed_during_projection(*args):
+                    result = original(*args)
+                    path.write_bytes(body + b' ')
+                    return result
+                with patch.object(profiles, '_project_acquisition_handoffs',
+                                  side_effect=changed_during_projection) as project:
+                    with self.assertRaisesRegex(ValueError, 'changed during projection'):
+                        self.compose(f)
+                self.assertGreater(project.call_count, 0)
+                path.write_bytes(body)
 
     def test_batch_bridge_opens_authority_once_for_all_members(self):
         with acquisition_batch_bridge() as f:
