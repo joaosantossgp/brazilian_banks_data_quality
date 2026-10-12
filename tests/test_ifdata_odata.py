@@ -67,6 +67,76 @@ class ODataImportTests(unittest.TestCase):
         with self.api().open_dataset(self.output) as conn:
             self.assertEqual(conn.execute('select NumeroRelatorio, Saldo from ifdata').fetchall(), [('2', '7')])
 
+    def test_rejects_missing_requested_period_type_and_report(self):
+        cases = [dict(periods=[201003, 201006]), dict(types=[2, 3]),
+                 dict(reports=['1', '999']), dict(reports=['999'])]
+        for i, selection in enumerate(cases):
+            with self.subTest(selection=selection):
+                target = self.output / str(i)
+                with self.assertRaisesRegex(ValueError, 'Incomplete selection'):
+                    self.api().import_package(self.root, target, **selection)
+                self.assertFalse((target / 'manifest.json').exists())
+
+    def test_rejects_invalid_manifest_period_and_type_even_when_body_matches(self):
+        for field, value in [('periodo', 201013), ('tipo', 5),
+                             ('periodo', '201003'), ('tipo', '2'), ('tipo', True)]:
+            with self.subTest(field=field, value=value):
+                self.rows = [self.row('1')]
+                if field == 'periodo' and value == 201013:
+                    self.rows = [self.rows[0].replace('201003', '201013')]
+                if field == 'tipo' and value == 5:
+                    self.rows = [self.rows[0].replace('"TipoInstituicao": 2', '"TipoInstituicao": 5')]
+                self.write_package()
+                self.manifest[0][field] = value
+                self.save_manifest()
+                target = self.output / f'{field}-{value}'
+                with self.assertRaisesRegex(ValueError, 'Invalid manifest'):
+                    self.api().import_package(self.root, target)
+                self.assertFalse((target / 'manifest.json').exists())
+
+    def test_requires_requested_period_type_combinations(self):
+        # Both axes exist, but (201003, 3) and (201006, 2) do not.
+        raw = gzip.decompress((self.root / 'dados/page.json.gz').read_bytes())
+        raw = gzip.compress(raw.replace(b'201003', b'201006')
+                            .replace(b'"TipoInstituicao": 2', b'"TipoInstituicao": 3'))
+        (self.root / 'dados/second.json.gz').write_bytes(raw)
+        page = dict(self.manifest[0]['paginas'][0], arquivo='dados/second.json.gz',
+                    bytes_gzip=len(raw), sha256_gzip=hashlib.sha256(raw).hexdigest())
+        entry = dict(self.manifest[0], periodo=201006, tipo=3, paginas=[page])
+        self.manifest.append(entry)
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, 'Incomplete selection'):
+            self.api().import_package(self.root, self.output,
+                                      periods=[201003, 201006], types=[2, 3])
+        self.assertFalse((self.output / 'manifest.json').exists())
+
+    def test_report_must_be_observed_in_each_nonempty_context(self):
+        raw = gzip.compress(('{"@odata.context":' + json.dumps(
+            'https://was-p.bcnet.bcb.gov.br/olinda/servico/IFDATA/versao/v1/odata$metadata#_IfDataValores')
+            + ',"value":[' + self.row('7').replace('201003', '201006')
+            .replace('"NumeroRelatorio": "1"', '"NumeroRelatorio": "2"') + ']}').encode())
+        (self.root / 'dados/second.json.gz').write_bytes(raw)
+        page = dict(self.manifest[0]['paginas'][0], arquivo='dados/second.json.gz',
+                    registros=1, bytes_gzip=len(raw), sha256_gzip=hashlib.sha256(raw).hexdigest())
+        self.manifest.append(dict(self.manifest[0], periodo=201006, registros=1, paginas=[page]))
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, 'Incomplete selection'):
+            self.api().import_package(self.root, self.output, reports=['1', '2'])
+        self.assertFalse((self.output / 'manifest.json').exists())
+
+    def test_authenticated_empty_source_is_not_missing_source(self):
+        self.rows = []
+        self.write_package(status='sem_dados')
+        result = self.api().import_package(self.root, self.output, periods=[201003], types=[2])
+        self.assertEqual(result['rows'], 0)
+        with self.api().open_dataset(self.output) as conn:
+            self.assertEqual(conn.execute('select count(*) from ifdata').fetchone()[0], 0)
+        # An empty source cannot establish whether a report ID is offered.
+        target = self.output.parent / 'unknown-report'
+        with self.assertRaisesRegex(ValueError, 'Incomplete selection'):
+            self.api().import_package(self.root, target, reports=['999'])
+        self.assertFalse((target / 'manifest.json').exists())
+
     def test_empty_and_nul_strings_are_not_null(self):
         self.rows = [self.row('-0.000', group=''), self.row('1e-20', group='\x00')]
         self.write_package()

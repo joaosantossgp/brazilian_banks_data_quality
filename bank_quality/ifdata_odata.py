@@ -116,6 +116,9 @@ def import_package(root, output, periods=None, types=None, reports=None):
 
     Failure leaves an unaccepted partial directory. Choose a new destination to
     retry. Filters select native OData IDs, never portal report IDs or joins.
+    Explicit period/type axes require every requested combination. Reports must
+    occur in every nonempty selected context; authenticated empty contexts are
+    preserved, but cannot establish whether a report ID is offered.
     """
     root, output = Path(root).resolve(), Path(output).resolve()
     periods, types, reports = map(_selection, (periods, types, reports))
@@ -123,6 +126,27 @@ def import_package(root, output, periods=None, types=None, reports=None):
     entries = _json(source.decode('utf-8-sig'))
     if not isinstance(entries, list):
         raise ValueError('manifesto.json must contain a list')
+    selected = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError('Invalid manifest entry')
+        if periods is not None and str(entry.get('periodo')) not in periods:
+            continue
+        if types is not None and str(entry.get('tipo')) not in types:
+            continue
+        if type(entry.get('periodo')) is not int or not re.fullmatch(r'[0-9]{4}(03|06|09|12)', str(entry['periodo'])):
+            raise ValueError('Invalid manifest period')
+        if type(entry.get('tipo')) is not int or entry['tipo'] not in (1, 2, 3, 4):
+            raise ValueError('Invalid manifest type')
+        selected.append(entry)
+    contexts = {(str(e.get('periodo')), str(e.get('tipo'))) for e in selected}
+    missing_periods = (periods or set()) - {p for p, _ in contexts}
+    missing_types = (types or set()) - {t for _, t in contexts}
+    missing_contexts = ({(p, t) for p in periods for t in types} - contexts
+                        if periods is not None and types is not None else set())
+    if missing_periods or missing_types or missing_contexts:
+        raise ValueError(f'Incomplete selection: periods={sorted(missing_periods)}, '
+                         f'types={sorted(missing_types)}, contexts={sorted(missing_contexts)}')
     output.mkdir(parents=True, exist_ok=False)
     result = dict(contract=CONTRACT, source_manifest_sha256=_digest(source),
                   imported_utc=datetime.now(timezone.utc).isoformat(), rows=0, files=[],
@@ -130,22 +154,15 @@ def import_package(root, output, periods=None, types=None, reports=None):
                                  types=sorted(types) if types is not None else None,
                                  reports=sorted(reports) if reports is not None else None))
     seen = set()
+    observed_reports = {}
     with duckdb.connect() as conn:
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise ValueError('Invalid manifest entry')
-            if periods is not None and str(entry.get('periodo')) not in periods:
-                continue
-            if types is not None and str(entry.get('tipo')) not in types:
-                continue
-            if type(entry.get('periodo')) is not int or not re.fullmatch(r'[0-9]{4}(03|06|09|12)', str(entry['periodo'])):
-                raise ValueError('Invalid manifest period')
-            if type(entry.get('tipo')) is not int or entry['tipo'] not in (1, 2, 3, 4):
-                raise ValueError('Invalid manifest type')
+        for entry in selected:
             pages = entry.get('paginas')
             if entry.get('status') not in ('ok', 'sem_dados') or not isinstance(pages, list) or not pages:
                 raise ValueError('Incomplete manifest entry')
             count = _count(entry.get('registros'))
+            context = (str(entry['periodo']), str(entry['tipo']))
+            context_reports = observed_reports.setdefault(context, set())
             if (entry['status'] == 'sem_dados') != (count == 0):
                 raise ValueError('Status/count mismatch')
             stamp = entry.get('coleta_utc')
@@ -174,7 +191,10 @@ def import_package(root, output, periods=None, types=None, reports=None):
                     with csv_path.open('w', encoding='utf-8', newline='') as stream:
                         writer = csv.writer(stream, quoting=csv.QUOTE_NOTNULL)
                         writer.writerow(COLUMNS)
-                        for row in _rows(raw, entry, page, reports):
+                        for row in _rows(raw, entry, page, None):
+                            context_reports.add(row[FIELDS.index('NumeroRelatorio')])
+                            if reports is not None and row[FIELDS.index('NumeroRelatorio')] not in reports:
+                                continue
                             # Python 3.12 quotes every string, including empty
                             # strings, and writes only None as unquoted empty.
                             writer.writerow(row)
@@ -188,6 +208,15 @@ def import_package(root, output, periods=None, types=None, reports=None):
                                             rows=written, source_file=page['arquivo'],
                                             source_sha256=page['sha256_gzip'], source_rows=page['registros'],
                                             period=entry['periodo'], type=entry['tipo']))
+    if reports is not None:
+        all_reports = set().union(*observed_reports.values())
+        missing_reports = reports - all_reports
+        incomplete = {context: sorted(reports - found)
+                      for context, found in observed_reports.items()
+                      if found and reports - found}
+        if missing_reports or incomplete:
+            raise ValueError(f'Incomplete selection: reports={sorted(missing_reports)}, '
+                             f'context_reports={incomplete}')
     if not result['files']:
         raise ValueError('No source pages matched the selection')
     (output / 'manifest.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
