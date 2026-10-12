@@ -43,8 +43,26 @@ Profiles conserva a seleção do descritor instalado e a projeção das fontes. 
 
 Plano de execução e checkpoints:
 
-- B1: três testes RED pela ausência da API; extração da prova existente; GREEN com arquivos reais, abertura/prova únicas, isolamento do snapshot, mudança do registry detectada na saída e liberação da claim após erro. Checkpoint `a4dbf18`; revisão independente antes da migração.
-- B2: regressão causal do caller deve falhar antes da migração; consumir apenas o contexto público; manter testes de adulteração/pending/halt e acrescentar ausência de projeção em falha inicial e recusa de mudança durante a projeção. Conferir `python -B -m unittest discover -s tests -p test_financial_report_profiles.py -k AcquisitionBridgeTests -v`, diff/allowlist, pins e revisão independente da composição antes de C.
+- B1: três testes RED pela ausência da API; extração da prova existente; GREEN com arquivos reais, abertura/prova únicas, isolamento do snapshot, mudança do registry detectada na saída e liberação da claim após erro. Checkpoint `a4dbf18`, revisão independente PASS antes da migração.
+- B2: regressão causal do caller RED (zero chamadas públicas); migração para o contexto público; testes de adulteração/pending/halt e contraprovas de ausência de projeção em falha inicial e mudança durante a projeção. `python -B -m unittest discover -s tests -p test_financial_report_profiles.py -k AcquisitionBridgeTests -v`: 18 testes PASS em 93,200 s. Composição `4b62624` revisada independentemente PASS antes de C; diff/allowlist e verificador real de pins conferidos.
 - Integração: CI integral Ubuntu/Windows e pós-merge; árvores revista/integrada equivalentes. Evidências de tempos, SHA e estados remotos na Issue95/PR, sem antecipar PASS.
 
 Os pins de batch/profiles mudam novamente; valem as mesmas restrições de A. Os nove outros módulos pinados e fixtures históricas permanecem intactos até uma eventual allowlist posterior explícita. Nenhum plano aceito é regravado.
+
+## Fatia C: contrato finito dos membros recentes
+
+[Contrato C](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/95#issuecomment-6129223394), base B revista `4b62624`, mesma branch. Allowlist: batch, acquisition, `tests/test_financial_acquisition.py`, esta nota e arquitetura. Composição B+C: sete arquivos, sem novo módulo, camada, dependência, move ou delete.
+
+`financial_acquisition_batch.recent_member_contract(acquisition_scope: str) -> dict | None` é consulta pura dos sete scopes recentes v1. Devolve cópia de período/políticas ou `None`; não concede execução. Acquisition usa esse contrato público para conferir singleton na preparação e políticas exatas na verificação executável, em vez de reconstruir o mapa a partir de constantes privadas.
+
+Preparação continua aceitando candidatos `issue50/*` com limites próprios e `executable=False`. A execução conserva caps standalone, schema/version/executable/políticas fechados dos membros batch, catálogo/descritor/targets, dispatch histórico v2 e a capability do coordenador. Não se transfere uma restrição de execução para a preparação incidentalmente. Imports tardios entre aquisição e batch permanecem onde a autorização do runtime exige contexto; esta fatia não promete eliminar o ciclo inteiro.
+
+Plano e checkpoints:
+
+- C1: teste RED da API ausente, sete scopes exatos, desconhecidos/aliases/tipos, retorno isolado e ausência de I/O; implementação mínima GREEN. Checkpoint `628bb1f`, revisão independente PASS antes de migrar callsites.
+- C2: regressão causal das chamadas públicas RED (zero de duas chamadas); migração de `prepare_job` e `_execution_job`; candidato com limites alternativos prepara mas não executa. `python -B -m unittest discover -s tests -p test_financial_acquisition.py -k AcquisitionTests -v`: 57 testes PASS em 2,761 s. Suíte batch pertinente e revisão independente da composição B+C seguem antes de publicação/integração; resultados e tempos na Issue95/PR.
+- Pins finais mudam acquisition/batch/profiles, sem modificar os oito outros módulos ou a fixture histórica. O verificador real deve recusar pins anteriores e aceitar correntes. CI integral Ubuntu/Windows e pós-merge continuam gates próprios.
+
+## Inventário de encerramento do review91
+
+R1 seleção OData: Issue93/PR97. R2 validação Windows: Issue94/PR98. R3 orientação atual, R4 mapas/dicionário e R6 links relativos: Issue92/PR96. R5 interfaces: Issue95, A/PR101 e composição B/C desta nota. Os estados de integração e CI são conferidos nas Issues/PRs reais. Legado ativo, evidências e contratos próprios permanecem; apagar módulos antigos não faz parte do aceite. A pesquisa metodológica99 e decisão acadêmica3 têm escopo separado e não são bloqueios técnicos desta frente.

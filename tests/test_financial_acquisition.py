@@ -619,6 +619,31 @@ class AcquisitionTests(unittest.TestCase):
                 with self.subTest(scope=scope):
                     self.assertIsNone(batch.recent_member_contract(scope))
 
+    def test_recent_contract_used_for_candidate_and_execution(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        entries = copy.deepcopy(self.catalogs['old'])
+        entry = next(e for e in entries if e['dt'] == 202406)
+        entry['files'].extend({'f': f'ifdata/202406/dados202406_{area}.json'} for area in (2, 4, 5))
+        self.trusted_catalog_mutation('old', entries)
+        contract = batch.recent_member_contract(self.document['acquisition_scope'])
+        with patch.object(batch, 'recent_member_contract', wraps=batch.recent_member_contract) as lookup:
+            job = self.prepare((202406,), limits=contract['policies'])
+            targets = self.api._execution_job(job)
+        self.assertEqual(lookup.call_count, 2)
+        self.assertEqual([call.args for call in lookup.call_args_list],
+                         [(self.document['acquisition_scope'],)] * 2)
+        self.assertFalse(job['executable'])
+        self.assertEqual(len(targets), 7)
+
+    def test_recent_candidate_limits_are_not_execution_authority(self):
+        self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
+        job = self.prepare((202406,), limits={'attempts': 1})
+        self.assertFalse(job['executable'])
+        self.assertEqual(job['policies'], {'attempts': 1})
+        with self.assertRaisesRegex(ValueError, 'Closed batch policies differ'):
+            self.api._execution_job(job)
+
     def test_new_batch_scope_prepare_is_exact_singleton_without_execution_permission(self):
         self.document['acquisition_scope'] = 'financial-recent-202312-202606-v1/202406'
         job = self.prepare((202406,))
