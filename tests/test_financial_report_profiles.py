@@ -1140,10 +1140,53 @@ class AcquisitionBridgeTests(unittest.TestCase):
         return {p.relative_to(fixture.root).as_posix(): sha(p.read_bytes())
                 for p in fixture.root.rglob('*') if p.is_file()}
 
-    def test_native_positive_preserves_sources_counters_and_separate_links(self):
+    def test_public_trusted_source_api_rejects_unanchored_entries_before_io(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.assertTrue(callable(getattr(batch, 'verify_trusted_202403_sources', None)),
+                        'Authenticated source proof API is absent')
+        with acquisition_bridge() as f:
+            for mutation in ('extra', 'period', 'float', 'bool', 'hash', 'path'):
+                entry = copy.deepcopy(f.entry)
+                if mutation == 'extra': entry['caller_anchor'] = True
+                elif mutation == 'period': entry['period'] = 202412
+                elif mutation == 'float': entry['period'] = 202403.0
+                elif mutation == 'bool': entry['period'] = True
+                elif mutation == 'hash': entry['manifest_sha256'] = '0' * 64
+                else: entry['manifest_path'] = 'data/runs/alternative/job.json'
+                with self.subTest(mutation=mutation), \
+                     patch.object(batch, '_sources403') as proof, \
+                     patch.object(batch, '_read') as read:
+                    with self.assertRaisesRegex(ValueError, 'trusted202403'):
+                        batch.verify_trusted_202403_sources(entry)
+                    proof.assert_not_called()
+                    read.assert_not_called()
+
+    def test_public_trusted_source_api_preserves_proof_and_isolates_return(self):
+        from bank_quality import financial_acquisition_batch as batch
+        self.assertTrue(callable(getattr(batch, 'verify_trusted_202403_sources', None)),
+                        'Authenticated source proof API is absent')
         with acquisition_bridge() as f:
             before = self.snapshot(f)
-            result = self.compose(f)
+            entry = copy.deepcopy(f.entry)
+            anchor = copy.deepcopy(batch._TRUSTED_REUSE[202403]['entry'])
+            expected = batch._sources403(entry)
+            result = batch.verify_trusted_202403_sources(entry)
+            self.assertEqual(result, expected)
+            self.assertEqual(result['authority']['status'], 'verified')
+            self.assertTrue(result['not_financial_admission'])
+            result['evidence']['checkpoint_a']['sha256'] = '0' * 64
+            self.assertEqual(entry, f.entry)
+            self.assertEqual(batch._TRUSTED_REUSE[202403]['entry'], anchor)
+            self.assertEqual(before, self.snapshot(f))
+
+    def test_native_positive_preserves_sources_counters_and_separate_links(self):
+        from bank_quality import financial_acquisition_batch as batch
+        with acquisition_bridge() as f:
+            before = self.snapshot(f)
+            with patch.object(batch, 'verify_trusted_202403_sources',
+                              wraps=batch.verify_trusted_202403_sources) as verify:
+                result = self.compose(f)
+            verify.assert_called_once_with(f.entry)
             self.assertEqual(before, self.snapshot(f))
             expected_selection = {'period': 202403, 'perspective': 1005, 'reports': [92, 96, 101, 98]}
             self.assertEqual(result['selection'], expected_selection)
@@ -1204,6 +1247,8 @@ class AcquisitionBridgeTests(unittest.TestCase):
                 self.assertNotEqual(alternate.bootstrap, f.bootstrap)
                 batch._TRUSTED_REUSE[202403]['entry'] = installed_entry
                 with patch.object(batch, '_sources403') as helper:
+                    with self.assertRaisesRegex(ValueError, 'trusted202403'):
+                        batch.verify_trusted_202403_sources(alternate.entry)
                     with self.assertRaisesRegex(ValueError, 'trusted202403'): self.compose(alternate)
                     helper.assert_not_called()
 
