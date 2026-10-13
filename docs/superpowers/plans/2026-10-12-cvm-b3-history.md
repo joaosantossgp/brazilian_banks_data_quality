@@ -32,7 +32,7 @@
 - [x] Implementação inicial de captura offline autenticada, projeção finita, exclusão PJ/PF explícita e quarentena; schema textual preservado. Os dois achados iniciais foram corrigidos e revalidados no checkpoint seguinte.
 - [x] GREEN inicial: 11 testes do módulo e 17 regressões CVM; confirmado independentemente, sem substituir as contraprovas da revisão.
 - [x] Revisão independente de código/contrato antes de execução real; dois P2 corrigidos e revalidados em `c089f7f`, 31 testes PASS.
-- [ ] Build real novo e replay; confirmar inventário/hashes, qualidade, contagens e 15 anos. Revisão do pacote antes da fatia 3.
+- [x] Build real novo e replay; confirmar inventário/hashes, qualidade, contagens e 15 anos. O pacote inicial teve dois P2 de ausência de CNPJ; correção `9091533` passou por re-review/34 testes. Pacote v2 aceito após conferência integral de 189.035 observações, 50.860 lacunas, 36 quarentenas, fontes e replay; outputs iniciais preservados sem aceite.
 
 ## Fatia 3 — relação histórica
 
