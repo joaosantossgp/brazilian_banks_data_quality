@@ -55,6 +55,8 @@
 
 ## Fatia 5 — entrega verificável
 
+**Handoff solicitado em2026-10-13:** publicar código revisado e snapshot para retomada em computador mais forte, antes de novas execuções pesadas. Código entregue v1/oitoCSV; normalização v2 somente proposta revisada. CNPJ, notícias e pesquisa foram aceitos por João como evidência de identificação, sem documento jurídico formal por aresta; registrar origem/confiança/temporalidade. Esta publicação de checkpoint não encerra a relação histórica nem a Issue108. O [handoff](../../engineering/cvm-b3-handoff-20261013.md) distingue bases aceitas, diagnósticos, código, transporte e passos pendentes.
+
 **Arquivos:** nota `docs/engineering/cvm-b3-historical-relation-20261012.md`, entradas pertinentes README/arquitetura; fontes e preparações locais preservadas.
 
 - [ ] Registrar todos os comandos, pins, contagens, decisões, bibliografia/localizadores, falhas e cobertura real.
