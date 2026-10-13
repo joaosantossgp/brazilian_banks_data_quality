@@ -40,9 +40,10 @@
 
 **Interfaces:** build com pacotes CVM/cadastro/societário e pins explícitos; verificar manifest externo; consulta por referência/entidade/perspectiva sem rede.
 
-- [ ] Testes RED para identidade por identificador, conflito/colisão, nome insuficiente, controle datado sem preenchimento, classes sem duplicação, financeiro/prudencial, atributos do grupo/líder e códigos desconhecidos.
-- [ ] Implementar tabelas de observações, instrumentos, relações, cadastro, cobertura e fila de lacunas; nenhum zero-fill.
-- [ ] GREEN e regressões cadastro/CVM; review de código antes de execução real.
+- [x] Testes RED para identidade por identificador, conflito/colisão, nome insuficiente, controle datado sem preenchimento, classes sem duplicação, financeiro/prudencial, atributos do grupo/líder e códigos desconhecidos.
+- [x] Implementar tabelas de observações, instrumentos, relações, cadastro, cobertura e fila de lacunas; nenhum zero-fill. Commit local `4d574084c1811b93f89a6de5eef3c09f79139c83`; tempo/memória no corpus real ainda não medidos.
+- [x] GREEN do autor: 15 históricos, 34 CVM/FRE e sete cadastro. Contraprovas e handoff privados preservados; lexer da saída canônica confrontado com DuckDB devido ao leitor CSV do Python3.12 perder null/vazio.
+- [ ] Review independente de código antes de execução real, em andamento no head acima.
 - [ ] Build real 60 referências e replay em destinos novos; conferência de chaves/cardinalidades/fontes e não alteração dos inputs.
 
 ## Fatia 4 — BDR e evidência complementar
