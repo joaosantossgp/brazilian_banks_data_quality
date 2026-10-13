@@ -219,6 +219,58 @@ class CorporateTests(unittest.TestCase):
         q = json.loads((output / 'quality.json').read_text())
         self.assertEqual(q['quarantine'][0]['reason'], 'invalid_document_key')
 
+    def test_participation_personal_and_malformed_identifiers_are_quarantined(self):
+        rows = [row(ID_Sociedade='1', CNPJ='12345678901', Razao_Social='SECRET PERSONAL NAME'),
+                row(ID_Sociedade='2', CNPJ='123.456.789-01', Razao_Social='SECRET FORMATTED CPF'),
+                row(ID_Sociedade='3', CNPJ='invalid identifier', Razao_Social='SECRET MALFORMED'),
+                row(ID_Sociedade='4', CNPJ='', Pais_Sede='Estados Unidos', Razao_Social='Foreign Entity'),
+                row(ID_Sociedade='5', CNPJ='', Pais_Sede='Brasil', Razao_Social='Missing Identifier')]
+        output, _, manifest = self.build(members={
+            'participacao_sociedade': csv_bytes('participacao_sociedade', rows)})
+        self.assertEqual(manifest['counts']['participacao_sociedade.csv'], 30)
+        public = '\n'.join(p.read_text(encoding='utf8') for p in output.iterdir())
+        self.assertNotIn('SECRET', public)
+        self.assertNotIn('12345678901', public)
+        self.assertNotIn('123.456.789-01', public)
+        quality = json.loads((output / 'quality.json').read_text())
+        self.assertEqual({q['reason'] for q in quality['quarantine']}, {'invalid_society_identifier'})
+        self.assertEqual({g['country_literal'] for g in quality['identifier_gaps']}, {'Brasil', 'Estados Unidos'})
+        with (output / 'participacao_sociedade.csv').open(encoding='utf8', newline='') as f:
+            admitted = list(csv.DictReader(f))
+        self.assertTrue(all(r['CNPJ'] == '' for r in admitted))
+
+    def test_shareholder_pj_label_cannot_export_cpf(self):
+        pj = row(ID_Acionista='1', Tipo_Pessoa_Acionista='PJ', CPF_CNPJ_Acionista='12345678901',
+                 Acionista='SECRET FALSE PJ')
+        output, _, manifest = self.build(members={'posicao_acionaria': csv_bytes('posicao_acionaria', [pj])})
+        self.assertEqual(manifest['counts']['posicao_acionaria.csv'], 0)
+        self.assertNotIn('SECRET', '\n'.join(p.read_text(encoding='utf8') for p in output.iterdir()))
+
+    def test_verify_rejects_repinned_invalid_physical_locators(self):
+        output, _, manifest = self.build()
+        target = output / 'participacao_sociedade.csv'
+        original = target.read_bytes()
+        for field, value in (
+                ('__diagnostic_segment', 'garbage'), ('__diagnostic_segment', '0'),
+                ('__physical_line_start', '-10'), ('__physical_line_end', '0'),
+                ('__physical_line_start', '3'), ('__raw_segment_sha256', 'not-a-hash'),
+                ('__source_retrieved_at_utc', '2026-10-12T01:00:00'),
+                ('__source_manifest_sha256', '0' * 64)):
+            with self.subTest(field=field, value=value):
+                reader = csv.DictReader(io.StringIO(original.decode('utf8'), newline=''))
+                rows = list(reader)
+                rows[0][field] = value
+                stream = io.StringIO(newline='')
+                writer = csv.DictWriter(stream, reader.fieldnames, lineterminator='\n')
+                writer.writeheader()
+                writer.writerows(rows)
+                raw = stream.getvalue().encode('utf8')
+                target.write_bytes(raw)
+                manifest['files'][target.name].update(sha256=sha(raw), bytes=len(raw))
+                pin = dump(output / 'manifest.json', manifest)
+                with self.assertRaises(ValueError):
+                    self.api.verify_corporate_metadata(output, pin)
+
 
 if __name__ == '__main__':
     unittest.main()

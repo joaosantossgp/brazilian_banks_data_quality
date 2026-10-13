@@ -178,6 +178,12 @@ def _strict_record(raw, kind):
         return None, 'invalid_document_key'
     if kind == 'participacao_sociedade' and not row['ID_Sociedade'].strip():
         return None, 'invalid_society_key'
+    # This field is CNPJ, not a generic foreign tax identifier. A present CPF
+    # or malformed literal cannot authorize exporting the associated name.
+    # Empty identifiers stay empty, including foreign societies; no BR CNPJ
+    # or identity inference is manufactured from country/name declarations.
+    if kind == 'participacao_sociedade' and row['CNPJ'] and _cnpj(row['CNPJ']) is None:
+        return None, 'invalid_society_identifier'
     for key, value in row.items():
         if key.startswith('Data_') and value:
             try:
@@ -198,7 +204,7 @@ def build_corporate_metadata(index_path: str | Path, expected_index_sha256: str,
     records = {kind: [] for kind in HEADERS}
     sources = []
     quality = {'contract': 'cvm-corporate-quality-v1', 'members': [], 'quarantine': [],
-               'structurally_absent': [], 'date_alerts': [],
+               'structurally_absent': [], 'date_alerts': [], 'identifier_gaps': [],
                'ordinal_semantics': 'diagnostic segment, not native row identity; malformed quotes may absorb physical lines',
                'relationship_acceptance': False}
     for entry, manifest, raw in _sources(index_path, expected_index_sha256):
@@ -225,6 +231,9 @@ def build_corporate_metadata(index_path: str | Path, expected_index_sha256: str,
                     counts['quarantined_segments'] += 1
                     quality['quarantine'].append(dict(locator, reason=problem))
                     continue
+                if kind == 'participacao_sociedade' and not row['CNPJ']:
+                    quality['identifier_gaps'].append(dict(locator, field='CNPJ',
+                        status='missing_literal_no_identity_inference', country_literal=row['Pais_Sede']))
                 if kind == 'posicao_acionaria':
                     person = row['Tipo_Pessoa_Acionista']
                     if person != 'PJ':
@@ -328,6 +337,13 @@ def verify_corporate_metadata(output: str | Path, expected_manifest_sha256: str)
                             ('__source_manifest_sha256', 'manifest_sha256'),
                             ('__source_retrieved_at_utc', 'retrieved_at_utc')))):
                     raise ValueError('Output lineage differs from source inventory')
+                coordinates = [record[field] for field in (
+                    '__diagnostic_segment', '__physical_line_start', '__physical_line_end')]
+                if (any(re.fullmatch(r'[0-9]+', value) is None or int(value) <= 0
+                        for value in coordinates)
+                        or int(coordinates[1]) > int(coordinates[2])
+                        or re.fullmatch(r'[0-9a-f]{64}', record['__raw_segment_sha256']) is None):
+                    raise ValueError('Invalid diagnostic or physical source locator')
         except (UnicodeError, csv.Error) as error:
             raise ValueError('Invalid output CSV') from error
         if (len(raw) != item.get('bytes') or count != item.get('rows')
