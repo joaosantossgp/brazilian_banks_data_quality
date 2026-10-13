@@ -6,9 +6,11 @@ malformed quotes may absorb several physical lines, all quarantined together.
 """
 import csv
 import io
+import json
 import re
 import stat
 import zipfile
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
@@ -195,6 +197,26 @@ def _strict_record(raw, kind):
     return row, None
 
 
+def _identifier_gaps(row, kind, locator):
+    """Missing literals limit identity evidence; declared PJ is still observed."""
+    fields = []
+    if kind == 'participacao_sociedade':
+        fields = [('CNPJ', 'society')]
+    elif kind == 'posicao_acionaria':
+        fields = [('CPF_CNPJ_Acionista', 'shareholder')]
+        if row['Tipo_Pessoa_Acionista_Relacionado'] == 'PJ':
+            fields.append(('CPF_CNPJ_Acionista_Relacionado', 'related_shareholder'))
+    gaps = []
+    for field, role in fields:
+        if row[field] == '':
+            gap = dict(locator, field=field, role=role, reason='empty_source_literal',
+                       status='missing_literal_no_identity_inference')
+            if kind == 'participacao_sociedade':
+                gap['country_literal'] = row['Pais_Sede']
+            gaps.append(gap)
+    return gaps
+
+
 def build_corporate_metadata(index_path: str | Path, expected_index_sha256: str,
                              output: str | Path) -> dict:
     """Project 15 authenticated FRE years into a new, closed textual package."""
@@ -231,26 +253,27 @@ def build_corporate_metadata(index_path: str | Path, expected_index_sha256: str,
                     counts['quarantined_segments'] += 1
                     quality['quarantine'].append(dict(locator, reason=problem))
                     continue
-                if kind == 'participacao_sociedade' and not row['CNPJ']:
-                    quality['identifier_gaps'].append(dict(locator, field='CNPJ',
-                        status='missing_literal_no_identity_inference', country_literal=row['Pais_Sede']))
                 if kind == 'posicao_acionaria':
                     person = row['Tipo_Pessoa_Acionista']
                     if person != 'PJ':
                         counts['excluded_pf' if person == 'PF' else 'excluded_unknown_person_type'] += 1
                         continue
-                    if not row['ID_Acionista'].strip() or _cnpj(row['CPF_CNPJ_Acionista']) is None:
+                    if (not row['ID_Acionista'].strip()
+                            or (row['CPF_CNPJ_Acionista'] != ''
+                                and _cnpj(row['CPF_CNPJ_Acionista']) is None)):
                         counts['quarantined_segments'] += 1
                         quality['quarantine'].append(dict(locator, reason='invalid_pj_key'))
                         continue
                     if row['Tipo_Pessoa_Acionista_Relacionado'] != 'PJ':
                         for field in RELATED:
                             row[field] = ''
-                    elif _cnpj(row['CPF_CNPJ_Acionista_Relacionado']) is None:
+                    elif (row['CPF_CNPJ_Acionista_Relacionado'] != ''
+                          and _cnpj(row['CPF_CNPJ_Acionista_Relacionado']) is None):
                         counts['quarantined_segments'] += 1
                         quality['quarantine'].append(dict(locator, reason='invalid_related_pj_key'))
                         continue
                     counts['admitted_pj'] += 1
+                quality['identifier_gaps'].extend(_identifier_gaps(row, kind, locator))
                 for field, value in row.items():
                     if field.startswith('Data_') and value and value > '2024-12-31':
                         quality['date_alerts'].append(dict(locator, field=field, value=value,
@@ -316,6 +339,7 @@ def verify_corporate_metadata(output: str | Path, expected_manifest_sha256: str)
                 or datetime.fromisoformat(source['retrieved_at_utc']).utcoffset() != timedelta(0)):
             raise ValueError('Invalid corporate source descriptor')
         by_year[source['year']] = source
+    expected_gaps = []
     for kind, name in TABLES.items():
         item = manifest['files'][name]
         raw = _pinned(_contained(output, name), item.get('sha256'), 256 * 1024 * 1024)
@@ -344,6 +368,12 @@ def verify_corporate_metadata(output: str | Path, expected_manifest_sha256: str)
                         or int(coordinates[1]) > int(coordinates[2])
                         or re.fullmatch(r'[0-9a-f]{64}', record['__raw_segment_sha256']) is None):
                     raise ValueError('Invalid diagnostic or physical source locator')
+                locator = dict(year=source['year'], member=record['__source_member'],
+                    source_sha256=source['body_sha256'], source_manifest_sha256=source['manifest_sha256'],
+                    url=source['url'], retrieved_at_utc=source['retrieved_at_utc'],
+                    diagnostic_segment=int(coordinates[0]), physical_line_start=int(coordinates[1]),
+                    physical_line_end=int(coordinates[2]), raw_segment_sha256=record['__raw_segment_sha256'])
+                expected_gaps.extend(_identifier_gaps(record, kind, locator))
         except (UnicodeError, csv.Error) as error:
             raise ValueError('Invalid output CSV') from error
         if (len(raw) != item.get('bytes') or count != item.get('rows')
@@ -354,6 +384,11 @@ def verify_corporate_metadata(output: str | Path, expected_manifest_sha256: str)
     quality = _json(raw)
     if len(raw) != item.get('bytes') or quality.get('contract') != 'cvm-corporate-quality-v1':
         raise ValueError('Invalid corporate quality evidence')
+    gaps = quality.get('identifier_gaps')
+    if (not isinstance(gaps, list) or quality.get('relationship_acceptance') is not False
+            or Counter(json.dumps(g, sort_keys=True) for g in gaps)
+                != Counter(json.dumps(g, sort_keys=True) for g in expected_gaps)):
+        raise ValueError('Identifier gap contract differs from admitted observations')
     for kind, name in TABLES.items():
         members = [m for m in quality['members'] if m['member'].startswith('fre_cia_aberta_' + kind + '_')]
         if sum(m['admitted'] for m in members) != manifest['counts'][name]:

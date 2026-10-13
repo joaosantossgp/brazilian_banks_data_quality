@@ -271,6 +271,63 @@ class CorporateTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.api.verify_corporate_metadata(output, pin)
 
+    def test_declared_pj_with_empty_identifier_is_preserved_with_role_gap(self):
+        pj = row(ID_Acionista='0001', Tipo_Pessoa_Acionista='PJ', CPF_CNPJ_Acionista='',
+                 Acionista='Declared PJ', Acionista_Controlador='S',
+                 Tipo_Pessoa_Acionista_Relacionado='PF', Acionista_Relacionado='SECRET PF')
+        output, _, manifest = self.build(members={'posicao_acionaria': csv_bytes('posicao_acionaria', [pj])})
+        self.assertEqual(manifest['counts']['posicao_acionaria.csv'], 15)
+        with (output / 'posicao_acionaria.csv').open(encoding='utf8', newline='') as f:
+            admitted = next(csv.DictReader(f))
+        self.assertEqual(admitted['CPF_CNPJ_Acionista'], '')
+        self.assertEqual(admitted['ID_Acionista'], '0001')
+        self.assertEqual(admitted['Acionista_Controlador'], 'S')
+        self.assertEqual(admitted['Acionista_Relacionado'], '')
+        q = json.loads((output / 'quality.json').read_text())
+        self.assertEqual(q['identifier_gaps'][0]['role'], 'shareholder')
+        self.assertEqual(q['identifier_gaps'][0]['field'], 'CPF_CNPJ_Acionista')
+        self.assertEqual(q['identifier_gaps'][0]['reason'], 'empty_source_literal')
+        self.assertNotIn('Declared PJ', json.dumps(q))
+        self.assertFalse(q['relationship_acceptance'])
+
+    def test_related_pj_empty_identifier_keeps_principal_and_literal_related_fields(self):
+        pj = row(ID_Acionista='0001', Tipo_Pessoa_Acionista='PJ', CPF_CNPJ_Acionista='00.000.000/0002-00',
+                 Tipo_Pessoa_Acionista_Relacionado='PJ', ID_Acionista_Relacionado='0002',
+                 Acionista_Relacionado='Declared Related PJ', CPF_CNPJ_Acionista_Relacionado='')
+        output, _, manifest = self.build(members={'posicao_acionaria': csv_bytes('posicao_acionaria', [pj])})
+        self.assertEqual(manifest['counts']['posicao_acionaria.csv'], 15)
+        with (output / 'posicao_acionaria.csv').open(encoding='utf8', newline='') as f:
+            admitted = next(csv.DictReader(f))
+        self.assertEqual(admitted['CPF_CNPJ_Acionista'], '00.000.000/0002-00')
+        self.assertEqual(admitted['Acionista_Relacionado'], 'Declared Related PJ')
+        self.assertEqual(admitted['ID_Acionista_Relacionado'], '0002')
+        q = json.loads((output / 'quality.json').read_text())
+        self.assertEqual(q['identifier_gaps'][0]['role'], 'related_shareholder')
+        self.assertEqual(q['identifier_gaps'][0]['field'], 'CPF_CNPJ_Acionista_Relacionado')
+
+    def test_verify_requires_exact_identifier_gap_contract(self):
+        output, _, manifest = self.build(members={'participacao_sociedade': csv_bytes(
+            'participacao_sociedade', [row(ID_Sociedade='1', CNPJ='', Pais_Sede='Estados Unidos')])})
+        qpath = output / 'quality.json'
+        original = qpath.read_bytes()
+        for mutation in ('missing', 'role', 'locator', 'name'):
+            with self.subTest(mutation=mutation):
+                q = json.loads(original)
+                if mutation == 'missing':
+                    q['identifier_gaps'].pop()
+                elif mutation == 'role':
+                    q['identifier_gaps'][0]['role'] = 'wrong-role'
+                elif mutation == 'locator':
+                    q['identifier_gaps'][0]['physical_line_start'] = -1
+                else:
+                    q['identifier_gaps'][0]['name'] = 'SHOULD NOT BE IN GAP'
+                raw = json.dumps(q).encode('utf8')
+                qpath.write_bytes(raw)
+                manifest['files']['quality.json'].update(sha256=sha(raw), bytes=len(raw))
+                pin = dump(output / 'manifest.json', manifest)
+                with self.assertRaises(ValueError):
+                    self.api.verify_corporate_metadata(output, pin)
+
 
 if __name__ == '__main__':
     unittest.main()
