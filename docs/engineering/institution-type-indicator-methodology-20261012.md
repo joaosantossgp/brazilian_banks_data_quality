@@ -2,7 +2,17 @@
 
 Pesquisa documental de **2026-10-12**, [Issue 102](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102), derivada da [frente CVM–IF.data](cvm-ifdata-identity-methodology-plan-20261012.md). Base `6535862eed9bce9cfaaaa29b9064cfc8045a5a65`, branch `codex/cvm-ifdata-front-20261012`; pesquisador B1, integração/revisão pelo Root. Único arquivo público desta fatia; preparação privada `.scratch/cvm-front-20261012/b1/`. Destino canônico existente `docs/engineering/`, sem camada nova. **Subsídio para decisão na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3): nenhuma fórmula, amostra, classificação histórica ou estimador foi adotado/calculado.** Revisão independente ainda necessária.
 
-## Decisão parcial sobre a unidade — 2026-10-12
+## Decisão parcial vigente sobre a unidade — 2026-10-13
+
+João aprovou na [Issue 109](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/109) a análise direta de **conglomerados financeiros e instituições independentes** vinculados às companhias elegíveis CVM/B3, mantendo explícito o tipo da unidade em cada referência. A companhia delimita o interesse da pesquisa; o perímetro financeiro é a unidade principal de mensuração. Não é obrigatório decompor cada negócio, calcular indicadores de subsidiárias ou criar um método para agregá-los à holding.
+
+A **visão prudencial merece consideração** para indicadores e comparações em que seu perímetro seja pertinente, especialmente capital e solidez; também oferece informações contábeis. Sua utilização exige identificar unidade, data, regime e vínculo, sem tratar saldos/índices financeiros e prudenciais como se fossem a mesma observação. A perspectiva individual permanece recurso para questões específicas, sem obrigação de produzir uma segunda amostra completa.
+
+A seleção procurará indicadores candidatos comuns e condicionais à atividade, confrontados com disponibilidade dos componentes, unidade, janela e cobertura. Adaptações são possíveis com motivação, fonte, fórmula resultante e limites explícitos; esta decisão **não adota** fórmulas, pesos, indicador ou cálculo. Relação muitos-emissores/uma-unidade não autoriza dupla contagem. Holding e conglomerado não são sinônimos.
+
+A [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3) continua aberta para critérios temporais/população final, amostra, periodicidade, médias/fluxos, indicadores e eventual índice. A [Issue 108](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108) segue sua implementação própria de vínculos históricos; esta decisão não altera seu código, fontes, contrato técnico ou aceite. As análises de aplicabilidade abaixo permanecem propostas de pesquisa.
+
+### Registro anterior — 2026-10-12 (histórico)
 
 Na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6135448592), João respondeu **“Ambos”** e esclareceu **“Principalmente conglomerados”**. A escolha registrada é usar **conglomerados financeiros como unidade principal** da comparação e **instituições individuais como análise complementar**, mantendo os respectivos perímetros identificados. Essa decisão humana define a prioridade analítica; as fórmulas, classificações e estimadores desta pesquisa continuam propostas.
 
