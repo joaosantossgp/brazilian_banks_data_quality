@@ -43,9 +43,9 @@ Um indicador precisa ser **teoricamente pertinente e empiricamente viável**. A 
 
 A base técnica descrita nas entregas [84](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/84), [85](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/85) e [87](https://github.com/joaosantossgp/brazilian_banks_data_quality/pull/87) reúne valores, cadastro e catálogo temporal. Os registros dessas entregas informam **18.228.826 observações nativas**; financeiro/individual cobrem 66 referências de 201003 a 202606. Capital e segmentação têm janelas próprias. Isso descreve a base técnica, não a amostra final nem séries harmonizadas da monografia.
 
-![Arquitetura técnica: arquivos de origem sustentam valores, cadastro temporal, catálogo de variáveis e piloto, mantendo os contratos históricos separados.](docs/agents/assets/repository-architecture-20261012.svg)
+![Arquitetura técnica: arquivos de origem sustentam valores, cadastro temporal, catálogo de variáveis e piloto, mantendo os contratos históricos separados.](docs/agents/assets/repository-architecture-20261012.png)
 
-[PNG do mapa técnico](docs/agents/assets/repository-architecture-20261012.png). **Alternativa textual:** fontes preservadas alimentam leitores e conjuntos consultáveis; cadastro identifica ocorrências por data; catálogo registra definições/cobertura; piloto explora indicadores com regras explícitas. Consulte o [relatório técnico](docs/engineering/repository-review-20261012.md) para relações e limites observados.
+[SVG do mapa técnico](docs/agents/assets/repository-architecture-20261012.svg). **Alternativa textual:** fontes preservadas alimentam leitores e conjuntos consultáveis; cadastro identifica ocorrências por data; catálogo registra definições/cobertura; piloto explora indicadores com regras explícitas. Consulte o [relatório técnico](docs/engineering/repository-review-20261012.md) para relações e limites observados.
 
 O piloto contém oito candidatos e variantes de cálculo, com motivos de indisponibilidade; é uma ferramenta exploratória, não a seleção acadêmica final. O [ledger do piloto](docs/engineering/ifdata-indicator-pilot-20261011.md) explica métodos, regimes e limites.
 
