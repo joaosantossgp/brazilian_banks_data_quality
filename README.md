@@ -26,6 +26,8 @@ A decisão parcial de **13/10/2026** inclui **conglomerados financeiros e instit
 
 Um indicador precisa ser **teoricamente pertinente e empiricamente viável**. A seleção procurará candidatos comuns e condicionais à atividade, com adaptações justificadas quando necessárias. Fórmulas, pesos, critérios temporais finais e composição do índice permanecem em aberto. [Decisão e fundamentos](docs/engineering/institution-type-indicator-methodology-20261012.md) · [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3).
 
+<a id="guia-de-leitura-atual--2026-10-12"></a>
+
 ## Por onde começar
 
 | Quero… | Leia |
@@ -75,8 +77,13 @@ As decisões restantes estão na [Issue 3](https://github.com/joaosantossgp/braz
 
 [Comandos preservados e contexto de execução](docs/engineering/local-queries-20261013.md#comandos-locais-verificados). A reorganização documental conferiu sua preservação; não reexecutou consultas/replays sobre dados locais.
 
+<a id="L70"></a>
+<a id="L76"></a>
+
 ## Contratos e histórico
 
 [Arquitetura e destinos](docs/architecture.md) · [Workflow](docs/agents/workflow.md) · [Tracker](docs/agents/issue-tracker.md) · [Modelo lógico](docs/superpowers/specs/2026-10-04-logical-data-model-design.md) · [Histórico operacional](docs/agents/operational-history-20261013.md).
+
+Referências antigas às linhas deste README encontram seu contexto na [versão anterior preservada no Git](https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/f93d37f17898d69713d06f07bb393eb1f2444331/README.md).
 
 A licença própria do código/documentação ainda não foi escolhida; notices e licenças upstream conservam seu alcance. Fontes privadas, dados locais e credenciais não são publicação automática.
