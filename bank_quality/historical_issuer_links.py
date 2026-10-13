@@ -202,36 +202,44 @@ def _derive(cad, issuer, instruments, corporate):
     incoming = defaultdict(list)
     for (parent, child, when, reason), supports in sorted(edges.items(), key=lambda x: _json_text(x[0])):
         incoming[child[:8]].append(dict(parent=parent, child=child, date=when, reason=reason, support=sorted(supports)))
-    # Detect cycles in the complete-identifier graph, even when no BCB terminal
-    # reaches them. Iterative DFS avoids recursion limits for long disclosures.
-    outgoing = defaultdict(list)
+    # An edge belongs to a directed cycle iff its endpoints share a strongly
+    # connected component (including self-loops). Two iterative DFS passes
+    # classify every internal edge, not only DFS backedges and tree paths.
+    outgoing, reverse = defaultdict(set), defaultdict(set)
     for child_edges in incoming.values():
         for edge in child_edges:
-            outgoing[edge['parent']].append(edge)
-    color, cyclic_support = {}, set()
-    for origin in sorted(outgoing):
-        if color.get(origin):
+            outgoing[edge['parent']].add(edge['child'])
+            reverse[edge['child']].add(edge['parent'])
+    adjacency = {node: tuple(sorted(children)) for node, children in outgoing.items()}
+    visited, finished = set(), []
+    for origin in sorted(set(outgoing) | set(reverse)):
+        if origin in visited:
             continue
-        nodes, routes = [origin], []
-        color[origin] = 1
-        stack = [iter(outgoing[origin])]
+        visited.add(origin)
+        stack = [(origin, iter(adjacency.get(origin, ())))]
         while stack:
-            edge = next(stack[-1], None)
-            if edge is None:
-                color[nodes.pop()] = 2
+            child = next(stack[-1][1], None)
+            if child is None:
+                finished.append(stack[-1][0])
                 stack.pop()
-                if routes:
-                    routes.pop()
-                continue
-            child = edge['child']
-            if color.get(child) == 1:
-                start = nodes.index(child)
-                cyclic_support.update(s for e in routes[start:] + [edge] for s in e['support'])
-            elif not color.get(child):
-                color[child] = 1
-                nodes.append(child)
-                routes.append(edge)
-                stack.append(iter(outgoing.get(child, [])))
+            elif child not in visited:
+                visited.add(child)
+                stack.append((child, iter(adjacency.get(child, ()))))
+    components = {}
+    for origin in reversed(finished):
+        if origin in components:
+            continue
+        components[origin] = origin
+        pending = [origin]
+        while pending:
+            node = pending.pop()
+            for parent in reverse.get(node, ()):
+                if parent not in components:
+                    components[parent] = origin
+                    pending.append(parent)
+    cyclic_support = {support for child_edges in incoming.values() for edge in child_edges
+                      if components[edge['parent']] == components[edge['child']]
+                      for support in edge['support']}
     if cyclic_support:
         gap('ciclo_societario', sorted(cyclic_support), detail='Ciclo por identificadores completos; nao confirma controle')
     paths_cache = {}

@@ -341,3 +341,17 @@ class HistoricalTests(unittest.TestCase):
         data = self.api().query_historical_issuer_links(out, result['manifest_sha256'], entity='cvm_cad:000000001')
         self.assertEqual(len(data['emissores']), 1)
         self.assertEqual(data['emissores'][0]['cvm_code'], '001023')
+
+    def test_every_edge_inside_cyclic_component_is_unknown_including_dfs_cross_edge(self):
+        self.rows[0]['CodInst'] = '22222222'
+        a, b, c = '00.000.000/0001-91', '11.111.111/0001-00', '22.222.222/0001-00'
+        self.members = {'participacao_sociedade': csv_bytes('participacao_sociedade', [
+            dict(row(ID_Sociedade=str(n), CNPJ=child, Tipo_Sociedade='Controlada'), CNPJ_Companhia=parent)
+            for n, (parent, child) in enumerate([(a, b), (b, c), (c, a), (a, c)], 1)])}
+        out, result, _ = self.build()
+        data = self.api().query_historical_issuer_links(out, result['manifest_sha256'], reference='201012', perspective='individual')
+        self.assertTrue(data['relacao_trimestral'])
+        self.assertTrue(all(r['evidence_state'] == 'candidatura_controle_sem_vigencia' for r in data['relacao_trimestral']))
+        global_cycle = next(r for r in self.table(out, 'lacunas') if r['reason'] == 'ciclo_societario' and r['detail'])
+        self.assertEqual(set(json.loads(global_cycle['support'])),
+                         {r['observation_id'] for r in self.table(out, 'societario')})
