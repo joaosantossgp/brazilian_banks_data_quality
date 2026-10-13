@@ -2,6 +2,14 @@
 
 Pesquisa documental de **2026-10-12**, [Issue 102](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102), derivada da [frente CVM–IF.data](cvm-ifdata-identity-methodology-plan-20261012.md). Base `6535862eed9bce9cfaaaa29b9064cfc8045a5a65`, branch `codex/cvm-ifdata-front-20261012`; pesquisador B1, integração/revisão pelo Root. Único arquivo público desta fatia; preparação privada `.scratch/cvm-front-20261012/b1/`. Destino canônico existente `docs/engineering/`, sem camada nova. **Subsídio para decisão na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3): nenhuma fórmula, amostra, classificação histórica ou estimador foi adotado/calculado.** Revisão independente ainda necessária.
 
+## Decisão parcial sobre a unidade — 2026-10-12
+
+Na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6135448592), João respondeu **“Ambos”** e esclareceu **“Principalmente conglomerados”**. A escolha registrada é usar **conglomerados financeiros como unidade principal** da comparação e **instituições individuais como análise complementar**, mantendo os respectivos perímetros identificados. Essa decisão humana define a prioridade analítica; as fórmulas, classificações e estimadores desta pesquisa continuam propostas.
+
+O [dossiê jurídico CVM–IF.data](cvm-ifdata-legal-linkage-20261012.md), entregue na [Issue 105](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/105), documenta identidades, participações em conglomerados e controle nos casos examinados. Ele não transforma o conglomerado em pessoa jurídica nem comprova equivalência entre seus saldos e os da instituição individual. Holding, banco operacional e conglomerado conservam suas identidades e funções; a comparação complementar exige vínculo e referência temporal comprovados, sem soma ou dupla contagem entre as unidades.
+
+Conglomerado financeiro e conglomerado prudencial conservam perímetros próprios: a prioridade financeira não autoriza transpor índices prudenciais para a mesma unidade sem conciliação documental. População histórica de capital aberto, elegibilidade por período, entradas/saídas, eventual correspondência da amostra entre as duas análises, janelas dos fluxos, médias dos estoques e fórmulas permanecem pendentes na Issue 3. Nenhuma amostra foi selecionada nem indicador calculado por este registro.
+
 ## Resultado e alcance
 
 Há fundamento para investigar um núcleo contábil condicionado de rentabilidade/capitalização e extensões específicas por atividade. A pesquisa **não sustenta uma classificação única de desempenho de bancos, corretoras, pagamentos e holdings**. Atividade, objetivo econômico, composição dos resultados, financiamento e perímetro alteram a interpretação das mesmas razões. Isso é a síntese do pesquisador a partir das leituras abaixo, não uma prescrição de carteira de indicadores por autor.
