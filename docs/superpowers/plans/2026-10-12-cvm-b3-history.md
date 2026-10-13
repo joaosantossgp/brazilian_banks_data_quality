@@ -19,8 +19,8 @@
 - [x] Investigar fontes CVM/B3 e classificações IF.data com Feynman e proveniência.
 - [x] Reautenticar cadastro existente; recorte 60 referências/303.792 linhas.
 - [x] Capturar e revisar transporte FRE piloto/expansão: 15 anos/122.304.751 bytes; registrar 14 segmentos não estritos no diagnóstico.
-- [ ] Revisão independente final da nota A; B já PASS.
-- [ ] Pesquisar BDR/emissores/controladas com nota e fontes originais; review antes de usar vínculos.
+- [x] Revisão independente final da nota A; B já PASS. Desenho/plano também revisados; alternativa BDI revisada, sem certificação de cobertura integral.
+- [x] Pesquisar BDR/emissores/controladas com nota e fontes originais; pesquisa revisada após corrigir localizadores Stone. Composição e admissão de vínculos continuam próprias.
 
 ## Fatia 2 — admissão FRE
 
@@ -28,10 +28,10 @@
 
 **Interfaces:** `build_corporate_metadata(index_path, expected_index_sha256, output)`; `verify_corporate_metadata(output, expected_manifest_sha256)`.
 
-- [ ] Testes RED para fonte/pin/URL/truncamento, ZIP seguro e esquema; corpus sintético estrito e segmento malformado com múltiplas linhas.
-- [ ] Implementar captura offline autenticada, projeção finita, exclusão PJ/PF explícita e quarentena; schema textual preservado.
-- [ ] GREEN da suíte do módulo e regressões CVM pertinentes.
-- [ ] Revisão independente de código/contrato antes de execução real; corrigir/revalidar achados.
+- [x] Testes RED para fonte/pin/URL/truncamento, ZIP seguro e esquema; corpus sintético estrito e segmento malformado com múltiplas linhas.
+- [x] Implementação inicial de captura offline autenticada, projeção finita, exclusão PJ/PF explícita e quarentena; schema textual preservado. Os dois achados iniciais foram corrigidos e revalidados no checkpoint seguinte.
+- [x] GREEN inicial: 11 testes do módulo e 17 regressões CVM; confirmado independentemente, sem substituir as contraprovas da revisão.
+- [x] Revisão independente de código/contrato antes de execução real; dois P2 corrigidos e revalidados em `c089f7f`, 31 testes PASS.
 - [ ] Build real novo e replay; confirmar inventário/hashes, qualidade, contagens e 15 anos. Revisão do pacote antes da fatia 3.
 
 ## Fatia 3 — relação histórica
