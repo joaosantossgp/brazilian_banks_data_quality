@@ -2,6 +2,75 @@
 
 [Issue127](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/127), vinculada à [pesquisa111](financial-dimensions-literature-20261014.md), à [amostra125](fixed-financial-sample-2024-20261014.md) e às escolhas humanas na [Issue3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6174707162). [Spec](../superpowers/specs/2026-10-14-ifdata-monograph-analysis-design.md) e [plano](../superpowers/plans/2026-10-14-ifdata-monograph-analysis.md) são os contratos desta implementação.
 
+## Resultado local verificado — 14/10/2026
+
+As dez métricas adotadas foram implementadas para os sessenta trimestres de 2010–2024, com quinze fechamentos anuais. A amostra mantém as 24 companhias da seleção de 2024; as unidades financeiras distintas variam entre vinte e vinte e uma no histórico. Os agregados usam a mesma interseção de numeradores e denominadores e deduplicam pela perspectiva de cada métrica. Mediana, quartis e IQR descrevem a distribuição; cobertura nominal e ativos conhecidos mostram o alcance de cada resultado. Os complementos anuais permanecem observacionais, sem atribuição quantitativa ao emissor ou soma ao principal.
+
+A auditoria independente confrontou todos os 16.650 resultados com tokens e contextos nativos, usando Fraction próprio, e reconstruiu todos os agregados, distribuições e recortes, sem divergências. O replay completo autenticou 42 arquivos: os 21 payloads das duas execuções são byte a byte iguais; os manifests diferem somente em created_utc. Esse aceite verifica a reprodução dos snapshots e do método operacional aprovado; não equivale a reconciliação externa certificada com o REF ou avaliação da saúde das instituições. Pesquisa 111 e amostra 125 têm entregas próprias já integradas; revisão final, testes globais, PR e integração desta implementação são registrados na Issue 127, que conserva a autoridade de estado remoto.
+
+| Tabela local | Linhas | Uso |
+|---|---:|---|
+| components | 28.878 | Tokens, bindings, cadastro próprio e proveniência. |
+| results | 16.650 | Razões exatas por unidade, métrica e horizonte; estados e flags. |
+| company_map | 1.440 | Todas as relações esperadas companhia/trimestre. |
+| company_coverage | 21.960 | 20.160 relações principais e 1.800 complementares observacionais. |
+| aggregates | 990 | Razão das somas e cobertura nominal por bloco/período/métrica/horizonte. |
+| distributions | 990 | Mediana, quartis e IQR por unidades elegíveis distintas. |
+| segment_coverage | 20.464 | Recortes pelo cadastro próprio: Tcb, Td, Tc, Sr, Atividade e SegmentoTb. |
+
+Cada tabela tem JSON, CSV e Parquet textual. Null, vazio, zero, binding não liberado e unidade ausente conservam estados distintos. As contagens de cobertura descrevem categorias que podem se sobrepor, como calculável e aplicável; não devem ser somadas como partição do universo. A cobertura conjunta combina seis métricas point com quatro quarter ou quatro TTM, como diagnóstico, sem filtrar a amostra. As referências a componentes/resultados dentro do pacote evitam repetir toda a proveniência em cada linha.
+
+### Leitura do fechamento de 2024
+
+Os valores abaixo são percentuais arredondados apenas para leitura. O pacote conserva frações exatas e display com 100 dígitos. Estoques usam dezembro; fluxos usam doze meses. C3/C4 têm unidade prudencial própria; as demais métricas têm unidade financeira. Companhias e unidades não são contagens intercambiáveis.
+
+| Métrica | Horizonte | Agregado (%) | Companhias elegíveis / 24 | Unidades elegíveis |
+|---|---|---:|---:|---:|
+| R1 — ROA, lucro líquido/AT médio | TTM | 1,399477 | 24 | 20 |
+| R2 — ROE, lucro líquido/PL médio | TTM | 17,334323 | 24 | 20 |
+| Q1 — provisão/crédito bruto | point | 6,179197 | 23 | 19 |
+| Q2 — custo de provisão/crédito bruto médio | TTM | 4,589430 | 23 | 19 |
+| C1 — PL/AT | point | 8,051692 | 24 | 20 |
+| C3 — PR/RWA | point | 15,003164 | 24 | 20 |
+| C4 — capital principal/RWA | point | 11,713999 | 24 | 20 |
+| L2 — liquidez imediata | point | 330,373206 | 21 | 17 |
+| L3 — crédito/depósitos | point | 89,950635 | 24 | 20 |
+| E2-B — custos/renda selecionada antes da provisão | TTM | 40,145800 | 24 | 20 |
+
+Q1/Q2 não são inadimplência observada. E2-B mede renda selecionada, com representatividade econômica integral não certificada. L2 não é LCR/NSFR. Os índices prudenciais publicados IB/ICP permanecem diagnósticos nativos de escala não homologada, sem igualdade ou conversão presumidas.
+
+Em dezembro de 2024, Q1/Q2 têm crédito bruto zero para B3; L2 tem depósitos à vista zero para Porto, BR Partners e DM. Os estados são zero_denominator/unknown, sem prova de não aplicabilidade. As companhias permanecem no universo. L3 de B3, com numerador zero e depósitos positivos, continua calculável. As demais sete métricas cobrem as 24 companhias e vinte unidades em suas perspectivas próprias. A cobertura conjunta completa reúne vinte companhias, sem substituir a amostra de 24.
+
+No histórico, BR Partners não tem unidade principal nas nove datas 201003–201203; mudanças posteriores de código não recebem dependências de um antecessor por nome. BRB tem null nativo em 202209, propagado pelas janelas que dependem dessa observação. DM tem capital principal null em 27 datas de 201803–202409 e finito em 202412. Janelas TTM que cruzam a quebra de lucro líquido de 201903 ficam incompatible_definition; os três primeiros TTM de 2010 não recebem história inventada. Os arquivos de cobertura conservam nomes e motivos em cada período, inclusive valores matemáticos diagnósticos que não entram no agregado principal por aplicabilidade desconhecida.
+
+### Artefatos, integridade e execução
+
+- Resultado: `data/curated/ifdata-analysis-20261014-run1/`, manifest SHA256 `094f1f7d71107b06e40a832dadef406a14332dd74b17f1775d0c9d6ce1c74197`.
+- Replay: `data/curated/ifdata-analysis-20261014-replay/`, manifest SHA256 `872d7e6330b43318c1e06431deb134aa5dad074c452e977e211fa6bda9cae623`.
+- Configuração privada: SHA256 `b6d9149480a8b75fb3214ee4f8539e7a09e6e2d766728cdd90a008efb1c04fa5`; seis entradas explicitamente ancoradas. O pacote não executa o reproduce.py da amostra.
+- Módulo: SHA256 `6a5233bfba479674bef931ea925aabf4504a1bb30b6ac1a9b66f4adbd67645ca`; perfil: SHA256 `b186ad4c2aba24df3a7fdc3f88dd9813ec73912024a189be9fe2288d7aece34d`.
+- Parecer financeiro independente completo e replay: SHA256 `9413b647b4f2739b377b1b2f53fc75c91aca5f409dcfd6d7e73486800fe8899e`. Os relatórios detalhados e os dados ficam nos destinos privados; este registro público conserva resultados e limites verificáveis.
+
+| Medição real do processo | Resultado | Replay |
+|---|---:|---:|
+| Build (segundos) | 203,109 | 197,844 |
+| Verify (segundos) | 67,297 | 80,343 |
+| Pico de working set (bytes) | 2.978.394.112 | 4.420.730.880 |
+| Arquivos (bytes) | 4.037.238.493 | 4.037.238.493 |
+
+A diferença entre os picos faz parte da medição de cada execução, não de um limite universal. Escrita/verificação incremental evitam cópias integrais adicionais das representações; o build ainda materializa o recorte selecionado e os buffers nativos têm memória própria. Entradas e hashes de código/perfil permaneceram intactos antes/depois. A suíte focal final teve 66 testes aprovados; as verificações globais e a revisão do SHA entregue conservam evidência própria na Issue.
+
+Em um checkout desta entrega com os dados restaurados nos destinos relativos acima:
+
+```powershell
+$analysisRoot = 'data/curated/ifdata-analysis-20261014-run1'
+$analysisPin = '094f1f7d71107b06e40a832dadef406a14332dd74b17f1775d0c9d6ce1c74197'
+python -B scripts/analyze-ifdata.py verify --output $analysisRoot --expected-manifest-sha256 $analysisPin
+python -B scripts/analyze-ifdata.py query --output $analysisRoot --expected-manifest-sha256 $analysisPin --sql "SELECT period, metric, horizon, status, payload FROM aggregates WHERE period='202412' AND json_extract_string(payload, '$.block')='principal'"
+```
+
+Query aceita uma única instrução SELECT sobre as tabelas autenticadas e materializadas na conexão; leituras externas e instruções de escrita são recusadas. Os checkpoints abaixo preservam a evolução da implementação e não substituem o resultado corrente ou o estado remoto da Issue.
+
 ## Checkpoint de preparação em14/10/2026 — antes da fatia1
 
 Dez medidas e regra temporal foram aprovadas por João. O desenho/plano passaram pela revisão independentev2: lacunas iniciais de dependências temporais, compatibilidade rastreável e aplicabilidade foram corrigidas; também foram conferidos sinais, liberação finita de janelas e deduplicação prudencial. A revisão da composição documental da fatia0 ainda está pendente. **Nenhum motor de cálculo, indicador acadêmico ou output desta Issue está implementado/aceito neste checkpoint.** Publicação e integração da pesquisa111 têm autoridade própria na PR128; este registro não declara CI ou merge dessa PR.

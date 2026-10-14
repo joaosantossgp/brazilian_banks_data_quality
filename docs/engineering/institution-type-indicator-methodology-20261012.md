@@ -30,7 +30,7 @@ Comparação e investigação fundamentada de possíveis explicações são entr
 
 ### Cinco dimensões obrigatórias
 
-Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. As perguntas organizam a seleção futura, sem adotar um indicador universal por dimensão.
+Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. As perguntas organizam o conjunto de dez métricas adotado em 14/10/2026, sem impor um indicador universal a toda atividade.
 
 | Dimensão | Pergunta orientadora | Cuidado de interpretação |
 |---|---|---|
@@ -38,7 +38,7 @@ Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. A
 | Qualidade do crédito | Como evoluem deterioração da carteira, provisões e perdas? | Estoque de provisão, despesa de provisão e atraso medem aspectos distintos; adequação depende da atividade. |
 | Capital e alavancagem | Como se relacionam estrutura patrimonial, exposições e absorção de perdas? | Capitalização contábil e capital regulatório mantêm conceitos e perímetros próprios. |
 | Liquidez e financiamento | Como fontes de recursos, composição e dependências de financiamento se relacionam ao desempenho? | Uma razão de estoques isolada não comprova capacidade de cumprir obrigações ou resistir a saques. |
-| Eficiência operacional | Como custos, receitas e características da atividade explicam diferenças de resultado? | Razões contábeis e métodos de fronteira de eficiência respondem a perguntas distintas; nenhum método foi escolhido. |
+| Eficiência operacional | Como custos, receitas e características da atividade explicam diferenças de resultado? | O conjunto adotado usa a proxy contábil E2-B. Métodos de fronteira respondem a outra pergunta e não foram adotados. |
 
 A obrigatoriedade da dimensão não exige nota agregada nem que toda métrica se aplique a toda atividade. Não preencher lacunas com proxies sem fundamento nem tratar não aplicabilidade como pior desempenho. As cautelas acima sintetizam o contexto de pesquisa já registrado nesta nota; não são fórmulas atribuídas a Assaf ou nova revisão de literatura.
 
