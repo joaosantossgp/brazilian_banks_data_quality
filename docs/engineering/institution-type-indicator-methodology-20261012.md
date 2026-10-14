@@ -6,6 +6,14 @@ Protocolo aprovado por João na conversa de 2026-10-13, consolidado na [Issue 11
 
 ## Protocolo aprovado — 2026-10-13, com decisão posterior de 2026-10-14
 
+### Ampliação aprovada em 14/10/2026 — universo e comparação
+
+Após a entrega da amostra na Issue127, João autorizou planejar o cálculo para o universo observado IF.data, com **financeiro como principal e prudencial/individual separados**. As unidades ligadas às 24 companhias **participam normalmente do agregado completo** e também constituem recorte próprio, comparado ao restante do sistema. O total não exclui a amostra; perspectivas não são somadas entre si. A seleção fixa das 24 e seus vínculos temporais continuam preservados. O universo técnico acompanha as unidades publicadas em cada trimestre e não equivale à certificação de toda atividade financeira do país.
+
+A [Issue130](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/130), sua [spec](../superpowers/specs/2026-10-14-ifdata-universe-analysis-design.md) e [plano](../superpowers/plans/2026-10-14-ifdata-universe-analysis.md) delimitam a adaptação do motor: população independente da amostra, pertencimento por perspectiva/data, abertura e bindings próprios, processamento em lotes e reconciliação. Vínculo indeterminado não é atribuído automaticamente ao restante. Não chamar o restante de companhias fechadas, nem equiparar a unidade financeira ao desempenho integral da holding. **Esta atualização registra planejamento; cálculos do universo ainda não foram executados.**
+
+Fórmulas, cinco dimensões, trimestres efetivos, doze meses, médias ponderadas e precisão aprovados na127 são reaproveitados. Sr, Tcb, Td, Tc, Atividade e SegmentoTb seguem seus conceitos próprios e datas; desconhecidos permanecem visíveis. A #3 foi reconciliada: inventário, pesquisa, amostra e implementação inicial estão concluídos. Corte formal de representatividade, classificações derivadas e reconciliação do Word continuam distintos e não bloqueiam esse planejamento.
+
 ### Objeto, população e unidade
 
 A pesquisa examina a evolução do desempenho econômico-financeiro dos negócios financeiros vinculados às companhias elegíveis CVM/B3. O núcleo acadêmico é **2010–2024**; **2025–2026 é complemento separado**, sujeito a disponibilidade e comparabilidade, sem continuidade automática entre regimes.

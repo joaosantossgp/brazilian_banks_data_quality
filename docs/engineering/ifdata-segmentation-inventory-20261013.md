@@ -4,6 +4,23 @@ Diagnóstico da [Issue 113](https://github.com/joaosantossgp/brazilian_banks_dat
 
 ## O que já existe e o que precisa ser construído
 
+### Guia de leitura dos seis campos — conferência de 14/10/2026
+
+Complemento didático da Issue130, sem alterar o inventário histórico abaixo. O [dicionário oficial Olinda](https://olinda.bcb.gov.br/olinda/servico/IFDATA/versao/v1/documentacao), JSON `especificacao.recursos` → IfDataCadastro → tipo.propriedades, foi conferido novamente. Corpo e recibo preservados privadamente; SHA256 `72736b41ccf4c496a62e5cc98aeea25d6497b9bf0fcb97df05e845a54f518529`. O dicionário corrente explica campos, não certifica significado estável de todo token histórico.
+
+| Campo | Pergunta simples | Exemplos e uso na análise |
+|---|---|---|
+| Tcb | A que família institucional pertence a unidade? | Agrupa bancos, cooperativas, desenvolvimento, crédito não bancário, mercado de capitais e pagamentos. B1 inclui comercial/múltiplo com carteira comercial/caixas; B2 reúne múltiplo sem carteira comercial, câmbio e investimento; B3S singular e B3C central/confederação. B3 e N3 históricos continuam sem tradução confirmada no inventário. |
+| Td | A linha foi apresentada como conglomerado ou instituição? | C/I distinguem a forma de consolidação informada. I não prova ausência de vínculo com grupo: na perspectiva individual há membros com esse token. A perspectiva e os vínculos precisam acompanhar o campo. |
+| Tc | Qual a natureza do controle? | 1 público, 2 privado nacional, 3 privado com controle estrangeiro. Não detalha sozinho controlador jurídico, esfera federal/estadual ou propriedade final. |
+| Sr | Qual o enquadramento prudencial S1–S5? | Classificação regulatória que considera porte, atividade internacional e regras/perfil de risco. Apoia diferenças de estrutura/regulação; não é nota de qualidade nem simples quintil por ativos. |
+| Atividade | Que atuação é declarada para a instituição? | Há rótulos como crédito atacado/varejo, tesouraria e modalidades de pagamentos. Ajuda a aproximar modelo de negócio, mas não descreve necessariamente todo o mix do conglomerado. |
+| SegmentoTb | Que segmento institucional/atuação foi informado? | Rótulos como banco múltiplo, corretora ou IP. É outro atributo cadastral; não é sinônimo de Tcb, Atividade ou do relatório nativo chamado Segmentação. |
+
+Atividade/SegmentoTb têm descrições oficiais breves; exemplos são valores observados no corpus, não taxonomia acadêmica completa. Nenhum dos dois é o setor dos clientes que tomaram crédito. UF/Municipio descrevem sede, não região das operações. Para setor dos tomadores, porte de clientes ou modalidade detalhada de crédito, o inventário identificou oferta documental não instalada nestes relatórios; sua inclusão exigiria escopo de dados próprio.
+
+O [BCB sobre segmentação prudencial](https://www.bcb.gov.br/detalhenoticia/16073/nota) explica sua finalidade de proporcionalidade regulatória. No corpus, Sr não está preenchido em 2010–2016; primeiras ocorrências diferem entre categorias, detalhadas adiante. Não levar o S atual para o passado. Para comparar **tamanho econômico puro**, utilizar ativos/participações ou uma classificação própria futura, com critérios explicitamente fundamentados; não reinterpretar Sr como esse critério.
+
 A base contém classificações de **tipo/consolidação, controle, segmento institucional, atividade e segmento prudencial**, além de localização cadastral e componentes financeiros. Esses eixos são distintos. Um recorte de porte por ativos pode ser construído depois; não existe corte acadêmico aprovado. Atividade da instituição não representa setor do tomador. A presença de um campo ou valor não certifica sua aplicabilidade, significado histórico ou cobertura na população elegível.
 
 O cadastro tem cobertura trimestral geral em 2010–2024, mas campos específicos têm nulos e mudanças de categorias. **S1–S5 não cobrem 2010–2016**; `Sr` preenchido aparece a partir de 201703, com primeiras ocorrências diferentes por categoria. O relatório nativo Segmentação é uma fonte prudencial distinta do campo cadastral `SegmentoTb`.
