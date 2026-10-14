@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 import csv
 from datetime import date
 import io
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -17,7 +18,7 @@ from bank_quality import cvm_corporate_metadata as corporate_reader
 from bank_quality import ifdata_cadastro as cadastro_reader
 
 
-CONTRACT = 'historical-issuer-links-v1'
+CONTRACT = 'historical-issuer-links-v2'
 REFERENCES = tuple(f'{year}{month}' for year in range(2010, 2025) for month in ('03', '06', '09', '12'))
 PERSPECTIVES = ('individual', 'financeiro', 'prudencial')
 STATES = ('candidatura_cadastral', 'conflito_identificador',
@@ -44,6 +45,7 @@ SCHEMAS = {
                           'perspective', 'entity', 'evidence_state', 'institution_ids',
                           'cadastro_support', 'issuer_support', 'corporate_support',
                           'instrument_support', 'instrument_dates', 'control_paths', 'market_state'),
+    'caminhos_societarios': ('observation_id', 'issuer_full', 'terminal_basic', 'route_json', 'corporate_support'),
     'cobertura': ('observation_id', 'reference', 'cadastro_rows', 'individual_rows',
                   'relationship_rows', 'states', 'gap_rows', 'market_state'),
     'lacunas': ('observation_id', 'reference', 'entity', 'perspective', 'reason', 'support', 'detail'),
@@ -160,7 +162,7 @@ def _corporate_observation(kind, row, n):
 def _derive(cad, issuer, instruments, corporate):
     """Derive finite relationships from authenticated observations (also replayed by verifier)."""
     tables = dict(cadastro=cad, emissores=issuer, instrumentos=instruments, societario=corporate,
-                  vinculos_cadastrais=[], relacao_trimestral=[], cobertura=[], lacunas=[])
+                  vinculos_cadastrais=[], relacao_trimestral=[], caminhos_societarios=[], cobertura=[], lacunas=[])
     gaps = tables['lacunas']
 
     def gap(reason, support, reference=None, entity=None, perspective=None, detail=None):
@@ -243,6 +245,7 @@ def _derive(cad, issuer, instruments, corporate):
     if cyclic_support:
         gap('ciclo_societario', sorted(cyclic_support), detail='Ciclo por identificadores completos; nao confirma controle')
     paths_cache = {}
+    path_records = {}
 
     def paths(basic):
         if basic in paths_cache:
@@ -262,7 +265,16 @@ def _derive(cad, issuer, instruments, corporate):
                     continue
                 next_route = route + (edge,)
                 if edge['parent'] in by_full:
-                    found.append((edge['parent'], next_route))
+                    # Intern the complete ordered route once, before quarters and
+                    # perspectives reference it. Never materialize it per relation.
+                    route_json = _json_text(list(next_route))
+                    path_id = 'caminho:' + hashlib.sha256(route_json.encode('utf8')).hexdigest()
+                    if path_id not in path_records:
+                        path_records[path_id] = dict(observation_id=path_id,
+                            issuer_full=next_route[-1]['parent'], terminal_basic=next_route[0]['child'][:8],
+                            route_json=route_json,
+                            corporate_support=_json_text(sorted({s for e in next_route for s in e['support']})))
+                    found.append((edge['parent'], next_route, path_id))
                 stack.append((parent_basic, next_route, visited + (parent_basic,), edge['parent']))
         if cycles:
             gap('ciclo_societario', sorted(cycles), entity=basic)
@@ -306,10 +318,10 @@ def _derive(cad, issuer, instruments, corporate):
                 gap('atributos_grupo_ausentes', [row['observation_id']], reference, group_code, perspective)
         if not eligible:
             continue
-        candidates = [(full, ()) for full in sorted(by_basic.get(code, set()))] + paths(code)
+        candidates = [(full, (), None) for full in sorted(by_basic.get(code, set()))] + paths(code)
         if not candidates:
             gap('sem_correspondencia_cvm_nao_prova_companhia_fechada', [row['observation_id']], reference, code, 'individual')
-        for full, route in candidates:
+        for full, route, path_id in candidates:
             conflict = len(by_basic[full[:8]]) > 1 or any(r['identifier_conflict'] == 'true' for r in by_full[full])
             dates = {edge['date'] for edge in route}
             simultaneous = (bool(route) and dates == {_quarter(reference).isoformat()}
@@ -324,7 +336,7 @@ def _derive(cad, issuer, instruments, corporate):
                 a['cadastro_support'].add(row['observation_id'])
                 a['corporate_support'].update(s for edge in route for s in edge['support'])
                 if route:
-                    a['control_paths'].add(_json_text(list(route)))
+                    a['control_paths'].add(path_id)
     for key, a in sorted(associations.items()):
         reference, full, perspective, entity, state = key
         observations, inst = by_full[full], inst_by_full[full]
@@ -336,8 +348,9 @@ def _derive(cad, issuer, instruments, corporate):
                  issuer_support=_json_text(sorted(r['observation_id'] for r in observations)),
                  instrument_support=_json_text(sorted(r['observation_id'] for r in inst)),
                  instrument_dates=_json_text(dates), market_state=MARKET_STATE)
-        r.update({k: _json_text([json.loads(p) for p in sorted(v)] if k == 'control_paths' else sorted(v)) for k, v in a.items()})
+        r.update({k: _json_text(sorted(v)) for k, v in a.items()})
         tables['relacao_trimestral'].append(r)
+    tables['caminhos_societarios'] = [path_records[key] for key in sorted(path_records)]
     for reference in REFERENCES:
         native = [r for r in cad if r['Data'] == reference]
         related = [r for r in tables['relacao_trimestral'] if r['reference'] == reference]
@@ -381,6 +394,26 @@ def _csv_bytes(fields, rows):
     return stream.getvalue().encode('utf8')
 
 
+def _write_csv(path, fields, rows):
+    """Stream canonical UTF-8 CSV; count bytes before each write, including header."""
+    digest, size = hashlib.sha256(), 0
+    with path.open('wb') as stream:
+        class Sink:
+            def write(self, text):
+                nonlocal size
+                raw = text.encode('utf8')
+                if size + len(raw) > MAX_TABLE_BYTES:
+                    raise ValueError('Historical CSV size limit exceeded: ' + path.name)
+                stream.write(raw)
+                digest.update(raw)
+                size += len(raw)
+                return len(text)
+        writer = csv.DictWriter(Sink(), fields, quoting=csv.QUOTE_NOTNULL, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(rows)
+    return dict(sha256=digest.hexdigest(), bytes=size, rows=len(rows), headers=list(fields), key=['observation_id'])
+
+
 def _parse_csv(raw, fields):
     """Read canonical QUOTE_NOTNULL on Python 3.12 as well as newer runtimes.
 
@@ -414,7 +447,7 @@ def _parse_csv(raw, fields):
 
 
 def _quality(tables):
-    return dict(contract='historical-issuer-links-quality-v1', market_state=MARKET_STATE,
+    return dict(contract='historical-issuer-links-quality-v2', market_state=MARKET_STATE,
                 references=list(REFERENCES), legal_identity_certified=False, academic_eligibility_adopted=False,
                 counts={kind + '.csv': len(rows) for kind, rows in tables.items()},
                 relationship_states=dict(Counter(r['evidence_state'] for r in tables['relacao_trimestral'])),
@@ -464,9 +497,7 @@ def build_historical_issuer_links(cvm, expected_cvm_sha256, cadastro, expected_c
     output.mkdir(parents=True, exist_ok=False)
     files = {}
     for kind, fields in SCHEMAS.items():
-        raw = _csv_bytes(fields, tables[kind])
-        (output / (kind + '.csv')).write_bytes(raw)
-        files[kind + '.csv'] = dict(sha256=cvm_reader._sha(raw), bytes=len(raw), rows=len(tables[kind]), headers=list(fields), key=['observation_id'])
+        files[kind + '.csv'] = _write_csv(output / (kind + '.csv'), fields, tables[kind])
     files['quality.json'] = cvm_reader._write_json(output / 'quality.json', _quality(tables))
     manifest = dict(contract=CONTRACT, references=list(REFERENCES), output_encoding='utf-8', csv_quoting='QUOTE_NOTNULL',
                     sources=dict(cvm=expected_cvm_sha256, cadastro=expected_cadastro_sha256, corporate=expected_corporate_sha256),
@@ -510,7 +541,7 @@ def _load(output, expected_manifest_sha256):
         raise ValueError('Invalid native temporal cadastro keys/coverage')
     _validate_observations(tables)
     rebuilt = _derive(cad, tables['emissores'], tables['instrumentos'], tables['societario'])
-    for kind in ('vinculos_cadastrais', 'relacao_trimestral', 'cobertura', 'lacunas'):
+    for kind in ('vinculos_cadastrais', 'relacao_trimestral', 'caminhos_societarios', 'cobertura', 'lacunas'):
         if tables[kind] != rebuilt[kind]:
             raise ValueError('Historical relationship/coverage replay mismatch: ' + kind)
     entry = manifest['files']['quality.json']
@@ -553,6 +584,8 @@ def query_historical_issuer_links(output, expected_manifest_sha256, *, reference
     result = dict(contract=CONTRACT, sources=manifest['sources'], market_state=MARKET_STATE,
                   relacao_trimestral=relationships, lacunas=gaps,
                   cobertura=[r for r in tables['cobertura'] if reference is None or r['reference'] == reference])
+    path_ids = {key for r in relationships for key in json.loads(r['control_paths'])}
+    result['caminhos_societarios'] = [r for r in tables['caminhos_societarios'] if r['observation_id'] in path_ids]
     result['emissores'] = [r for r in tables['emissores'] if entity is None or r['observation_id'] in supports['issuer_support']
                            or r['cnpj_full'] in matching or r['observation_id'] == entity]
     result['instrumentos'] = [r for r in tables['instrumentos'] if entity is None or r['observation_id'] in supports['instrument_support']

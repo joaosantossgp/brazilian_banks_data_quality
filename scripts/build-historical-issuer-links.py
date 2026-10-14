@@ -1,4 +1,4 @@
-"""Build, verify or query pinned offline historical issuer relationships."""
+"""Build, verify or query pinned offline v2 historical relationships (nine CSV)."""
 import argparse
 import json
 from pathlib import Path

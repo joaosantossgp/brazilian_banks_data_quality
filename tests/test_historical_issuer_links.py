@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import types
 import duckdb
 
 import test_cvm_metadata as cvm_fixtures
@@ -277,7 +279,8 @@ class HistoricalTests(unittest.TestCase):
         self.assertEqual(relation['issuer_full'], '00000000000191')
         self.assertEqual(relation['entity'], '22222222')
         self.assertEqual(relation['evidence_state'], 'candidatura_controle_sem_vigencia')
-        path = json.loads(relation['control_paths'])[0]
+        path_id = json.loads(relation['control_paths'])[0]
+        path = json.loads(next(r['route_json'] for r in data['caminhos_societarios'] if r['observation_id'] == path_id))
         self.assertEqual({edge['date'] for edge in path}, {'2010-09-30', '2010-12-31'})
         self.assertEqual(len(path), 2)
         declarations = self.table(out, 'societario')
@@ -355,3 +358,144 @@ class HistoricalTests(unittest.TestCase):
         global_cycle = next(r for r in self.table(out, 'lacunas') if r['reason'] == 'ciclo_societario' and r['detail'])
         self.assertEqual(set(json.loads(global_cycle['support'])),
                          {r['observation_id'] for r in self.table(out, 'societario')})
+
+
+
+    # Baseline is the immutable pre-normalization code, not a second hand-written
+    # implementation. Execute its pure derivation only; no source acquisition.
+    def oracle(self):
+        module = types.ModuleType('historical_links_v1_oracle')
+        source = subprocess.check_output(['git', 'show',
+            '91bd20ccb205e72d47d42536eefbb529da551f16:bank_quality/historical_issuer_links.py'],
+            cwd=Path(__file__).resolve().parents[1])
+        exec(compile(source, '<pinned-v1-oracle>', 'exec'), module.__dict__)
+        return module
+
+    def test_v2_normalization_preserves_all_v1_semantics(self):
+        a, b, c = '00.000.000/0001-91', '11.111.111/0001-00', '22.222.222/0001-00'
+        self.rows[0]['CodInst'] = '22222222'
+        self.members = {'participacao_sociedade': csv_bytes('participacao_sociedade', [
+            dict(row(ID_Sociedade=str(n), CNPJ=child, Tipo_Sociedade='Controlada'), CNPJ_Companhia=parent)
+            for n, (parent, child) in enumerate([(a, b), (b, c), (a, c)], 1)])}
+        out, receipt, _ = self.build()
+        api = self.api()
+        manifest, tables = api._load(out, receipt['manifest_sha256'])
+        self.assertEqual(manifest['contract'], 'historical-issuer-links-v2')
+        self.assertEqual(len(manifest['counts']), 9)
+        paths = {r['observation_id']: r for r in tables['caminhos_societarios']}
+        self.assertEqual(len(paths), 2)
+        for key, record in paths.items():
+            self.assertEqual(key, 'caminho:' + hashlib.sha256(record['route_json'].encode('utf8')).hexdigest())
+            route = json.loads(record['route_json'])
+            self.assertEqual(record['issuer_full'], route[-1]['parent'])
+            self.assertEqual(record['terminal_basic'], route[0]['child'][:8])
+            self.assertEqual(json.loads(record['corporate_support']), sorted({s for e in route for s in e['support']}))
+        oracle = self.oracle()
+        native = [tables[k] for k in ('cadastro', 'emissores', 'instrumentos', 'societario')]
+        # The same native observations exercise acyclic, mismatched dates and
+        # cyclic graphs, across every quarter and all three perspectives.
+        for scenario in ('acyclic', 'different_dates', 'circular'):
+            corporate = [dict(r) for r in native[3]]
+            if scenario == 'different_dates':
+                corporate[0]['control_date'] = '2010-09-30'
+            if scenario == 'circular':
+                corporate.append(dict(corporate[0], observation_id='cycle:test', parent_full='22222222000100', child_full='00000000000191'))
+            old = oracle._derive(*native[:3], corporate)
+            with mock.patch.object(api, '_json_text', wraps=api._json_text) as encoded:
+                new = api._derive(*native[:3], corporate)
+            route_calls = [call.args[0] for call in encoded.call_args_list
+                           if isinstance(call.args[0], list) and call.args[0]
+                           and isinstance(call.args[0][0], dict) and 'parent' in call.args[0][0]]
+            self.assertEqual(len(route_calls), len(new['caminhos_societarios']))
+            old_quality, new_quality = oracle._quality(old), api._quality(new)
+            self.assertEqual(new_quality.pop('contract'), 'historical-issuer-links-quality-v2')
+            old_quality.pop('contract')
+            new_quality['counts'].pop('caminhos_societarios.csv')
+            self.assertEqual(new_quality, old_quality)
+            dictionary = {r['observation_id']: json.loads(r['route_json']) for r in new.pop('caminhos_societarios')}
+            for relation in new['relacao_trimestral']:
+                ids = json.loads(relation['control_paths'])
+                self.assertEqual(ids, sorted(set(ids)))
+                expanded = sorted((dictionary[key] for key in ids), key=api._json_text)
+                relation['control_paths'] = api._json_text(expanded)
+            self.assertEqual(new, old, scenario)
+        query = api.query_historical_issuer_links(out, receipt['manifest_sha256'], reference='201012')
+        referenced = {key for r in query['relacao_trimestral'] for key in json.loads(r['control_paths'])}
+        self.assertEqual({r['observation_id'] for r in query['caminhos_societarios']}, referenced)
+        self.assertEqual(api.query_historical_issuer_links(out, receipt['manifest_sha256'], entity='UNKNOWN')['caminhos_societarios'], [])
+
+    def test_writer_refuses_oversize_before_manifest(self):
+        api = self.api()
+        args = self.packages()
+        output = self.root / 'oversize'
+        prepared = api._prepare(args[0], api.cvm_reader.verify_cvm_metadata(args[0], args[1]),
+                                args[2], args[4], api.corporate_reader.verify_corporate_metadata(args[4], args[5]))
+        with mock.patch.object(api, '_prepare', return_value=prepared), mock.patch.object(api, 'MAX_TABLE_BYTES', 300), self.assertRaisesRegex(ValueError, 'size|limit|large'):
+            api.build_historical_issuer_links(*args, output)
+        self.assertFalse((output / 'manifest.json').exists())
+        self.assertTrue(all(p.stat().st_size <= 300 for p in output.glob('*.csv')))
+
+
+    def test_normalized_paths_reject_tamper_and_repinned_missing_extra_or_crossrefs(self):
+        self.rows[0]['CodInst'] = '11111111'
+        self.members = {'participacao_sociedade': csv_bytes('participacao_sociedade', [
+            dict(row(ID_Sociedade='1', CNPJ='11.111.111/0001-00', Tipo_Sociedade='Controlada'), CNPJ_Companhia='00.000.000/0001-91')])}
+        out, receipt, _ = self.build()
+        api = self.api()
+        _, tables = api._load(out, receipt['manifest_sha256'])
+        original = {p.name: p.read_bytes() for p in out.iterdir()}
+        cases = [('caminhos_societarios', 'id'), ('caminhos_societarios', 'issuer'),
+                 ('caminhos_societarios', 'terminal'), ('caminhos_societarios', 'date'),
+                 ('caminhos_societarios', 'support'), ('caminhos_societarios', 'missing'),
+                 ('caminhos_societarios', 'extra'), ('relacao_trimestral', 'crossref')]
+        for kind, mutation in cases:
+            records = json.loads(json.dumps(tables[kind]))
+            if mutation == 'missing':
+                records.clear()
+            elif mutation == 'extra':
+                records.append(dict(records[0], observation_id='caminho:' + '0' * 64))
+            elif mutation == 'crossref':
+                records[0]['control_paths'] = api._json_text(['caminho:' + '0' * 64])
+            elif mutation == 'date':
+                route = json.loads(records[0]['route_json'])
+                route[0]['date'] = '2010-09-30'
+                records[0]['route_json'] = api._json_text(route)
+                records[0]['observation_id'] = 'caminho:' + hashlib.sha256(records[0]['route_json'].encode('utf8')).hexdigest()
+            else:
+                field = dict(id='observation_id', issuer='issuer_full', terminal='terminal_basic', support='corporate_support')[mutation]
+                records[0][field] = '[]' if mutation == 'support' else '0' * 14
+            path = out / (kind + '.csv')
+            path.write_bytes(api._csv_bytes(api.SCHEMAS[kind], records))
+            with self.subTest(mutation=mutation, repin=False), self.assertRaises(ValueError):
+                api.verify_historical_issuer_links(out, receipt['manifest_sha256'])
+            manifest = json.loads(original['manifest.json'])
+            manifest['files'][path.name].update(sha256=sha(path), bytes=path.stat().st_size, rows=len(records))
+            manifest['counts'][path.name] = len(records)
+            # Repin even quality/counts, so hashes and inventory alone cannot
+            # explain rejection; semantic replay must reject the altered graph.
+            changed_tables = dict(tables, **{kind: records})
+            (out / 'quality.json').unlink()
+            manifest['files']['quality.json'] = api.cvm_reader._write_json(out / 'quality.json', api._quality(changed_tables))
+            (out / 'manifest.json').unlink()
+            api.cvm_reader._write_json(out / 'manifest.json', manifest)
+            with self.subTest(mutation=mutation, repin=True), self.assertRaises(ValueError):
+                api.verify_historical_issuer_links(out, sha(out / 'manifest.json'))
+            for name, raw in original.items():
+                (out / name).write_bytes(raw)
+
+
+    def test_stream_writer_exact_byte_budget_and_canonical_nulls(self):
+        api = self.api()
+        fields = ('id', 'null', 'blank', 'literal')
+        records = [dict(id='0001', null=None, blank='', literal='ação,"quoted"\nline\r\n')]
+        canonical = api._csv_bytes(fields, records)
+        path = self.root / 'stream.csv'
+        with mock.patch.object(api, 'MAX_TABLE_BYTES', len(canonical)):
+            entry = api._write_csv(path, fields, records)
+        self.assertEqual(path.read_bytes(), canonical)
+        self.assertEqual(entry['bytes'], len(canonical))
+        self.assertEqual(entry['sha256'], hashlib.sha256(canonical).hexdigest())
+        self.assertEqual(api._parse_csv(path.read_bytes(), fields), records)
+        with mock.patch.object(api, 'MAX_TABLE_BYTES', len(canonical) - 1), self.assertRaisesRegex(ValueError, 'size limit'):
+            api._write_csv(self.root / 'too-large.csv', fields, records)
+        self.assertLess((self.root / 'too-large.csv').stat().st_size, len(canonical))
