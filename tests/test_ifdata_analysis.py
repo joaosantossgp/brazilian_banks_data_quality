@@ -1,6 +1,11 @@
 """Causal checks for the pure temporal layer; no captured data or I/O."""
 import importlib.util
 import unittest
+import json
+from pathlib import Path
+import tempfile
+import hashlib
+import csv
 from copy import deepcopy
 from datetime import date
 from decimal import Inexact, InvalidOperation, ROUND_DOWN, localcontext
@@ -19,6 +24,320 @@ def observation(period, token, **changes):
 def stock(period, token, **changes):
     return observation(period, token, definition_id='assets-v1',
                        window_rule='stock', **changes)
+
+
+class MetricTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis
+        self.api = ifdata_analysis
+
+    def metric(self, metric, tokens, horizon='point'):
+        self.assertTrue(hasattr(self.api, 'evaluate_metric'), 'Metric composition missing')
+        rows = {name: [observation('202412', token, definition_id=name, window_rule='stock')]
+                for name, token in tokens.items()}
+        return self.api.evaluate_metric(metric, dict(period='202412', components=rows,
+            financial_statement=True, prudential_bridge=True), horizon)
+
+    def test_manual_point_formulas_and_different_definitions(self):
+        for metric, values, expected in [
+            ('Q1', {'provision_stock':'-7','credit':'100'}, '0.07'),
+            ('C1', {'PL':'20','AT':'100'}, '0.2'),
+            ('C3', {'PR':'30','RWA':'100'}, '0.3'),
+            ('C4', {'CP':'15','RWA':'100'}, '0.15'),
+            ('L2', {'cash':'10','interfinancial':'15','sight_deposits':'50'}, '0.5'),
+            ('L3', {'credit':'0','deposits':'50'}, '0')]:
+            with self.subTest(metric=metric):
+                result=self.metric(metric, values)
+                self.assertEqual(result['value'], expected)
+                self.assertEqual(result['applicability'], 'applicable')
+                self.assertIsNotNone(result['numerator_fraction'])
+                self.assertIsNotNone(result['denominator_fraction'])
+
+    def test_zero_negative_denominator_and_unknown_are_separate(self):
+        result=self.metric('Q1', {'provision_stock':'-7','credit':'0'})
+        self.assertEqual((result['status'],result['applicability']), ('zero_denominator','unknown'))
+        result=self.metric('Q1', {'provision_stock':'-7','credit':'-100'})
+        self.assertEqual(result['value'], '-0.07')
+        self.assertIn('negative_denominator',result['flags'])
+        self.assertEqual(result['applicability'],'unknown')
+
+    def flow_inputs(self):
+        return {name: [observation('202409', a, definition_id=name),
+                       observation('202412', b, definition_id=name)]
+                for name,a,b in [('LL','10','40'), ('provision_flow','-2','3'),
+                  ('RBIF','50','100'), ('services','10','30'), ('fees','5','15'),
+                  ('personnel','-10','-30'), ('administration','-5','0')]}
+
+    def test_quarter_cost_reversals_and_selected_income(self):
+        self.assertTrue(hasattr(self.api,'evaluate_metric'), 'Metric composition missing')
+        c=self.flow_inputs(); c['credit']=[stock('202409','100'),stock('202412','300')]
+        c['AT']=[stock('202409','100'),stock('202412','300')]
+        c['PL']=[stock('202409','10'),stock('202412','30')]
+        inputs=dict(period='202412',components=c,financial_statement=True)
+        for metric,wanted in [('R1','0.15'),('R2','1.5'),('Q2','-0.025'),('E2-B','0.2')]:
+            result=self.api.evaluate_metric(metric,inputs,'quarter')
+            self.assertEqual(result['value'],wanted, result)
+        result=self.api.evaluate_metric('E2-B',inputs,'quarter')
+        self.assertEqual(result['economic_representativeness'],'not_certified')
+        self.assertEqual(result['denominator_fraction'],{'numerator':'75','denominator':'1'})
+        c['AT']=c['AT'][1:]
+        self.assertEqual(self.api.evaluate_metric('R1',inputs,'quarter')['status'],'missing_opening')
+
+    def test_composition_rejects_perimeter_scale_and_wrong_horizon(self):
+        self.assertTrue(hasattr(self.api,'evaluate_metric'), 'Metric composition missing')
+        rows={'PL':[stock('202412','20')], 'AT':[stock('202412','100',unit_key=('financial','2','other'))]}
+        inp=dict(period='202412',components=rows,financial_statement=True)
+        self.assertEqual(self.api.evaluate_metric('C1',inp,'point')['status'],'incompatible_unit')
+        rows['AT']=[stock('202412','100',scale='USD')]
+        self.assertEqual(self.api.evaluate_metric('C1',inp,'point')['status'],'invalid_scale')
+        self.assertEqual(self.api.evaluate_metric('C1',inp,'quarter')['status'],'invalid_horizon')
+
+    def test_statement_applicability_needs_observed_native_context_not_only_cadastro(self):
+        rows={'PL':[stock('202412',None,status='binding_missing',sources=[])], 'AT':[stock('202412','100')]}
+        result=self.api.evaluate_metric('C1',dict(period='202412',financial_statement=True,components=rows),'point')
+        self.assertEqual(result['applicability'],'unknown')
+
+    def test_prudential_applicability_needs_observed_unambiguous_capital5(self):
+        for metric,amount in [('C3','PR'),('C4','CP')]:
+            for status in ['binding_missing','ambiguous_occurrence']:
+                rows={amount:[stock('202412',None,status=status,sources=[])],
+                      'RWA':[stock('202412',None,status=status,sources=[])]}
+                result=self.api.evaluate_metric(metric,dict(period='202412',prudential_bridge=True,components=rows),'point')
+                self.assertEqual(result['applicability'],'unknown',result)
+            # Observed recognized context with native null is still the
+            # prudential accounting question; only calculation is unavailable.
+            rows={amount:[stock('202412',None)],'RWA':[stock('202412','100')]}
+            result=self.api.evaluate_metric(metric,dict(period='202412',prudential_bridge=True,components=rows),'point')
+            self.assertEqual((result['applicability'],result['status']),('applicable','native_null'))
+
+    def test_profile_exact_dates_and_typed_null_binding_resolution(self):
+        self.assertTrue(hasattr(self.api,'load_profile'), 'Finite profile missing')
+        profile=self.api.load_profile()
+        self.assertEqual(len(profile['contexts']),27)
+        self.assertEqual(set(profile['metrics']),set(self.api.METRICS))
+        self.assertIn('population_not_certified_exclusive_to_credit',profile['metrics']['Q2']['limits'])
+        rwa=[x for x in profile['contexts'] if x['component']=='RWA']
+        self.assertFalse(set(rwa[0]['periods']) & set(rwa[1]['periods']))
+        at=next(x for x in profile['contexts'] if x['component']=='AT')
+        row=dict(at['literal_context'],AnoMes='202412',CodInst='001',Saldo='100')
+        result=self.api.resolve_component(profile,'AT','financial','001','202412',[row])
+        self.assertEqual(result['token'],'100')
+        row['Grupo']=''
+        self.assertEqual(self.api.resolve_component(profile,'AT','financial','001','202412',[row])['status'],'binding_missing')
+        row['Grupo']=None; row['AnoMes']='200912'
+        self.assertEqual(self.api.resolve_component(profile,'AT','financial','001','200912',[row])['status'],'binding_unverified')
+
+    def test_dependency_closure_includes_all_ttm_stock_nodes(self):
+        self.assertTrue(hasattr(self.api,'dependency_periods'), 'Dependency closure missing')
+        self.assertEqual(self.api.dependency_periods(['202412']),['202312','202403','202406','202409','202412'])
+        with self.assertRaises(ValueError): self.api.dependency_periods(['202412','202412'])
+
+    def test_ttm_uses_exact_sum_over_all_mean_stock_boundaries(self):
+        raw=[observation('2024'+p,t) for p,t in [('03','10'),('06','25'),('09','7'),('12','18')]]
+        points=[stock(p,t) for p,t in [('202312','100'),('202403','200'),('202406','200'),('202409','200'),('202412','200')]]
+        inputs=dict(period='202412',financial_statement=True,components={'LL':raw,'AT':points})
+        result=self.api.evaluate_metric('R1',inputs,'ttm')
+        self.assertEqual(result['numerator_fraction'],{'numerator':'43','denominator':'1'})
+        # 2024: first91 days mean150, remaining275 days mean200.
+        self.assertEqual(result['denominator_fraction'],{'numerator':'34325','denominator':'183'})
+        self.assertEqual(result['value_fraction'],{'numerator':'7869','denominator':'34325'})
+        self.assertTrue(result['annual_summary'])
+        del points[2]
+        self.assertEqual(self.api.evaluate_metric('R1',inputs,'ttm')['status'],'missing_stock_point')
+
+    def test_ttm_ll_break_never_bridges_definitions(self):
+        flow=[observation(p,'10',definition_id='old' if p<'201903' else 'new') for p in ['201806','201809','201812','201903']]
+        points=[stock(p,'100') for p in ['201803','201806','201809','201812','201903']]
+        result=self.api.evaluate_metric('R1',dict(period='201903',financial_statement=True,components={'LL':flow,'AT':points}),'ttm')
+        # Q2 requires March2018; supplying it makes the actual break visible.
+        flow.insert(0,observation('201803','5',definition_id='old'))
+        result=self.api.evaluate_metric('R1',dict(period='201903',financial_statement=True,components={'LL':flow,'AT':points}),'ttm')
+        self.assertEqual(result['status'],'incompatible_definition')
+
+    def test_literal_occurrences_need_all_native_fields_page_and_distinct_positions(self):
+        profile=self.api.load_profile();at=next(c for c in profile['contexts'] if c['component']=='AT')
+        row=dict(at['literal_context'],CodInst='F',AnoMes='202412',Saldo='100',source_file='page',source_sha256='a'*64,
+                 source_url='https://example.invalid',source_collected_utc='2026-10-14T00:00:00Z',source_context='ctx',source_row='1')
+        row.pop('dataset');second=dict(row,source_row='2')
+        result=self.api.resolve_component(profile,'AT','financial','F','202412',[row,second])
+        self.assertEqual(result['token'],'100');self.assertEqual(len(result['sources']),2)
+        for changes in [dict(source_file='other'),dict(source_row='1'),dict(source_context='other')]:
+            result=self.api.resolve_component(profile,'AT','financial','F','202412',[row,dict(second,**changes)])
+            self.assertEqual(result['status'],'ambiguous_occurrence')
+
+    def test_q2_scope_limits_and_percentage_display_are_explicit(self):
+        c=self.flow_inputs();c['credit']=[stock('202409','100'),stock('202412','300')]
+        result=self.api.evaluate_metric('Q2',dict(period='202412',components=c),'quarter')
+        self.assertIn('population_not_certified_exclusive_to_credit',result['limits'])
+        self.assertEqual(result['percentage_display'],'-2.5')
+        self.assertEqual(result['ratio_unit'],'fraction')
+
+    def test_opening_exception_is_finite_stock_context_code_and_source(self):
+        profile=self.api.load_profile();self.assertIsInstance(profile['opening_release'],dict)
+        exception=profile['opening_release'];entry=next(e for e in exception['finite_binding_rows'] if e['component']=='AT')
+        context=next(c for c in profile['contexts'] if c['context_sha256']==entry['context_sha256'])
+        row={k:v for k,v in context['literal_context'].items() if k!='dataset'}
+        row.update(entry['source'],CodInst=entry['code'],AnoMes='200912',Saldo='123')
+        result=self.api.resolve_component(profile,'AT','financial',entry['code'],'200912',[row])
+        self.assertEqual(result['token'],'123')
+        self.assertEqual(result['definition_id'],context['compatibility'])
+        self.assertTrue(result['binding']['opening_exception'])
+        self.assertEqual(self.api.resolve_component(profile,'LL','financial',entry['code'],'200912',[row])['status'],'binding_unverified')
+        self.assertEqual(self.api.resolve_component(profile,'AT','financial','NOTWHITELISTED','200912',[dict(row,CodInst='NOTWHITELISTED')])['status'],'binding_unverified')
+        self.assertEqual(self.api.resolve_component(profile,'AT','financial',entry['code'],'200912',[dict(row,source_row='999999')])['status'],'opening_source_mismatch')
+
+    def test_opening_change_flag_and_both_dated_cadastro_rows_survive(self):
+        profile=self.api.load_profile();self.assertIsInstance(profile['opening_release'],dict)
+        entry=next(e for e in profile['opening_release']['finite_binding_rows'] if e['component']=='AT' and e['code']=='C0030159')
+        c=next(c for c in profile['contexts'] if c['context_sha256']==entry['context_sha256'])
+        row={k:v for k,v in c['literal_context'].items() if k!='dataset'}
+        row.update(entry['source'],CodInst=entry['code'],AnoMes='200912',Saldo='100')
+        result=self.api.resolve_component(profile,'AT','financial',entry['code'],'200912',[row])
+        self.assertIn('opening_cadastro_classification_change',result['flags'])
+
+
+class PackageTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis
+        self.api=ifdata_analysis
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name)
+
+    def digest(self,path): return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def native_package(self,name,rows,fields,contract):
+        import duckdb
+        root=self.root/name;root.mkdir()
+        path=root/'part.parquet'
+        with duckdb.connect() as conn:
+            conn.execute('create table native ('+','.join('"'+f+'" varchar' for f in fields)+')')
+            conn.executemany('insert into native values ('+','.join('?' for _ in fields)+')',[[r.get(f) for f in fields] for r in rows])
+            conn.execute('copy native to ? (format parquet)',[str(path)])
+        manifest=dict(contract=contract,rows=len(rows),files=[dict(file=path.name,rows=len(rows),sha256=self.digest(path))])
+        (root/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
+        return dict(root=str(root),expected_manifest_sha256=self.digest(root/'manifest.json'))
+
+    def fixtures(self):
+        from bank_quality.ifdata_odata import COLUMNS,CONTRACT
+        from bank_quality.ifdata_cadastro import FIELDS,ORIGIN,CONTRACT as CAD_CONTRACT
+        from bank_quality.ifdata_variable_catalog import build_catalog
+        profile=self.api.load_profile()
+        rows=[];capital=[]
+        for period in ['202312','202403','202406','202409','202412']:
+            for c in profile['contexts']:
+                if period not in c['periods']:continue
+                native={k:v for k,v in c['literal_context'].items() if k!='dataset'}
+                native.update(AnoMes=period,CodInst='P' if c['literal_context']['dataset']=='capital' else 'F',Saldo='100',
+                  source_file='page.json',source_sha256='a'*64,source_row=str(len(rows)+len(capital)+1),
+                  source_url='https://example.invalid/page',source_collected_utc='2026-10-14T00:00:00Z',source_context='literal')
+                (capital if c['literal_context']['dataset']=='capital' else rows).append(native)
+        f=self.native_package('financial',rows,COLUMNS,CONTRACT)
+        p=self.native_package('capital',capital,COLUMNS,CONTRACT)
+        cadastro=[]
+        for period in ['202312','202403','202406','202409','202412']:
+            for code in ['F','F2','O','P']:
+                c=dict.fromkeys(FIELDS+ORIGIN)
+                c.update(CodInst=code,Data=period,CodConglomeradoPrudencial='P',Tcb='TARGET' if code=='F' else 'OPERATOR',SegmentoTb=None if code=='F' else 'operator_segment',Td='C')
+                cadastro.append(c)
+        cad=self.native_package('cadastro',cadastro,FIELDS+ORIGIN,CAD_CONTRACT)
+        cat=self.root/'catalogue';build_catalog({'financial':f['root'],'capital':p['root']},cat)
+        sample=self.root/'sample';sample.mkdir()
+        mappings=[dict(company_cnpj14='1',company_name_2024='One',period='202412',native_target_code='F',operator_base8='O',native_cadastro={'CodConglomeradoPrudencial':'P'}),
+                  dict(company_cnpj14='2',company_name_2024='Two',period='202412',native_target_code='F2',operator_base8='O',native_cadastro={'CodConglomeradoPrudencial':'P'}),
+                  dict(company_cnpj14='3',company_name_2024='Missing Company',period='202412',native_target_code=None,operator_base8=None,native_cadastro=None)]
+        files={}
+        for name,data in [('company-quarter-map.json',mappings),('annual-verification.json',[]),('complementary-annual-verification.json',{'rows':[]})]:
+            (sample/name).write_text(json.dumps(data),encoding='utf-8');files[name]=self.digest(sample/name)
+        (sample/'manifest.json').write_text(json.dumps(dict(schema=1,issue=125,files=files)),encoding='utf-8')
+        return dict(periods=['202412'],profile_expected_sha256=self.digest(self.api.PROFILE_PATH),
+                    inputs=dict(financial=f,capital=p,cadastro=cad,
+                      catalogue=dict(root=str(cat),expected_manifest_sha256=self.digest(cat/'manifest.json')),
+                      sample=dict(root=str(sample),expected_manifest_sha256=self.digest(sample/'manifest.json'))))
+
+    def test_real_readers_build_preserves_missing_company_target_metadata_and_prudential_dedup(self):
+        self.assertTrue(hasattr(self.api,'build_analysis'),'Authenticated build missing')
+        config=self.fixtures();out=self.root/'analysis'
+        manifest=self.api.build_analysis(config,out)
+        self.assertEqual(manifest['stage'],'bindings-and-calculations')
+        self.assertEqual(manifest['dependency_periods'],['202312','202403','202406','202409','202412'])
+        results=json.loads((out/'results.json').read_text(encoding='utf-8'))
+        self.assertEqual(len([r for r in results if r['metric']=='C3']),1)
+        maps=json.loads((out/'company_map.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(maps),3)
+        missing=next(r for r in maps if r['company']=='3')
+        self.assertEqual(missing['status'],'missing_unit')
+        one=next(r for r in maps if r['company']=='1')
+        self.assertIsNone(one['financial_target_cadastro']['SegmentoTb'])
+        self.assertEqual(one['operator_cadastro']['SegmentoTb'],'operator_segment')
+        q1=next(r for r in results if r['metric']=='Q1' and r['code']=='F')
+        self.assertEqual(q1['diagnostics']['credit_identity']['residual_fraction'],{'numerator':'100','denominator':'1'})
+        c3=next(r for r in results if r['metric']=='C3')
+        self.assertEqual(c3['diagnostics']['published_index']['token'],'100')
+        self.assertEqual(c3['diagnostics']['published_index']['scale'],'native_index_unverified')
+        self.assertEqual(self.api.verify_analysis(out,self.digest(out/'manifest.json'))['tables']['company_map'],3)
+        queried=self.api.query_analysis(out,self.digest(out/'manifest.json'),"select count(*) as n from results where metric='C3'")
+        self.assertEqual(queried,[{'n':1}])
+        for sql in ["delete from results", "select * from read_csv('https://example.invalid/x')",'select 1; select 2']:
+            with self.assertRaises(Exception):self.api.query_analysis(out,self.digest(out/'manifest.json'),sql)
+        with self.assertRaises(FileExistsError):self.api.build_analysis(config,out)
+        (out/'extra.txt').write_text('unaccepted')
+        with self.assertRaises(ValueError):self.api.verify_analysis(out,self.digest(out/'manifest.json'))
+
+    def test_external_pins_duplicate_inventory_traversal_and_partial_outputs_fail_closed(self):
+        self.assertTrue(hasattr(self.api,'build_analysis'),'Authenticated build missing')
+        config=self.fixtures();config['inputs']['financial']['expected_manifest_sha256']='0'*64
+        with self.assertRaises(ValueError):self.api.build_analysis(config,self.root/'badpin')
+        f=Path(config['inputs']['financial']['root']);m=json.loads((f/'manifest.json').read_text())
+        for change in ['duplicate','traversal','missing']:
+            mm=deepcopy(m)
+            if change=='duplicate':mm['files'].append(mm['files'][0])
+            else:mm['files'][0]['file']='../outside.parquet' if change=='traversal' else 'missing.parquet'
+            (f/'manifest.json').write_text(json.dumps(mm))
+            config['inputs']['financial']['expected_manifest_sha256']=self.digest(f/'manifest.json')
+            with self.assertRaises((ValueError,FileNotFoundError)):self.api.build_analysis(config,self.root/change)
+            self.assertFalse((self.root/change/'manifest.json').exists())
+
+    def test_missing_external_profile_pin_cannot_borrow_local_hash(self):
+        config=self.fixtures();config['profile_expected_sha256']=None
+        with self.assertRaises(ValueError):self.api.build_analysis(config,self.root/'badprofile')
+
+    def test_opening_manifest_pin_outside_review_is_rejected(self):
+        config=self.fixtures()
+        config['inputs']['opening']=dict(root=str(self.root/'not-reviewed'),expected_manifest_sha256='a'*64)
+        with self.assertRaisesRegex(ValueError,'Opening200912 reviewed manifest mismatch'):
+            self.api.build_analysis(config,self.root/'badopening')
+
+    def test_opening_cadastro_requires_independently_reviewed_manifest(self):
+        config=self.fixtures()
+        config['inputs']['opening']=dict(root=str(self.root/'reviewed-opening'),
+            expected_manifest_sha256='a98b5381c9b32d0f11676d1d744e10d90176f226d2135b586ed026aa73777f7b')
+        # The synthetic cadastro exists and is internally authenticated, but
+        # was never part of the independent finite opening perimeter review.
+        try:
+            with self.assertRaisesRegex(ValueError,'Opening200912 cadastro reviewed manifest mismatch'):
+                self.api.build_analysis(config,self.root/'cadastro-outside-opening-review')
+        except FileNotFoundError:
+            self.fail('Unreviewed cadastro reached opening I/O instead of refusing the perimeter proof')
+
+    def test_part_count_mismatch_cannot_hide_behind_correct_total(self):
+        config=self.fixtures();root=Path(config['inputs']['financial']['root'])
+        manifest=json.loads((root/'manifest.json').read_text());manifest['files'][0]['rows']=0
+        (root/'manifest.json').write_text(json.dumps(manifest))
+        config['inputs']['financial']['expected_manifest_sha256']=self.digest(root/'manifest.json')
+        with self.assertRaises(ValueError):self.api.build_analysis(config,self.root/'badpartcount')
+
+    def test_verify_rejects_tampered_missing_and_duplicate_output_inventory(self):
+        config=self.fixtures();out=self.root/'analysis';self.api.build_analysis(config,out)
+        path=out/'manifest.json';raw=path.read_bytes();manifest=json.loads(raw)
+        (out/'results.json').write_text('[]')
+        with self.assertRaises(ValueError):self.api.verify_analysis(out,self.digest(path))
+        for change in ['duplicate','missing','traversal']:
+            m=deepcopy(manifest)
+            if change=='duplicate':m['files'].append(m['files'][0])
+            elif change=='missing':m['files'].pop()
+            else:m['files'][0]['file']='../outside'
+            path.write_text(json.dumps(m))
+            with self.assertRaises((ValueError,FileNotFoundError)):self.api.verify_analysis(out,self.digest(path))
 
 
 class TemporalTests(unittest.TestCase):
