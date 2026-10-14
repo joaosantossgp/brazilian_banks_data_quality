@@ -2,7 +2,7 @@
 
 Protocolo aprovado por João na conversa de 2026-10-13, consolidado na [Issue 112](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/112). A [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3) registra as decisões humanas e suas correções; esta nota reúne o desenho corrente para orientar base, análise e manuscrito. A pesquisa documental de 12/10 e o registro anterior da unidade permanecem abaixo como evidência histórica, com propostas distinguidas de adoção.
 
-**O desenho está aprovado; a lista principal fixa foi operacionalizada pela Issue125.** A [nota da amostra2024](fixed-financial-sample-2024-20261014.md) registra24companhias/20unidades, inventário complementar, cobertura e verificações anuais com desconhecidos explícitos. Não há fórmulas finais, limiar de representatividade, classificação econômica histórica completa ou índice único adotados por esta consolidação. O manuscrito não substitui decisões posteriores de João/orientador.
+**O desenho está aprovado; a lista principal fixa foi operacionalizada pela Issue125.** A [nota da amostra2024](fixed-financial-sample-2024-20261014.md) registra24companhias/20unidades, inventário complementar, cobertura e verificações anuais com desconhecidos explícitos. Em14/10, após a pesquisa111, João adotou o conjunto inicial de dez métricas e sua regra temporal, descritos abaixo. Não há limiar de representatividade, classificação econômica histórica completa ou índice único adotados por esta consolidação. O manuscrito não substitui decisões posteriores de João/orientador.
 
 ## Protocolo aprovado — 2026-10-13, com decisão posterior de 2026-10-14
 
@@ -30,7 +30,7 @@ Comparação e investigação fundamentada de possíveis explicações são entr
 
 ### Cinco dimensões obrigatórias
 
-Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. As perguntas organizam a seleção futura, sem adotar um indicador universal por dimensão.
+Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. As perguntas organizam o conjunto de dez métricas adotado em 14/10/2026, sem impor um indicador universal a toda atividade.
 
 | Dimensão | Pergunta orientadora | Cuidado de interpretação |
 |---|---|---|
@@ -38,15 +38,17 @@ Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. A
 | Qualidade do crédito | Como evoluem deterioração da carteira, provisões e perdas? | Estoque de provisão, despesa de provisão e atraso medem aspectos distintos; adequação depende da atividade. |
 | Capital e alavancagem | Como se relacionam estrutura patrimonial, exposições e absorção de perdas? | Capitalização contábil e capital regulatório mantêm conceitos e perímetros próprios. |
 | Liquidez e financiamento | Como fontes de recursos, composição e dependências de financiamento se relacionam ao desempenho? | Uma razão de estoques isolada não comprova capacidade de cumprir obrigações ou resistir a saques. |
-| Eficiência operacional | Como custos, receitas e características da atividade explicam diferenças de resultado? | Razões contábeis e métodos de fronteira de eficiência respondem a perguntas distintas; nenhum método foi escolhido. |
+| Eficiência operacional | Como custos, receitas e características da atividade explicam diferenças de resultado? | O conjunto adotado usa a proxy contábil E2-B. Métodos de fronteira respondem a outra pergunta e não foram adotados. |
 
 A obrigatoriedade da dimensão não exige nota agregada nem que toda métrica se aplique a toda atividade. Não preencher lacunas com proxies sem fundamento nem tratar não aplicabilidade como pior desempenho. As cautelas acima sintetizam o contexto de pesquisa já registrado nesta nota; não são fórmulas atribuídas a Assaf ou nova revisão de literatura.
 
-Todas serão bem fundamentadas, com **especial atenção a Assaf Neto** e complementação pelas fontes mais adequadas a cada área. A [bibliografia comentada](../../REFERENCES.md) distingue metadados confirmados, trechos efetivamente lidos, evidência reaproveitada e candidatos. A fundamentação das cinco dimensões ainda será aprofundada após o inventário da base.
+Todas têm **especial atenção a Assaf Neto** e complementação pelas fontes mais adequadas a cada área. A [pesquisa111](financial-dimensions-literature-20261014.md) apresenta mecanismos, fontes efetivamente lidas, fichas, adaptações e cobertura delimitada; a [bibliografia comentada](../../REFERENCES.md) e a proveniência distinguem versões e limites. Isso não certifica todos os bindings ou a observação completa de cada dimensão.
+
+**Escolha de João em14/10/2026:** ROA eROE com lucro líquido; provisionamento/crédito e custo de provisão como proxies contábeis, sem chamar inadimplência; PL/AT e, em séries prudenciais próprias, PR/RWA e CP/RWA; liquidez imediata e crédito/depósitos quando aplicáveis; eficiênciaE2-B com custos de pessoal/administração sobre renda selecionada antes da provisão. São dez métricas, com limitações explícitas; companhia não sai da amostra por falta ou não aplicabilidade de uma métrica. [Decisão datada](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6174707162). A implementação e seus gates estão na [spec127](../superpowers/specs/2026-10-14-ifdata-monograph-analysis-design.md).
 
 ### Tempo e mudanças na composição
 
-Usar **análise trimestral com sínteses anuais**, escolhendo a apresentação conforme a pergunta. A janela adequada será definida por indicador: estoques têm data; fluxos têm intervalo; médias, anualização e acumulados em doze meses precisam de fundamento próprio. Dezembro não prova resultado anual e média dos quatro trimestres não é regra universal. Preservar quebras de regime, composição e perímetro, inclusive as fronteiras documentadas nas pesquisas anteriores.
+Usar **análise trimestral com sínteses anuais**, escolhendo a apresentação conforme a pergunta. Em14/10, João adotou reconstrução dos trimestres efetivos e fluxos de12meses, sem multiplicar trimestre porquatro, e médias de estoques pelas observações trimestrais incluindo abertura e ponderação pelo tempo. A aproximação trapezoidal em dias concretiza tecnicamente essa escolha na spec127; não é saldo diário observado ou média mensal ajustadaBCB. Estoques têm data e fluxos têm intervalo: sínteses anuais dos índices de estoque usam dezembro, e métricas de fluxo usam componentes disjuntos de12meses. Abertura ausente, definição incompatível e história insuficiente permanecem estados, sem encurtar janela. Preservar quebras de regime, composição e perímetro, inclusive201903 e a separação2025.
 
 Mostrar composição/cobertura e entradas/saídas relevantes. Comparações entre unidades presentes nos períodos confrontados serão usadas quando úteis e **fáceis de produzir por consultas/filtros reutilizáveis**. Não exigir recortes manuais extensos nem decompor toda variação. A decisão posterior14/10 adota a coorte selecionada em2024 como principal, acompanhando unidades nativas contemporâneas e mudanças de perímetro. Comparações de composição alternativa são robustez eventual, sujeitas a utilidade, cobertura e viabilidade; exclusões e ausências devem ser explicitadas. Se um contraste importante for inviável, registrar a limitação em vez de presumir sua entrega.
 
@@ -58,7 +60,7 @@ Antes da pesquisa de indicadores, inventariar campos e valores nativos, signific
 
 A conferência preliminar dos corpos cadastrais de **201003 e 202412**, com hashes conferidos contra o índice recebido, encontrou `Tcb`, `Td`, `Tc`, `SegmentoTb`, `Atividade`, `Sr` e `Situacao`. `Sr` é integralmente nulo em 201003; em 202412 há S1–S5 e nulos. `Atividade` tem lacunas e rótulos históricos. Isso é observação de duas referências do cadastro inteiro, **não inventário do histórico nem cobertura da amostra elegível**, e não comprova o significado de todos os códigos. Ver [cadastro temporal e limites](ifdata-cadastro-20261011.md).
 
-A ordem aprovada é **inventário validado das segmentações e componentes → pesquisa bibliográfica orientada por esses recortes → proposta/seleção fundamentada dos indicadores**. A literatura também avalia a validade dos recortes; disponibilidade não justifica sozinha uma métrica. A [pesquisa das cinco dimensões](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/111) foi interrompida a pedido de João e aguarda esse inventário e replanejamento. Não se afirma pesquisa Feynman executada agora: `deep-research`, `literature-review` e `pdf-explore` foram solicitadas para a etapa futura; `/lit` e `/deepresearch` não têm mecanismo disponível nesta interface.
+A ordem aprovada é **inventário validado das segmentações e componentes → pesquisa bibliográfica orientada por esses recortes → proposta/seleção fundamentada dos indicadores**. O inventário113 e a pesquisa111 cumpriram os dois primeiros recortes; João adotou a seleção inicial acima. A literatura também avalia a validade dos recortes; disponibilidade não justifica sozinha uma métrica. A interrupção anterior da111 foi superada pelo inventário/replanejamento, sem apagar seu histórico. A pesquisa usa leitura dirigida local/web, pesquisadores e verificadores independentes com proveniência; não alega `/lit` ou `/deepresearch` executados nesta interface. A [implementação127](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/127) exige contrato de cada binding, testes e revisão de domínio antes de ampliar cálculos.
 
 ### Cobertura e saúde da base
 
