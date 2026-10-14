@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import json
 import csv
+import re
 from datetime import datetime, timezone
 from calendar import monthrange
 from itertools import groupby
@@ -10,12 +11,13 @@ from pathlib import Path
 import tempfile
 import duckdb
 from .ifdata_cadastro import open_cadastro, attach_values, _records
-from .ifdata_odata import _path, _digest
+from .ifdata_odata import _path, _digest, FIELDS as NATIVE_FIELDS, PROVENANCE
 
 CONTRACT = 'ifdata-indicator-pilot-v1'
 TABLES = ('results', 'wide', 'coverage', 'statistics')
 
 PRECISION = 100
+DUPLICATE_POLICY = 'identical-native-rows-same-source-v1'
 STOCK_DEFINITIONS = {
     ('1', '78182'): '[10000007] + [20000004]',
     ('1', '78186'): '[60000002] + [70000009]+ [80000006]',
@@ -55,6 +57,47 @@ def calculate(numerator, denominator):
     return result
 
 
+def _coalesce_exact_occurrences(previous, row):
+    """Resolve literal repeats within one captured page, retaining every locator.
+
+    Equal balances alone cannot establish a repeat. Missing native fields,
+    different semantic attributes/pages, or reused positions remain ambiguous.
+    Authentication of the underlying page belongs to the existing input reader.
+    """
+    if any('ambiguous_occurrences' in r for r in (previous, row)):
+        return None
+    if not all(k in r for r in (previous, row) for k in NATIVE_FIELDS):
+        return None
+    if not isinstance(previous.get('CodInst'), str) or not previous['CodInst'].strip():
+        return None
+    semantic = (set(previous) | set(row)) - set(PROVENANCE) - {'source_occurrences'}
+    if any(k not in previous or k not in row or type(previous[k]) is not type(row[k])
+           or previous[k] != row[k] for k in semantic):
+        return None
+    source_fields = tuple(k for k in PROVENANCE if k != 'source_row')
+    if any(not isinstance(previous.get(k), str) or not previous[k]
+           or previous[k] != row.get(k) for k in source_fields):
+        return None
+    if not re.fullmatch('[0-9a-f]{64}', previous['source_sha256']):
+        return None
+    occurrences = []
+    for item in (previous, row):
+        occurrences.extend(item.get('source_occurrences',
+                                    [{k:item.get(k) for k in PROVENANCE}]))
+    positions = []
+    for occurrence in occurrences:
+        position = occurrence.get('source_row')
+        if (any(occurrence.get(k) != previous[k] for k in source_fields)
+                or not isinstance(position, str) or not re.fullmatch('[1-9][0-9]*', position)):
+            return None
+        positions.append(position)
+    if len(set(positions)) != len(positions):
+        return None
+    occurrences = sorted(occurrences, key=lambda p:int(p['source_row']))
+    return dict(previous, source_row=occurrences[0]['source_row'],
+                source_occurrences=occurrences)
+
+
 def build_pilot(values_root, cadastro, output, periods=None, opening_root=None):
     """Build immutable exploratory tables using authenticated local inputs."""
     values_root, cadastro, output = map(lambda p: Path(p).resolve(), (values_root, cadastro, output))
@@ -68,6 +111,7 @@ def build_pilot(values_root, cadastro, output, periods=None, opening_root=None):
                     statistics='approximate DOUBLE, no trimming or winsorization',
                     sample='technical native population; listed-company eligibility not certified',
                     csv_omits=['numerator_definition','denominator_definition','mean_stock_inputs'],
+                    duplicate_policy=DUPLICATE_POLICY,
                     inputs=[], excluded_missing_codes=[], files=[], rows=0)
     manifest['inputs'].append(dict(dataset='cadastro', manifest_sha256=_digest((cadastro/'manifest.json').read_bytes())))
     with tempfile.TemporaryDirectory(dir=output) as temporary, open_cadastro(cadastro) as conn:
@@ -92,8 +136,12 @@ def build_pilot(values_root, cadastro, output, periods=None, opening_root=None):
                         key = row['CodInst'],row['AnoMes'],row['Conta']
                         if key in history:
                             previous=history[key]
-                            occurrences=previous.get('ambiguous_occurrences',[previous])
-                            history[key]=dict(previous,Saldo=None,ambiguous_occurrences=[*occurrences,row])
+                            resolved=_coalesce_exact_occurrences(previous,row)
+                            if resolved is not None:
+                                history[key]=resolved
+                            else:
+                                occurrences=previous.get('ambiguous_occurrences',[previous])
+                                history[key]=dict(previous,Saldo=None,ambiguous_occurrences=[*occurrences,row])
                         else:
                             history[key] = row
                 if len(sources)>1:
@@ -274,9 +322,13 @@ def evaluate_unit(dataset, rows, unit=None, history=None, native_windows=False,r
             raise ValueError('Mixed native units')
         key = (row['NumeroRelatorio'], row['Conta'])
         if key in bindings:
-            if not retain_ambiguity:
-                raise ValueError('Duplicate native binding')
-            duplicates.setdefault(key,[bindings[key]]).append(row)
+            resolved = None if key in duplicates else _coalesce_exact_occurrences(bindings[key],row)
+            if resolved is not None:
+                bindings[key] = resolved
+            else:
+                if not retain_ambiguity:
+                    raise ValueError('Duplicate native binding')
+                duplicates.setdefault(key,[bindings[key]]).append(row)
         else:
             bindings[key] = row
     td = first.get('Td') if first.get('cadastro_encontrado') else None

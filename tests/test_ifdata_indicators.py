@@ -30,6 +30,16 @@ def cell(report,code,value,name=None,description=None):
                 TipoInstituicao='3',NomeInstituicao='Teste',Td='I',cadastro_encontrado=True,
                 source_file='input.json',source_sha256='a'*64,source_row=code)
 
+def sourced_cell(report,code,value,position,**changes):
+    row=cell(report,code,value)
+    row.update(NomeRelatorio={'1':'Resumo','2':'Ativo','3':'Passivo','4':'DRE','5':'Capital'}[report],
+               source_url='https://example.invalid/captured-page',
+               source_collected_utc='2026-10-11T15:03:27+00:00',
+               source_context='https://example.invalid/$metadata#_IfDataValores',
+               source_row=str(position))
+    row.update(changes)
+    return row
+
 class UnitTests(unittest.TestCase):
     def test_context_signed_ratios_and_pending_flows(self):
         rows=[cell('1','78182','100'),cell('1','78186','20'),cell('1','78187','5'),
@@ -123,6 +133,48 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(r['status'],'duplicate_binding');self.assertIsNone(r['value'])
         self.assertEqual(len(json.loads(r['denominator_definition'])['ambiguous_occurrences']),2)
 
+    def test_identical_source_occurrences_calculate_once_and_keep_all_positions(self):
+        asset=sourced_cell('1','78182','100.00',3)
+        rows=[asset,dict(asset,source_row='1'),dict(asset,source_row='2'),
+              sourced_cell('1','78186','20.00',4)]
+        r=next(r for r in evaluate_unit('individual',rows) if r['indicator']=='pl_ativo')
+        self.assertEqual((r['status'],r['value']),('ok','0.2'))
+        component=json.loads(r['denominator_definition'])
+        self.assertEqual(component['Saldo'],'100.00')
+        self.assertEqual(component['source_row'],'1')
+        self.assertEqual([p['source_row'] for p in component['source_occurrences']],['1','2','3'])
+        self.assertEqual(rows[0],asset)
+        self.assertNotIn('source_occurrences',asset)
+
+    def test_equal_amount_is_not_enough_to_resolve_a_duplicate(self):
+        asset=sourced_cell('1','78182','100.00',1)
+        for changes in [{'Saldo':'100.0'},{'Saldo':'101.00'},{'Grupo':'another'},
+                        {'DescricaoColuna':'another'},{'NomeColuna':'another'},
+                        {'NomeInstituicao':'another'},{'source_sha256':'b'*64},
+                        {'source_file':'another.json'},{'source_row':'1'},
+                        {'source_row':'invalid'},{'source_url':None}]:
+            with self.subTest(changes=changes):
+                other=dict(asset,source_row='2');other.update(changes)
+                rows=[asset,other,sourced_cell('1','78186','20',3)]
+                with self.assertRaisesRegex(ValueError,'Duplicate'):
+                    evaluate_unit('individual',rows)
+                r=next(r for r in evaluate_unit('individual',rows,retain_ambiguity=True)
+                       if r['indicator']=='pl_ativo')
+                self.assertEqual(r['status'],'duplicate_binding');self.assertIsNone(r['value'])
+
+    def test_identical_null_occurrences_remain_null_and_a_later_conflict_stays_blocked(self):
+        asset=sourced_cell('1','78182','100',1)
+        equity=sourced_cell('1','78186',None,3)
+        r=next(r for r in evaluate_unit('individual',[asset,equity,dict(equity,source_row='4')])
+               if r['indicator']=='pl_ativo')
+        self.assertEqual(r['status'],'null_balance');self.assertIsNone(r['value'])
+        self.assertEqual(len(json.loads(r['numerator_definition'])['source_occurrences']),2)
+        rows=[asset,dict(asset,source_row='2'),dict(asset,source_row='5',Saldo='101'),
+              sourced_cell('1','78186','20',6)]
+        r=next(r for r in evaluate_unit('individual',rows,retain_ambiguity=True)
+               if r['indicator']=='pl_ativo')
+        self.assertEqual(r['status'],'duplicate_binding');self.assertIsNone(r['value'])
+
 class BuildTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
@@ -189,5 +241,38 @@ class BuildTests(unittest.TestCase):
         build_pilot(self.values,self.cadastro,self.out)
         with open_pilot(self.out) as c:
             self.assertEqual(c.execute("select count(*) from results where code='99999999'").fetchone()[0],10)
+
+    def test_repeated_september_stock_is_used_once_in_december_mean(self):
+        from bank_quality.ifdata_indicators import build_pilot,open_pilot
+        from bank_quality.ifdata_odata import COLUMNS,CONTRACT
+        from bank_quality.ifdata_cadastro import FIELDS,CONTRACT as CADASTRO_CONTRACT
+        rows=[]
+        for period,asset,equity,copies in [('202506','80','10',1),('202509','90','16',3),('202512','100','20',1)]:
+            for code,value,definition in [('140220',asset,'[1000000009] + [2000000008]'),
+                                          ('140246',equity,'[6000000004]+ [7000000003]+ [8000000002]')]:
+                for _ in range(copies):
+                    rows.append(sourced_cell('1',code,value,len(rows)+1,AnoMes=period,DescricaoColuna=definition))
+        rows.append(sourced_cell('1','141870','5',len(rows)+1,AnoMes='202512',
+                                DescricaoColuna='[7000000003] + [8000000002] - [8195600001]'))
+        values=self.root/'duplicate-values'
+        for dataset in ('financial','capital'):
+            source=self.values/dataset;target=values/dataset;target.mkdir(parents=True)
+            for path in source.iterdir():(target/path.name).write_bytes(path.read_bytes())
+        self.package(values/'individual',COLUMNS,rows,CONTRACT)
+        cadastro=self.root/'duplicate-cadastro';register=[]
+        for period in ('202506','202509','202512'):
+            row=dict.fromkeys(FIELDS);row.update(CodInst='00000123',Data=period,Td='I',NomeInstituicao='Teste')
+            register.append(row)
+        self.package(cadastro,FIELDS,register,CADASTRO_CONTRACT)
+        output=self.root/'duplicate-pilot'
+        manifest=build_pilot(values,cadastro,output,periods=['202512'])
+        with open_pilot(output) as conn:
+            status,denominator,inputs=conn.execute("select status,denominator,mean_stock_inputs from results where indicator='roe' and method='media_trimestral'").fetchone()
+        self.assertEqual(status,'ok')
+        self.assertEqual(manifest['duplicate_policy'],'identical-native-rows-same-source-v1')
+        self.assertTrue(denominator.startswith('15.3333333333333333333333333333'))
+        september=json.loads(inputs)[1]
+        self.assertEqual(september['Saldo'],'16')
+        self.assertEqual(len(september['source_occurrences']),3)
 
 if __name__=='__main__': unittest.main()
