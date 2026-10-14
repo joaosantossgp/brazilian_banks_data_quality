@@ -87,6 +87,61 @@ class HistoricalTests(unittest.TestCase):
                                   [str(out / (name + '.csv'))])
             return [dict(zip([f[0] for f in cursor.description], values)) for values in cursor.fetchall()]
 
+    def test_cvm_conflict_comparison_ignores_only_ascii_zero_padding(self):
+        api = self.api()
+        cases = [(['906', '000906'], False), (['1023', '001023'], False),
+                 (['0', '000000'], False), (['1279', '19348', '019348'], True),
+                 (['906', 'A00906'], True), (['906', '+906'], True),
+                 (['906', '-906'], True), (['906', '906.0'], True),
+                 (['906', '9.06e2'], True), (['906', ' 906'], True),
+                 (['906', '906 '], True), (['906', '906\n'], True),
+                 (['906', '９０６'], True), (['906', '٩٠٦'], True),
+                 (['906', None, ''], False)]
+        for tokens, conflict in cases:
+            for ordered in (tokens, list(reversed(tokens))):
+                with self.subTest(tokens=ordered):
+                    records = [dict(cnpj_full='00000000000191', cvm_code=token,
+                                    CD_CVM=token, identifier_conflict='false') for token in ordered]
+                    before = [dict(record) for record in records]
+                    api._issuer_conflicts(records)
+                    self.assertEqual([r['identifier_conflict'] for r in records],
+                                     [str(conflict).lower()] * len(records))
+                    for original, actual in zip(before, records):
+                        self.assertEqual({k: v for k, v in actual.items() if k != 'identifier_conflict'},
+                                         {k: v for k, v in original.items() if k != 'identifier_conflict'})
+        unknown = [dict(cnpj_full=None, cvm_code=code) for code in ('906', '1279')]
+        api._issuer_conflicts(unknown)
+        self.assertEqual([r['identifier_conflict'] for r in unknown], ['false', 'false'])
+
+    def test_ascii_padded_cvm_codes_keep_native_values_and_remove_false_conflict(self):
+        self.cvm_fixture.rows['cad'][0]['CD_CVM'] = '1023'
+        out, result, _ = self.build()
+        api = self.api()
+        api.verify_historical_issuer_links(out, result['manifest_sha256'])
+        records = self.table(out, 'emissores')
+        self.assertEqual([r['cvm_code'] for r in records], ['1023', '001023', '001023'])
+        self.assertEqual([r['CD_CVM'] for r in records], ['1023', '001023', None])
+        self.assertEqual([r['Codigo_CVM'] for r in records], [None, None, '001023'])
+        self.assertEqual({r['identifier_conflict'] for r in records}, {'false'})
+        data = api.query_historical_issuer_links(out, result['manifest_sha256'], reference='201003')
+        self.assertEqual(len(data['relacao_trimestral']), 3)
+        self.assertEqual({r['evidence_state'] for r in data['relacao_trimestral']}, {'candidatura_cadastral'})
+        self.assertEqual({r['cvm_codes'] for r in data['relacao_trimestral']}, {'["001023","1023"]'})
+        self.assertFalse(any(r['reason'] == 'multiplos_codigos_cvm' for r in data['lacunas']))
+        self.assertTrue(any(r['reason'] == 'mercado_historico_incompleto' for r in data['lacunas']))
+        # Even a repinned attempt to restore the old false conflict is rejected by rederivation.
+        path = out / 'emissores.csv'
+        records[0]['identifier_conflict'] = 'true'
+        with path.open('w', newline='', encoding='utf8') as stream:
+            writer = csv.DictWriter(stream, records[0], quoting=csv.QUOTE_NOTNULL, lineterminator='\n')
+            writer.writeheader()
+            writer.writerows(records)
+        manifest = json.loads((out / 'manifest.json').read_bytes())
+        manifest['files'][path.name].update(sha256=sha(path), bytes=path.stat().st_size)
+        (out / 'manifest.json').write_text(json.dumps(manifest), encoding='utf8')
+        with self.assertRaises(ValueError):
+            api.verify_historical_issuer_links(out, sha(out / 'manifest.json'))
+
     def test_native_nulls_unknown_codes_groups_and_deduplicated_classes(self):
         self.cvm_fixture.rows['valmob'] *= 2
         out, result, args = self.build()

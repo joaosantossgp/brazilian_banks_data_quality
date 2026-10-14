@@ -126,7 +126,13 @@ def _issuer_conflicts(issuer):
     codes = defaultdict(set)
     for row in issuer:
         if row['cnpj_full'] and row['cvm_code']:
-            codes[row['cnpj_full']].add(row['cvm_code'])
+            code = row['cvm_code']
+            # Compare the CAD numeric domain with the FCA numeric character domain.
+            # Normalize the comparison key alone; native observations stay literal.
+            key = code
+            if isinstance(code, str) and re.fullmatch(r'[0-9]+', code):
+                key = code.lstrip('0') or '0'
+            codes[row['cnpj_full']].add(key)
     for row in issuer:
         row['identifier_conflict'] = str(len(codes[row['cnpj_full']]) > 1).lower()
 
