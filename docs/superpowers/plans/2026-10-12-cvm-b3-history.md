@@ -72,7 +72,9 @@ Base `91bd20ccb205e72d47d42536eefbb529da551f16`, branch `codex/cvm-b3-history-re
 
 Owner implementer; allowlist `bank_quality/historical_issuer_links.py`, `tests/test_historical_issuer_links.py`, `scripts/build-historical-issuer-links.py`. Root exclusivo nesta spec/plano, ledger de execução, handoff e arquitetura. Sem novo módulo, camada ou dependência.
 
-Complemento de verificação: Root também possui `.github/workflows/ci.yml`, exclusivamente `fetch-depth: 0` no checkout do job `offline-tests`, para que o blob V1 pinado da base esteja disponível ao oráculo de equivalência. Mesmo pin da action e `persist-credentials: false`; nenhum job, permissão ou proteção muda. O job Windows nativo não executa esse oráculo e conserva sua configuração.
+Complemento de verificação: Root também possui `.github/workflows/ci.yml`, inicialmente para acrescentar `fetch-depth: 0` no checkout do job `offline-tests`, para que o blob V1 pinado da base esteja disponível ao oráculo de equivalência. Mesmo pin da action e `persist-credentials: false`; nenhum job, permissão ou proteção muda. O job Windows nativo não executa esse oráculo e conserva sua configuração.
+
+Complemento posterior de recurso, [Issue108/comment6160844085](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108#issuecomment-6160844085): Root altera também somente o timeout do job offline de15 para25minutos. Base CI853testes/726,522s e componente ampliado72testes/444,481s fundamentam o orçamento finito; revisão independente recomendou o ajuste. Windows permanece15; testes/actionpins/permissões/proteções inalterados. Não é confirmação antecipada do CI no novo head.
 
 - [x] RED: caminho compartilhado em referências/perspectivas deve ocupar um único registro; expandir IDs deve reconstruir exatamente a representação V1. Carregar o módulo V1 do blob Git da base como oráculo, sem copiar implementação para o teste.
 - [x] RED: adulteração/repin de ID, rota, datas, suportes, ponta, referência ausente e registro extra devem falhar; consulta vazia conserva lista de caminhos vazia. Casos cíclicos e datas distintas preservam os estados anteriores.
@@ -111,10 +113,10 @@ Contrato R3 adotado na spec existente e na [Issue108](https://github.com/joaosan
 
 ### R3a — índice curado e evidência autenticada
 
-- [ ] RED para schemas exatos/quatro listas/IDs/pins/bytes/paths/projeções/excertos Unicode; preservar strings/null/vazio e rejeitar duplicata antes de ordem canônica.
-- [ ] RED para matriz de tipos/papéis/namespaces/literais, datas e referência, DAG e clausura transitiva de fontes/estados necessários; não lavar blocked/shell/search/conflict em associação terminal.
-- [ ] GREEN da API `validate_issuer_supplement_index(index, expected_index_sha256, evidence_root)` e helper privado de admissão; CLI `supplement-check`. Não derivar relações nem produzir pacote real aceito nesta fatia.
-- [ ] Focados pertinentes, snapshot/diff/commit e revisão independente antes de ampliar R3b. Curadoria de input pode avançar em ownership distinto, mas claims compostos só passam após review semântico próprio.
+- [x] RED para schemas exatos/quatro listas/IDs/pins/bytes/paths/projeções/excertos Unicode; preservar strings/null/vazio e rejeitar duplicata antes de ordem canônica.
+- [x] RED para matriz de tipos/papéis/namespaces/literais, datas e referência, DAG e clausura transitiva de fontes/estados necessários; não lavar blocked/shell/search/conflict em associação terminal.
+- [x] GREEN da API `validate_issuer_supplement_index(index, expected_index_sha256, evidence_root)` e helper privado de admissão; CLI `supplement-check`. Não derivar relações nem produzir pacote real aceito nesta fatia.
+- [x] Focados pertinentes, snapshot/diff/commit e revisão independente antes de ampliar R3b. Curadoria de input pode avançar em ownership distinto, mas claims compostos só passam após review semântico próprio.
 
 ### R3b — derivação pontual, pacote e consultas
 
