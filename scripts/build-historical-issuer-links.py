@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bank_quality.historical_issuer_links import (
     build_historical_issuer_links, verify_historical_issuer_links, query_historical_issuer_links,
+    validate_issuer_supplement_index,
 )
 
 
@@ -18,6 +19,10 @@ def main():
         build.add_argument(name)
     for name in ('cvm', 'cadastro', 'corporate'):
         build.add_argument('--' + name + '-sha256', required=True)
+    check = commands.add_parser('supplement-check')
+    check.add_argument('index')
+    check.add_argument('--index-sha256', required=True)
+    check.add_argument('--evidence-root', required=True)
     for name in ('verify', 'query'):
         command = commands.add_parser(name)
         command.add_argument('output')
@@ -27,7 +32,9 @@ def main():
                 command.add_argument('--' + filter_name)
     args = parser.parse_args()
     try:
-        if args.command == 'build':
+        if args.command == 'supplement-check':
+            result = validate_issuer_supplement_index(args.index, args.index_sha256, args.evidence_root)
+        elif args.command == 'build':
             result = build_historical_issuer_links(args.cvm, args.cvm_sha256, args.cadastro,
                 args.cadastro_sha256, args.corporate, args.corporate_sha256, args.output)
         elif args.command == 'verify':

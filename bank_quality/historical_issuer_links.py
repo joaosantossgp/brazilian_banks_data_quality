@@ -604,3 +604,315 @@ def query_historical_issuer_links(output, expected_manifest_sha256, *, reference
     result['vinculos_cadastrais'] = [r for r in tables['vinculos_cadastrais'] if r['cadastro_support'] in supports['cadastro_support']
                                     and (perspective is None or r['perspective'] == perspective)]
     return result
+
+# The supplement is a separate, finite input contract; none of the v2 tables change.
+SUPPLEMENT_INPUT_CONTRACT = 'historical-issuer-supplement-input-v1'
+MAX_SUPPLEMENT_INDEX_BYTES = 4 * 1024 * 1024
+MAX_SUPPLEMENT_BODY_BYTES = 16 * 1024 * 1024
+MAX_SUPPLEMENT_EVIDENCE_BYTES = 256 * 1024 * 1024  # Total bundle, including canonical index.
+_SUPPLEMENT_FIELDS = {
+    'sources': 'source_id alias url body_path body_sha256 body_bytes retrieved_at publication_date source_nature document_state projection',
+    'entities': 'entity_id role native_name identifiers native_payload',
+    'claims': 'claim_id fact_type subject_id object_id native_payload fact_date reference time_state support support_claim_ids evidence_nature identity_confidence temporal_confidence conflict_state adoption_state rationale',
+    'unresolved': 'unresolved_id candidate_id missing_claim_kind reason evidence_needed support_claim_ids',
+}
+_SUPPLEMENT_IDS = {'sources': 'source', 'entities': 'entity', 'claims': 'claim', 'unresolved': 'unresolved'}
+_SUPPLEMENT_NAMESPACES = {
+    'company': {'CIK', 'CNPJ14', 'CNPJ_BASE8', 'CVM_CODE', 'LEI'},
+    'operator_br': {'CNPJ14', 'CNPJ_BASE8', 'BCB_CODINST', 'LEI'},
+    'intermediary': {'CIK', 'CNPJ14', 'CNPJ_BASE8', 'LEI'},
+    'instrument': {'PROGRAM_ID', 'TICKER'}, 'bcb_unit': {'BCB_CODINST'},
+}
+_SUPPLEMENT_FACTS = {'issuer_identity', 'instrument_program', 'instrument_observation',
+    'participation_declared', 'bcb_membership', 'analytical_identification', 'event', 'capture_status'}
+
+
+def _supplement_require(condition, message):
+    if not condition:
+        raise ValueError('Issuer supplement: ' + message)
+
+
+def _supplement_schema(record, fields, name):
+    _supplement_require(isinstance(record, dict) and set(record) == set(fields.split()), 'invalid ' + name + ' schema')
+
+
+def _supplement_string(value, name, nullable=False):
+    _supplement_require((nullable and value is None) or (isinstance(value, str) and bool(value)), 'invalid ' + name)
+
+
+def _supplement_enum(value, choices, name):
+    _supplement_require(isinstance(value, str) and value in choices, 'invalid ' + name)
+
+
+def _supplement_sorted(values, key, name):
+    _supplement_require(isinstance(values, list), name + ' must be an array')
+    keys = [key(value) for value in values]
+    _supplement_require(len(set(keys)) == len(keys), 'duplicate ' + name)
+    _supplement_require(keys == sorted(keys), 'noncanonical order: ' + name)
+
+
+def _supplement_payload(value):
+    """Keep opaque native JSON integral, without coercing any numerical token.
+
+    Structured identifiers are separately required to be strings. Native JSON
+    integers/booleans/finite numbers remain native, not new financial measures.
+    """
+    import math
+    if isinstance(value, dict):
+        for member in value.values():
+            _supplement_payload(member)
+    elif isinstance(value, list):
+        for member in value:
+            _supplement_payload(member)
+    else:
+        _supplement_require(value is None or isinstance(value, (str, int, float, bool)), 'invalid native JSON value')
+        _supplement_require(not isinstance(value, float) or math.isfinite(value), 'nonfinite native JSON value')
+
+
+def _supplement_locator(locator, source_id, evidence):
+    _supplement_schema(locator, 'start end excerpt', 'locator')
+    _supplement_require(source_id in evidence and evidence[source_id]['text'] is not None, 'locator requires a pinned projection')
+    start, end, excerpt = locator['start'], locator['end'], locator['excerpt']
+    text = evidence[source_id]['text']
+    _supplement_require(type(start) is int and type(end) is int and isinstance(excerpt, str)
+        and 0 <= start < end <= len(text) and text[start:end] == excerpt, 'Unicode locator/excerpt mismatch')
+    return excerpt
+
+
+def _supplement_support_key(record):
+    locator = record['locator']
+    return (record['source_id'], locator['start'], locator['end'], locator['excerpt'])
+
+
+def _supplement_identifier(identifier, entity, sources, evidence):
+    from urllib.parse import urlsplit
+    _supplement_schema(identifier, 'namespace literal source_id locator', 'identifier')
+    namespace, literal = identifier['namespace'], identifier['literal']
+    _supplement_enum(namespace, _SUPPLEMENT_NAMESPACES[entity['role']], 'identifier namespace for role')
+    _supplement_string(literal, 'identifier literal')
+    source_id = identifier['source_id']
+    _supplement_require(isinstance(source_id, str) and source_id in sources, 'unknown identifier source')
+    excerpt = _supplement_locator(identifier['locator'], source_id, evidence)
+    patterns = {'CNPJ14': r'[0-9]{14}', 'CNPJ_BASE8': r'[0-9]{8}',
+                'CIK': r'[0-9]{1,10}', 'CVM_CODE': r'[0-9]{1,7}', 'LEI': r'[A-Z0-9]{20}'}
+    if namespace in patterns:
+        _supplement_require(re.fullmatch(patterns[namespace], literal) is not None, 'invalid ' + namespace + ' literal')
+    # Only the source's exact CNPJ punctuation can be removed; no digit completion.
+    cnpjs = [re.sub(r'[./-]', '', token) for token in re.findall(
+        r'(?<![\w./+-])(?:[0-9]{2}\.[0-9]{3}\.[0-9]{3}/[0-9]{4}-[0-9]{2}|[0-9]{14})(?![\w./+-])', excerpt)]
+    if namespace == 'CNPJ14':
+        matches = literal in cnpjs
+    elif namespace == 'CNPJ_BASE8':
+        matches = any(value[:8] == literal for value in cnpjs) or re.search(r'(?<![\w./+-])' + literal + r'(?![\w./+-])', excerpt) is not None
+    elif namespace == 'CVM_CODE':
+        matches = any((value.lstrip('0') or '0') == (literal.lstrip('0') or '0')
+                      for value in re.findall(r'(?<![\w./+-])[0-9]+(?![\w./+-])', excerpt))
+    elif namespace == 'CIK':
+        url = urlsplit(sources[source_id]['url'])
+        sec = url.scheme == 'https' and url.netloc in ('www.sec.gov', 'sec.gov') and ('/Archives/edgar/data/' + literal + '/') in url.path
+        matches = re.search(r'(?<![\w./+-])' + literal + r'(?![\w./+-])', excerpt) is not None or (sec and entity['native_name'] in excerpt)
+    else:
+        matches = literal in excerpt
+    _supplement_require(matches, 'identifier literal lacks exact source proof: ' + namespace)
+
+
+def _admit_issuer_supplement_index(index, expected_index_sha256, evidence_root):
+    """Authenticate R3a only; no core loading, PDF extraction or associations.
+
+    Returns contract/index_sha256, the four original canonical lists, and
+    evidence[source_id] = {body: bytes, projection: bytes|None, text: str|None}.
+    A projection is a manually reviewed declaration pinned to its source body;
+    matching hashes/offsets do not certify extraction or the claim's truth.
+    """
+    from datetime import datetime
+    index = cvm_reader._plain_path(index)
+    raw = cvm_reader._pinned(index, expected_index_sha256, MAX_SUPPLEMENT_INDEX_BYTES)
+    _supplement_require(len(raw) <= MAX_SUPPLEMENT_EVIDENCE_BYTES, 'total bundle byte budget exceeded')
+    value = cvm_reader._json(raw)
+    _supplement_schema(value, 'contract sources entities claims unresolved', 'index')
+    _supplement_require(value['contract'] == SUPPLEMENT_INPUT_CONTRACT, 'unsupported input contract')
+    # Check canonical bytes, including exactly one final LF, without rewriting input.
+    _supplement_require(raw == (_json_text(value) + '\n').encode('utf8'), 'noncanonical JSON bytes')
+    root = cvm_reader._plain_path(evidence_root)
+    _supplement_require(root.is_dir(), 'evidence_root must be a directory')
+    by_kind = {}
+    for collection, fields in _SUPPLEMENT_FIELDS.items():
+        _supplement_require(isinstance(value[collection], list), collection + ' must be an array')
+        field = _SUPPLEMENT_IDS[collection] + '_id'
+        for record in value[collection]:
+            _supplement_schema(record, fields, collection)
+            _supplement_string(record[field], field)
+        _supplement_sorted(value[collection], lambda record: record[field], collection)
+        by_kind[collection] = {record[field]: record for record in value[collection]}
+    sources, entities, claims = (by_kind[name] for name in ('sources', 'entities', 'claims'))
+    evidence, paths, unique_bytes, blobs, texts = {}, {}, {}, {}, {}
+
+    def pinned_file(relative, digest, size, kind):
+        _supplement_require(type(size) is int and size >= 0, 'invalid evidence byte count')
+        path = cvm_reader._contained(root, relative)
+        _supplement_require(path.relative_to(root).as_posix() == relative, 'noncanonical evidence path')
+        key = str(path).casefold()
+        descriptor = (relative, kind, digest, size)
+        _supplement_require(key not in paths or paths[key] == descriptor, 'evidence path collision')
+        paths[key] = descriptor
+        limit = MAX_SUPPLEMENT_BODY_BYTES if kind == 'body' else MAX_SUPPLEMENT_EVIDENCE_BYTES
+        body = cvm_reader._pinned(path, digest, limit)
+        _supplement_require(len(body) == size, 'evidence byte count mismatch')
+        unique_bytes[(kind, digest)] = size
+        _supplement_require(len(raw) + sum(unique_bytes.values()) <= MAX_SUPPLEMENT_EVIDENCE_BYTES, 'total bundle byte budget exceeded')
+        # Authenticate every declared path, but retain a single byte image for
+        # aliases/pages sharing a hash, as required by the unique-byte budget.
+        return blobs.setdefault((kind, digest), body)
+
+    for source_id, source in sources.items():
+        for field in ('alias', 'url'):
+            _supplement_string(source[field], 'source ' + field)
+        _supplement_enum(source['source_nature'], ('regulator', 'issuer_document', 'official_news', 'research_evidence', 'accepted_dossier'), 'source_nature')
+        _supplement_enum(source['document_state'], ('substantive', 'blocked', 'shell', 'search_excerpt'), 'document_state')
+        publication = source['publication_date']
+        _supplement_require(publication is None or (isinstance(publication, str) and _date(publication) is not None), 'invalid publication_date')
+        retrieved = source['retrieved_at']
+        if retrieved is not None:
+            _supplement_require(isinstance(retrieved, str) and re.match(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T', retrieved) is not None, 'invalid retrieved_at')
+            try:
+                instant = datetime.fromisoformat(retrieved)
+            except ValueError as error:
+                raise ValueError('Issuer supplement: invalid retrieved_at') from error
+            _supplement_require(instant.utcoffset() is not None, 'retrieved_at must include timezone')
+        body = pinned_file(source['body_path'], source['body_sha256'], source['body_bytes'], 'body')
+        projection, text = None, None
+        if source['projection'] is not None:
+            projected = source['projection']
+            _supplement_schema(projected, 'path sha256 bytes representation body_sha256 page', 'projection')
+            _supplement_string(projected['representation'], 'projection representation')
+            _supplement_require(projected['body_sha256'] == source['body_sha256'], 'projection body pin mismatch')
+            _supplement_require(projected['page'] is None or (type(projected['page']) is int and projected['page'] >= 1), 'invalid physical page')
+            projection = pinned_file(projected['path'], projected['sha256'], projected['bytes'], 'projection')
+            try:
+                if projected['sha256'] not in texts:
+                    texts[projected['sha256']] = projection.decode('utf8')
+                text = texts[projected['sha256']]
+            except UnicodeError as error:
+                raise ValueError('Issuer supplement: projection must be UTF-8') from error
+        evidence[source_id] = dict(body=body, projection=projection, text=text)
+    for entity in entities.values():
+        _supplement_enum(entity['role'], _SUPPLEMENT_NAMESPACES, 'entity role')
+        _supplement_string(entity['native_name'], 'native_name')
+        _supplement_require(isinstance(entity['native_payload'], dict), 'native_payload must be an object')
+        _supplement_payload(entity['native_payload'])
+        _supplement_require(isinstance(entity['identifiers'], list), 'identifiers must be an array')
+        for identifier in entity['identifiers']:
+            _supplement_identifier(identifier, entity, sources, evidence)
+        _supplement_sorted(entity['identifiers'], lambda item: (item['namespace'], item['literal'], *_supplement_support_key(item)), 'identifiers')
+    roles = set(_SUPPLEMENT_NAMESPACES)
+    parties = {'company', 'operator_br', 'intermediary'}
+    matrix = {'issuer_identity': ({'company'}, {None}),
+        'instrument_program': ({'company'}, {'instrument'}), 'instrument_observation': ({'company'}, {'instrument'}),
+        'participation_declared': (parties, parties), 'bcb_membership': ({'operator_br'}, {'bcb_unit'}),
+        'analytical_identification': ({'company'}, {'operator_br'}), 'event': (roles, roles | {None}),
+        'capture_status': (roles, {None})}
+    for claim_id, claim in claims.items():
+        kind = claim['fact_type']
+        _supplement_enum(kind, _SUPPLEMENT_FACTS, 'fact_type')
+        subject, obj = claim['subject_id'], claim['object_id']
+        _supplement_require(isinstance(subject, str) and subject in entities, 'unknown claim subject')
+        _supplement_require(obj is None or (isinstance(obj, str) and obj in entities), 'unknown claim object')
+        _supplement_require(entities[subject]['role'] in matrix[kind][0]
+            and (entities[obj]['role'] if obj is not None else None) in matrix[kind][1], 'fact type/role/object mismatch')
+        _supplement_require(isinstance(claim['native_payload'], dict), 'native_payload must be an object')
+        _supplement_payload(claim['native_payload'])
+        _supplement_enum(claim['time_state'], ('document_point', 'analytical_point', 'unknown'), 'time_state')
+        _supplement_enum(claim['evidence_nature'], ('literal_observation', 'documentary_declaration', 'analytical_inference', 'native_bcb'), 'evidence_nature')
+        for field in ('identity_confidence', 'temporal_confidence'):
+            _supplement_enum(claim[field], ('high', 'medium', 'low', 'unknown'), field)
+        _supplement_enum(claim['conflict_state'], ('none_reported', 'unresolved', 'contradicted'), 'conflict_state')
+        _supplement_enum(claim['adoption_state'], ('observation', 'candidate', 'association'), 'adoption_state')
+        rationale = claim['rationale']
+        _supplement_require(rationale is None or isinstance(rationale, str), 'invalid rationale')
+        if claim['evidence_nature'] == 'analytical_inference' or claim['adoption_state'] == 'association' or claim['conflict_state'] != 'none_reported':
+            _supplement_require(isinstance(rationale, str) and bool(rationale.strip()), 'rationale required')
+        reference, fact_date, time_state = claim['reference'], claim['fact_date'], claim['time_state']
+        _supplement_require(reference is None or (isinstance(reference, str) and reference in REFERENCES), 'invalid reference')
+        _supplement_require(fact_date is None or (isinstance(fact_date, str) and _date(fact_date) is not None), 'invalid fact_date')
+        if time_state == 'unknown':
+            _supplement_require(reference is None, 'unknown time cannot have reference')
+        if time_state == 'document_point' and reference is not None:
+            _supplement_require(fact_date == _quarter(reference).isoformat()
+                and claim['native_payload'].get('date_purpose') in ('snapshot', 'declared_as_of', 'native_reference'), 'reference requires declared quarter snapshot')
+        if time_state == 'analytical_point':
+            _supplement_require(reference is not None and claim['evidence_nature'] == 'analytical_inference'
+                and isinstance(rationale, str) and bool(rationale.strip()), 'analytical point requires reference/inference/rationale')
+        if kind == 'event':
+            _supplement_require(reference is None, 'event cannot have quarter reference')
+        if kind == 'bcb_membership':
+            _supplement_require(reference is not None and time_state == 'document_point'
+                and claim['evidence_nature'] == 'native_bcb' and claim['native_payload'].get('perspective') in PERSPECTIVES, 'invalid native BCB membership')
+        _supplement_require(isinstance(claim['support'], list) and bool(claim['support']), 'textual support required')
+        for support in claim['support']:
+            _supplement_schema(support, 'source_id locator', 'support')
+            source_id = support['source_id']
+            _supplement_require(isinstance(source_id, str) and source_id in sources, 'unknown support source')
+            _supplement_locator(support['locator'], source_id, evidence)
+            state = sources[source_id]['document_state']
+            _supplement_require(state not in ('blocked', 'shell') or kind == 'capture_status', 'blocked/shell only supports capture_status')
+            _supplement_require(state != 'search_excerpt' or claim['adoption_state'] == 'candidate'
+                or (claim['adoption_state'] == 'observation' and claim['evidence_nature'] == 'literal_observation'), 'search_excerpt only supports auxiliary observation/candidate')
+        _supplement_sorted(claim['support'], _supplement_support_key, 'support')
+        dependencies = claim['support_claim_ids']
+        _supplement_require(isinstance(dependencies, list) and all(isinstance(item, str) and item in claims for item in dependencies), 'unknown support claim')
+        _supplement_sorted(dependencies, lambda item: item, 'support_claim_ids')
+        _supplement_require(claim_id not in dependencies, 'self support claim')
+        if claim['adoption_state'] == 'association':
+            _supplement_require(kind == 'analytical_identification' and bool(dependencies)
+                and (reference is not None or time_state == 'unknown'), 'invalid association declaration')
+            _supplement_require(any(item['namespace'] in ('CNPJ14', 'CNPJ_BASE8') for item in entities[obj]['identifiers']), 'association operator requires CNPJ identifier')
+            for entity_id in (subject, obj):
+                identifiers = entities[entity_id]['identifiers']
+                _supplement_require(bool(identifiers) and all(sources[item['source_id']]['document_state'] == 'substantive'
+                    for item in identifiers), 'association endpoints require substantive identifier support')
+    # Kahn traversal validates the entire DAG and propagates admissibility once,
+    # avoiding recursion limits and quadratic expansion of shared support paths.
+    pending = {claim_id: len(claim['support_claim_ids']) for claim_id, claim in claims.items()}
+    dependants = defaultdict(list)
+    for claim_id, claim in claims.items():
+        for dependency in claim['support_claim_ids']:
+            dependants[dependency].append(claim_id)
+    ready = [claim_id for claim_id, count in pending.items() if count == 0]
+    admissible = {}
+    while ready:
+        claim_id = ready.pop()
+        claim = claims[claim_id]
+        admissible[claim_id] = (claim['conflict_state'] == 'none_reported' and claim['fact_type'] != 'capture_status'
+            and claim['adoption_state'] != 'candidate'
+            and all(sources[item['source_id']]['document_state'] == 'substantive' for item in claim['support'])
+            and all(admissible[item] for item in claim['support_claim_ids']))
+        _supplement_require(claim['adoption_state'] != 'association' or admissible[claim_id], 'association has inadmissible transitive support')
+        for dependant in dependants[claim_id]:
+            pending[dependant] -= 1
+            if pending[dependant] == 0:
+                ready.append(dependant)
+    _supplement_require(len(admissible) == len(claims), 'cyclic support claims')
+    for unresolved in value['unresolved']:
+        _supplement_require(isinstance(unresolved['candidate_id'], str) and unresolved['candidate_id'] in entities, 'unknown unresolved candidate')
+        _supplement_enum(unresolved['missing_claim_kind'], _SUPPLEMENT_FACTS | {'temporal_coverage', 'identifier', 'issuer_chain', 'market_coverage'}, 'missing_claim_kind')
+        for field in ('reason', 'evidence_needed'):
+            _supplement_string(unresolved[field], field)
+        dependencies = unresolved['support_claim_ids']
+        _supplement_require(isinstance(dependencies, list) and all(isinstance(item, str) and item in claims for item in dependencies), 'unknown unresolved support claim')
+        _supplement_sorted(dependencies, lambda item: item, 'unresolved support_claim_ids')
+    for collection, prefix in _SUPPLEMENT_IDS.items():
+        field = prefix + '_id'
+        for record in value[collection]:
+            payload = {key: item for key, item in record.items() if key != field}
+            expected = prefix + ':' + hashlib.sha256(_json_text(payload).encode('utf8')).hexdigest()
+            _supplement_require(record[field] == expected, 'content ID mismatch: ' + field)
+    # Recheck external authority after all local evidence has been authenticated.
+    _supplement_require(cvm_reader._pinned(index, expected_index_sha256, MAX_SUPPLEMENT_INDEX_BYTES) == raw, 'index changed during admission')
+    return dict(value, index_sha256=expected_index_sha256, evidence=evidence)
+
+
+def validate_issuer_supplement_index(index, expected_index_sha256, evidence_root):
+    """Return R3a integrity counts, not acceptance of data or derived associations."""
+    admitted = _admit_issuer_supplement_index(index, expected_index_sha256, evidence_root)
+    return dict(contract=admitted['contract'], index_sha256=admitted['index_sha256'],
+                counts={name: len(admitted[name]) for name in _SUPPLEMENT_IDS})

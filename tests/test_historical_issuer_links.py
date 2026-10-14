@@ -554,3 +554,500 @@ class HistoricalTests(unittest.TestCase):
         with mock.patch.object(api, 'MAX_TABLE_BYTES', len(canonical) - 1), self.assertRaisesRegex(ValueError, 'size limit'):
             api._write_csv(self.root / 'too-large.csv', fields, records)
         self.assertLess((self.root / 'too-large.csv').stat().st_size, len(canonical))
+
+class IssuerSupplementAdmissionTests(unittest.TestCase):
+    """Finite curated evidence; no PDF extraction or relationship derivation."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.api = importlib.import_module('bank_quality.historical_issuer_links')
+        self.index = self.root / 'index.json'
+        self.text = '😀 Companhia Alfa 00.123.456/0001-00 CIK 000123 CVM 906 ALFA34 F001\n'
+        self.raw = self.text.encode('utf8')
+        (self.root / 'body.pdf').write_bytes(b'%PDF synthetic, manually reviewed projection')
+        (self.root / 'projection.txt').write_bytes(self.raw)
+        self.source = dict(alias='synthetic page 1', url='https://example.test/document',
+            body_path='body.pdf', body_sha256=sha(self.root / 'body.pdf'),
+            body_bytes=(self.root / 'body.pdf').stat().st_size, retrieved_at='2026-10-14T00:00:00Z',
+            publication_date='2024-12-31', source_nature='issuer_document', document_state='substantive',
+            projection=dict(path='projection.txt', sha256=sha(self.root / 'projection.txt'),
+                            bytes=len(self.raw), representation='raw PyMuPDF page.get_text, manually reviewed',
+                            body_sha256=sha(self.root / 'body.pdf'), page=1))
+        self.identifiers = [dict(namespace='CNPJ14', literal='00123456000100', source_id='S', locator=self.loc()),
+                            dict(namespace='CIK', literal='000123', source_id='S', locator=self.loc())]
+        self.company = dict(role='company', native_name='Companhia Alfa', identifiers=self.identifiers,
+                            native_payload=dict(name='Companhia Alfa', null=None, blank='', dash='-', values=['0001', None]))
+        self.operator = dict(role='operator_br', native_name='Operadora Alfa', identifiers=[json.loads(json.dumps(self.identifiers[0]))],
+                             native_payload={})
+        self.base_claim = dict(fact_type='issuer_identity', subject_id='C', object_id=None,
+            native_payload=dict(date_purpose='snapshot', percentage='50.0000000000000000000001'),
+            fact_date='2024-12-31', reference='202412', time_state='document_point',
+            support=[dict(source_id='S', locator=self.loc())], support_claim_ids=[],
+            evidence_nature='documentary_declaration', identity_confidence='high', temporal_confidence='high',
+            conflict_state='none_reported', adoption_state='observation', rationale=None)
+        self.association = dict(self.base_claim, fact_type='analytical_identification', object_id='O',
+            support_claim_ids=['B'], evidence_nature='analytical_inference', time_state='analytical_point',
+            adoption_state='association', rationale='Reviewed analytical composition, not legal certification')
+        self.value = dict(contract='historical-issuer-supplement-input-v1', sources=[self.source],
+                          entities=[self.company, self.operator], claims=[self.base_claim, self.association],
+                          unresolved=[dict(candidate_id='C', missing_claim_kind='temporal_coverage',
+                              reason='No historical interval', evidence_needed='Dated source', support_claim_ids=['B'])])
+
+    def loc(self, excerpt=None):
+        excerpt = self.text if excerpt is None else excerpt
+        start = self.text.index(excerpt)
+        return dict(start=start, end=start + len(excerpt), excerpt=excerpt)
+
+    def canonical(self, value):
+        return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n').encode('utf8')
+
+    def fixture(self):
+        """Fresh IDs and explicit references, retaining payload order/types exactly."""
+        data = json.loads(json.dumps(self.value))
+        refs = {}
+        for collection, field, prefix, aliases in (
+                ('sources', 'source_id', 'source', ['S', 'T']),
+                ('entities', 'entity_id', 'entity', ['C', 'O', 'G']),
+                ('claims', 'claim_id', 'claim', ['B', 'A', 'Z']),
+                ('unresolved', 'unresolved_id', 'unresolved', ['U'])):
+            def replace(value):
+                if isinstance(value, dict):
+                    return {k: replace(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [replace(v) for v in value]
+                return refs.get(value, value) if isinstance(value, str) else value
+            for ordinal, record in enumerate(data[collection]):
+                record = replace(record)
+                for key in ('identifiers', 'support'):
+                    if key in record:
+                        record[key].sort(key=lambda r: ((r.get('namespace', ''), r.get('literal', ''),
+                            r['source_id'], r['locator']['start'], r['locator']['end'], r['locator']['excerpt'])))
+                if 'support_claim_ids' in record:
+                    record['support_claim_ids'].sort()
+                digest = hashlib.sha256(self.canonical(record)[:-1]).hexdigest()
+                record[field] = prefix + ':' + digest
+                refs[aliases[ordinal]] = record[field]
+                data[collection][ordinal] = record
+            data[collection].sort(key=lambda r: r[field])
+        return data
+
+    def write(self, data=None, raw=None):
+        self.index.write_bytes(raw if raw is not None else self.canonical(self.fixture() if data is None else data))
+        return sha(self.index)
+
+    def admit(self, data=None, raw=None):
+        return self.api.validate_issuer_supplement_index(self.index, self.write(data, raw), self.root)
+
+    def test_summary_and_authenticated_private_payload_preserve_tokens(self):
+        data = self.fixture()
+        result = self.admit(data)
+        self.assertEqual(result, dict(contract=data['contract'], index_sha256=sha(self.index),
+            counts=dict(sources=1, entities=2, claims=2, unresolved=1)))
+        admitted = self.api._admit_issuer_supplement_index(self.index, sha(self.index), self.root)
+        for name in ('sources', 'entities', 'claims', 'unresolved'):
+            self.assertEqual(admitted[name], data[name])
+        self.assertEqual(admitted['evidence'][data['sources'][0]['source_id']]['text'], self.text)
+        self.assertEqual(admitted['evidence'][data['sources'][0]['source_id']]['body'], (self.root / 'body.pdf').read_bytes())
+        self.assertNotIn('associations', result)
+
+    def test_external_pin_canonical_json_duplicate_keys_and_numbers(self):
+        pin = self.write()
+        with self.assertRaises(ValueError):
+            self.api.validate_issuer_supplement_index(self.index, '0' * 64, self.root)
+        for raw in (json.dumps(self.fixture()).encode(), self.canonical(self.fixture()).rstrip(b'\n'),
+                    b'{"contract":"x","contract":"x"}\n', b'{"value":NaN}\n', b'{"value":Infinity}\n'):
+            with self.subTest(raw=raw[:80]), self.assertRaises(ValueError):
+                self.admit(raw=raw)
+        self.base_claim['native_payload']['native_metadata'] = [7, True, 0.1]
+        data = self.fixture()
+        self.admit(data)
+        admitted = self.api._admit_issuer_supplement_index(self.index, sha(self.index), self.root)
+        self.assertEqual(admitted['claims'], data['claims'])
+        for number in (float('nan'), float('inf'), float('-inf')):
+            self.base_claim['native_payload']['native_metadata'] = number
+            with self.assertRaises(ValueError):
+                self.admit()
+
+    def test_closed_schemas_and_exact_ids(self):
+        original = self.fixture()
+        for collection, position in (('sources', 0), ('entities', 0), ('claims', 0), ('unresolved', 0)):
+            for action in ('extra', 'missing', 'id'):
+                data = json.loads(json.dumps(original))
+                record = data[collection][position]
+                if action == 'extra':
+                    record['academic_eligibility'] = True
+                elif action == 'missing':
+                    record.pop(next(k for k in record if not k.endswith('_id')))
+                else:
+                    record[collection[:-1] + '_id' if collection != 'entities' else 'entity_id'] = 'bad'
+                with self.subTest(collection=collection, action=action), self.assertRaises(ValueError):
+                    self.admit(data)
+        data = dict(original, weights={})
+        with self.assertRaises(ValueError):
+            self.admit(data)
+
+    def test_set_lists_reject_duplicates_and_noncanonical_order(self):
+        original = self.fixture()
+        for collection in ('sources', 'entities', 'claims', 'unresolved'):
+            data = json.loads(json.dumps(original))
+            data[collection].append(data[collection][0])
+            with self.subTest(collection=collection), self.assertRaises(ValueError):
+                self.admit(data)
+        for collection in ('entities', 'claims'):
+            data = json.loads(json.dumps(original))
+            data[collection].reverse()
+            with self.assertRaises(ValueError):
+                self.admit(data)
+        self.company['identifiers'].append(dict(self.identifiers[0]))
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_nested_set_order_and_duplicates(self):
+        original = self.fixture()
+        for field in ('identifiers', 'support', 'support_claim_ids'):
+            data = json.loads(json.dumps(original))
+            record = next(r for r in data['entities'] if r['role'] == 'company') if field == 'identifiers' else data['claims'][0]
+            if not record[field]:
+                record = data['claims'][1]
+            record[field].append(record[field][0])
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit(data)
+        data = json.loads(json.dumps(original))
+        next(r for r in data['entities'] if r['role'] == 'company')['identifiers'].reverse()
+        with self.assertRaises(ValueError):
+            self.admit(data)
+
+    def test_paths_hashes_sizes_projection_and_unicode_offsets(self):
+        for field, value in (('body_path', '../outside'), ('body_path', '/absolute'),
+                ('body_path', 'C:/outside'), ('body_path', 'folder\\body'), ('body_path', './body.pdf'),
+                ('body_sha256', '0' * 64), ('body_bytes', 1), ('body_bytes', True)):
+            old = self.source[field]
+            self.source[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.admit()
+            self.source[field] = old
+        for field, value in (('sha256', '0' * 64), ('bytes', 1), ('body_sha256', '1' * 64),
+                             ('page', 0), ('page', True), ('representation', ''), ('path', 'body.pdf')):
+            old = self.source['projection'][field]
+            self.source['projection'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.admit()
+            self.source['projection'][field] = old
+        for locator in (dict(start=1, end=len(self.text), excerpt=self.text),
+                        dict(start=False, end=len(self.text), excerpt=self.text),
+                        dict(start=-1, end=4, excerpt='abc'), dict(start=0, end=0, excerpt=''),
+                        dict(start=0, end=len(self.text.encode()), excerpt=self.text),
+                        dict(start=0, end=len(self.text), excerpt=self.text.rstrip())):
+            self.base_claim['support'][0]['locator'] = locator
+            with self.subTest(locator=locator), self.assertRaises(ValueError):
+                self.admit()
+        self.base_claim['support'][0]['locator'] = self.loc('Companhia Alfa')
+        self.assertEqual(self.admit()['counts']['claims'], 2)
+
+    def test_budget_boundaries_and_deduplicated_evidence(self):
+        pin = self.write()
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_INDEX_BYTES', self.index.stat().st_size - 1), self.assertRaises(ValueError):
+            self.api.validate_issuer_supplement_index(self.index, pin, self.root)
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_BODY_BYTES', self.source['body_bytes'] - 1), self.assertRaises(ValueError):
+            self.admit()
+        total = self.index.stat().st_size + self.source['body_bytes'] + len(self.raw)
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_EVIDENCE_BYTES', total - 1), self.assertRaises(ValueError):
+            self.admit()
+        # Two distinct sources can reuse the same authenticated bytes without double counting.
+        data = self.fixture()
+        source = dict(data['sources'][0], alias='same body different provenance')
+        source.pop('source_id')
+        source['source_id'] = 'source:' + hashlib.sha256(self.canonical(source)[:-1]).hexdigest()
+        data['sources'].append(source)
+        data['sources'].sort(key=lambda r: r['source_id'])
+        self.write(data)
+        total = self.index.stat().st_size + self.source['body_bytes'] + len(self.raw)
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_EVIDENCE_BYTES', total - 1), self.assertRaisesRegex(ValueError, 'budget'):
+            self.admit(data)
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_EVIDENCE_BYTES', total):
+            self.assertEqual(self.admit(data)['counts']['sources'], 2)
+            admitted = self.api._admit_issuer_supplement_index(self.index, sha(self.index), self.root)
+        first, second = (admitted['evidence'][source['source_id']] for source in data['sources'])
+        self.assertIs(first['body'], second['body'])
+        self.assertIs(first['projection'], second['projection'])
+        self.assertIs(first['text'], second['text'])
+
+    def test_bundle_budget_includes_index_without_any_evidence(self):
+        data = dict(contract='historical-issuer-supplement-input-v1', sources=[], entities=[], claims=[], unresolved=[])
+        pin = self.write(data)
+        total = self.index.stat().st_size
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_EVIDENCE_BYTES', total - 1), self.assertRaisesRegex(ValueError, 'budget'):
+            self.api.validate_issuer_supplement_index(self.index, pin, self.root)
+        with mock.patch.object(self.api, 'MAX_SUPPLEMENT_EVIDENCE_BYTES', total):
+            self.assertEqual(self.api.validate_issuer_supplement_index(self.index, pin, self.root)['counts']['sources'], 0)
+
+    def test_source_dates_projection_optional_and_blocked_capture(self):
+        for field, value in (('publication_date', '2024-02-30'), ('publication_date', ''),
+                ('retrieved_at', '2024-01-01T00:00:00'), ('retrieved_at', 'invalid'),
+                ('source_nature', 'search'), ('document_state', 'accepted')):
+            old = self.source[field]
+            self.source[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.source[field] = old
+        self.source['projection'] = None
+        with self.assertRaises(ValueError):
+            self.admit()
+        self.value['claims'] = []
+        self.value['unresolved'] = []
+        self.company['identifiers'] = []
+        self.operator['identifiers'] = []
+        self.assertEqual(self.admit()['counts']['claims'], 0)
+
+    def test_role_type_and_object_matrix(self):
+        for field, value in (('subject_id', 'O'), ('object_id', 'O'), ('fact_type', 'control')):
+            old = self.base_claim[field]
+            self.base_claim[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.base_claim[field] = old
+        for fact_type in ('instrument_program', 'instrument_observation', 'bcb_membership', 'participation_declared'):
+            self.base_claim['fact_type'] = fact_type
+            with self.subTest(fact_type=fact_type), self.assertRaises(ValueError):
+                self.admit()
+        self.base_claim['fact_type'] = 'issuer_identity'
+        self.base_claim['adoption_state'] = 'association'
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_identifier_namespace_literal_and_source_proof(self):
+        identifier = self.identifiers[0]
+        for namespace, literal in (('TICKER', 'ALFA34'), ('CNPJ14', '00123456000101'),
+                ('CNPJ14', '00.123.456/0001-00'), ('CNPJ14', '００１２３４５６０００１００'),
+                ('CNPJ_BASE8', '00123457'), ('CIK', '12345678901'), ('CVM_CODE', '000999'),
+                ('LEI', 'a' * 20), ('CNPJ14', ''), ('UNKNOWN', '00123456')):
+            identifier['namespace'], identifier['literal'] = namespace, literal
+            with self.subTest(namespace=namespace, literal=literal), self.assertRaises(ValueError):
+                self.admit()
+        data = self.fixture()
+        next(r for r in data['entities'] if r['role'] == 'company')['identifiers'][0]['literal'] = 123
+        with self.assertRaises(ValueError):
+            self.admit(data)
+        for namespace, literal in (('CNPJ14', '00123456000100'), ('CNPJ_BASE8', '00123456'),
+                                   ('CVM_CODE', '000906'), ('CIK', '000123')):
+            identifier['namespace'], identifier['literal'] = namespace, literal
+            if namespace == 'CIK':
+                self.company['identifiers'] = [identifier]
+            self.assertEqual(self.admit()['counts']['entities'], 2)
+
+    def test_cik_sec_url_rule_exact_host_segment_and_name_locator(self):
+        self.company['identifiers'] = [dict(namespace='CIK', literal='456', source_id='S', locator=self.loc('Companhia Alfa'))]
+        self.source['url'] = 'https://www.sec.gov/Archives/edgar/data/456/filing.htm'
+        self.admit()
+        for url in ('https://evil.test/Archives/edgar/data/456/filing.htm',
+                    'https://www.sec.gov.evil.test/Archives/edgar/data/456/filing.htm',
+                    'https://www.sec.gov/Archives/edgar/data/0456/filing.htm'):
+            self.source['url'] = url
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.admit()
+        self.source['url'] = 'https://www.sec.gov/Archives/edgar/data/456/filing.htm'
+        self.company['identifiers'][0]['locator'] = self.loc('Alfa')
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_numeric_identifier_proof_requires_isolated_tokens(self):
+        self.value['claims'] = []
+        self.value['unresolved'] = []
+        self.operator['identifiers'] = []
+        for namespace, literal, text in (
+                ('CVM_CODE', '000906', '-906'), ('CVM_CODE', '000906', '+906'),
+                ('CVM_CODE', '000906', '906/12'), ('CIK', '000123', '000123/12'),
+                ('CNPJ14', '00123456000100', 'X00123456000100'),
+                ('CNPJ_BASE8', '00123456', 'X00123456')):
+            self.text = text
+            (self.root / 'projection.txt').write_bytes(text.encode('utf8'))
+            self.source['projection'].update(sha256=sha(self.root / 'projection.txt'), bytes=len(text.encode('utf8')))
+            self.company['identifiers'] = [dict(namespace=namespace, literal=literal, source_id='S', locator=self.loc())]
+            with self.subTest(namespace=namespace, text=text), self.assertRaisesRegex(ValueError, 'source proof'):
+                self.admit()
+
+    def test_case_variant_paths_cannot_hide_alias_collisions(self):
+        data = self.fixture()
+        source = dict(data['sources'][0], alias='case-variant', body_path='BODY.PDF')
+        source.pop('source_id')
+        source['source_id'] = 'source:' + hashlib.sha256(self.canonical(source)[:-1]).hexdigest()
+        data['sources'].append(source)
+        data['sources'].sort(key=lambda record: record['source_id'])
+        with self.assertRaisesRegex(ValueError, 'path collision'):
+            self.admit(data)
+
+    def test_temporal_rules_confidence_and_rationale(self):
+        for field, value in (('reference', '202411'), ('reference', '202512'), ('reference', 202412),
+                ('fact_date', '2024-12-30'), ('fact_date', '2024-02-30'), ('time_state', 'unknown'),
+                ('identity_confidence', 0.9), ('temporal_confidence', 'certain'), ('conflict_state', 'certified'),
+                ('adoption_state', 'accepted')):
+            old = self.base_claim[field]
+            self.base_claim[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.admit()
+            self.base_claim[field] = old
+        for purpose in ('approval', 'publication', 'announcement', 'document_reference', None):
+            self.base_claim['native_payload']['date_purpose'] = purpose
+            with self.subTest(purpose=purpose), self.assertRaises(ValueError):
+                self.admit()
+        self.base_claim['native_payload']['date_purpose'] = 'snapshot'
+        self.base_claim['fact_type'] = 'event'
+        with self.assertRaises(ValueError):
+            self.admit()
+        self.base_claim['reference'] = None
+        self.base_claim['fact_date'] = '2024-12-10'
+        self.admit()
+        for field, value in (('reference', None), ('rationale', ''), ('evidence_nature', 'literal_observation'),
+                             ('support_claim_ids', [])):
+            old = self.association[field]
+            self.association[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.association[field] = old
+
+    def test_transitive_support_rejects_laundering_and_accepts_candidates(self):
+        middle = dict(self.base_claim, native_payload=dict(date_purpose='snapshot', note='intermediate'), support_claim_ids=['B'])
+        self.value['claims'] = [self.base_claim, middle, dict(self.association, support_claim_ids=['A'])]
+        # Fixture aliases B, A are references to the first two claims, independent of list sorting.
+        for field, value in (('conflict_state', 'unresolved'), ('conflict_state', 'contradicted'),
+                ('adoption_state', 'candidate'), ('fact_type', 'capture_status')):
+            old = self.base_claim[field]
+            self.base_claim[field] = value
+            if field == 'conflict_state':
+                self.base_claim['rationale'] = 'Visible unresolved conflict'
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.admit()
+            self.value['claims'][2]['adoption_state'] = 'candidate'
+            self.assertEqual(self.admit()['counts']['claims'], 3)
+            self.value['claims'][2]['adoption_state'] = 'association'
+            self.base_claim[field] = old
+        self.base_claim['rationale'] = None
+
+    def test_document_states_and_operator_identifiers_control_adoptability(self):
+        for state in ('blocked', 'shell', 'search_excerpt'):
+            self.source['document_state'] = state
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                self.admit()
+        self.source['document_state'] = 'substantive'
+        self.operator['identifiers'] = []
+        with self.assertRaises(ValueError):
+            self.admit()
+        self.association['adoption_state'] = 'candidate'
+        self.admit()
+
+    def test_dangling_claim_refs_self_and_cycles(self):
+        original = self.fixture()
+        for refs in (['claim:' + '0' * 64], [original['claims'][0]['claim_id']]):
+            data = json.loads(json.dumps(original))
+            data['claims'][0]['support_claim_ids'] = refs
+            with self.assertRaises(ValueError):
+                self.admit(data)
+        data = json.loads(json.dumps(original))
+        data['claims'][0]['support_claim_ids'] = [data['claims'][1]['claim_id']]
+        data['claims'][1]['support_claim_ids'] = [data['claims'][0]['claim_id']]
+        with self.assertRaises(ValueError):
+            self.admit(data)
+        self.value['unresolved'][0]['candidate_id'] = 'missing'
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_cli_summary_and_malformed_input_exit_status(self):
+        pin = self.write()
+        script = Path(__file__).resolve().parents[1] / 'scripts' / 'build-historical-issuer-links.py'
+        args = [sys.executable, '-B', str(script), 'supplement-check', str(self.index),
+                '--index-sha256', pin, '--evidence-root', str(self.root)]
+        result = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['counts']['entities'], 2)
+        args[args.index(pin)] = '0' * 64
+        bad = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 1)
+        self.assertNotIn('Traceback', bad.stderr)
+
+    def test_transitive_document_state_cannot_be_laundered_by_clean_terminal(self):
+        self.value['sources'].append(dict(self.source, alias='separate substantive support'))
+        self.company['identifiers'] = [dict(identifier, source_id='T') for identifier in self.identifiers]
+        self.operator['identifiers'] = [dict(self.operator['identifiers'][0], source_id='T')]
+        self.association['support'] = [dict(source_id='T', locator=self.loc())]
+        middle = dict(self.base_claim, native_payload=dict(date_purpose='snapshot', intermediate='literal'),
+                      support=[dict(source_id='T', locator=self.loc())], support_claim_ids=['B'])
+        terminal = dict(self.association, support_claim_ids=['A'])
+        self.value['claims'] = [self.base_claim, middle, terminal]
+        for state in ('blocked', 'shell', 'search_excerpt'):
+            self.source['document_state'] = state
+            self.base_claim['fact_type'] = 'capture_status' if state != 'search_excerpt' else 'issuer_identity'
+            self.base_claim['adoption_state'] = 'observation' if state != 'search_excerpt' else 'candidate'
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'inadmissible transitive support'):
+                self.admit()
+            terminal['adoption_state'] = 'candidate'
+            self.assertEqual(self.admit()['counts']['claims'], 3)
+            terminal['adoption_state'] = 'association'
+
+    def test_native_membership_requires_closed_perspective_and_point(self):
+        self.value['entities'].append(dict(role='bcb_unit', native_name='Native F001',
+            identifiers=[dict(namespace='BCB_CODINST', literal='F001', source_id='S', locator=self.loc())], native_payload={}))
+        self.base_claim.update(fact_type='bcb_membership', subject_id='O', object_id='G', evidence_nature='native_bcb')
+        self.base_claim['native_payload']['perspective'] = 'financeiro'
+        self.admit()
+        for field, value in (('reference', None), ('time_state', 'unknown'), ('evidence_nature', 'documentary_declaration')):
+            old = self.base_claim[field]
+            self.base_claim[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.base_claim[field] = old
+        self.base_claim['native_payload']['perspective'] = 'consolidated'
+        with self.assertRaises(ValueError):
+            self.admit()
+
+    def test_projection_pin_is_review_boundary_and_not_pdf_reextraction(self):
+        # Synthetic PDF cannot produce this text. Declared reviewed projection is
+        # the contract: byte tampering fails, an explicitly repinned review is a
+        # new authenticated declaration rather than an automatic truth claim.
+        (self.root / 'projection.txt').write_text('changed projection', encoding='utf8')
+        with self.assertRaises(ValueError):
+            self.admit()
+        self.text = 'A different manually reviewed document text'
+        projected = self.text.encode('utf8')
+        (self.root / 'projection.txt').write_bytes(projected)
+        self.source['projection'].update(sha256=sha(self.root / 'projection.txt'), bytes=len(projected))
+        self.company['identifiers'] = []
+        self.operator['identifiers'] = []
+        self.value['claims'] = [dict(self.base_claim, support=[dict(source_id='S', locator=self.loc())])]
+        self.admit()
+
+    def test_seventeen_visible_candidates_do_not_require_associations(self):
+        self.value['claims'] = []
+        self.value['unresolved'] = []
+        data = self.fixture()
+        template = next(entity for entity in data['entities'] if entity['role'] == 'company')
+        data['entities'] = []
+        for ordinal in range(17):
+            entity = dict(template, native_name='Candidate ' + str(ordinal), identifiers=[])
+            entity.pop('entity_id')
+            entity['entity_id'] = 'entity:' + hashlib.sha256(self.canonical(entity)[:-1]).hexdigest()
+            data['entities'].append(entity)
+        data['entities'].sort(key=lambda entity: entity['entity_id'])
+        self.assertEqual(self.admit(data)['counts'], dict(sources=1, entities=17, claims=0, unresolved=0))
+
+    def test_symlink_evidence_rejected_when_platform_supports_it(self):
+        link = self.root / 'linked.txt'
+        try:
+            link.symlink_to(self.root / 'projection.txt')
+        except OSError:
+            self.skipTest('OS does not grant symlink creation')
+        self.source['projection']['path'] = 'linked.txt'
+        with self.assertRaisesRegex(ValueError, 'Symlink|reparse'):
+            self.admit()
+
+    def test_index_rechecked_after_evidence_authentication(self):
+        pin = self.write()
+        original = self.api.cvm_reader._pinned
+        def mutate_index_after_projection(path, expected, limit):
+            raw = original(path, expected, limit)
+            if Path(path).name == 'projection.txt':
+                self.index.write_bytes(self.index.read_bytes() + b' ')
+            return raw
+        with mock.patch.object(self.api.cvm_reader, '_pinned', side_effect=mutate_index_after_projection), self.assertRaises(ValueError):
+            self.api.validate_issuer_supplement_index(self.index, pin, self.root)
