@@ -2,7 +2,9 @@
 
 Biblioteca comentada para fundamentar conceitos, selecionar indicadores e planejar a análise. Organizada em 2026-10-13 na [Issue 109](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/109); contexto e decisões no [README](README.md) e na [nota metodológica](docs/engineering/institution-type-indicator-methodology-20261012.md).
 
-**Esta lista não é uma metodologia adotada nem a bibliografia final da monografia.** Uma fonte pode orientar uma pergunta sem justificar determinada fórmula, amostra ou estimador. A seleção final permanece sob direção de João/orientador na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3).
+**Esta lista não é a bibliografia final nem uma seleção de fórmulas adotadas.** O [protocolo aprovado](docs/engineering/institution-type-indicator-methodology-20261012.md#protocolo-aprovado--2026-10-13) exige cinco dimensões: **rentabilidade, qualidade do crédito, capital/alavancagem, liquidez/financiamento e eficiência operacional**. Todas precisam de fundamentação sólida, com especial atenção a Assaf Neto e complementação pelas fontes mais adequadas a cada área. Uma fonte pode orientar uma pergunta sem justificar determinada fórmula, amostra ou estimador; seleção final sob direção de João/orientador na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3).
+
+**Ordem de trabalho:** inventariar as segmentações e componentes reais da base antes de aprofundar a pesquisa/seleção de indicadores. Segmentação inclui porte, setor/atividade, modelos de negócio, controle e outros recortes viáveis, não apenas S1–S5; distinguir campos nativos de recortes derivados e atividade da instituição de setor dos tomadores. A literatura avaliará também a validade desses recortes. A [pesquisa das cinco dimensões](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/111) foi interrompida a pedido de João e depende do inventário validado/replanejamento. Não há nova revisão de literatura realizada nesta consolidação da [Issue 112](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/112).
 
 ## Como usar e atualizar
 
@@ -13,15 +15,17 @@ Cada entrada informa papel, localizador e limite. Estados de evidência:
 - **Identificada no manuscrito:** referência presente no texto autoral consultado; conteúdo e dados bibliográficos ainda exigem conferência própria.
 - **Candidata:** material a avaliar para uma lacuna; não significa adoção de método.
 
-O manuscrito **Mono2 — versão revisada** foi consultado por conector de leitura em 2026-10-13 como contexto autoral. Ele e os PDFs de apoio permanecem no Drive privado de João; seus corpos e links privados não são distribuídos neste repositório público. O arquivo de Assaf Neto foi localizado, mas o conector não retornou seu texto. A bibliografia abaixo distingue essa limitação de uma leitura efetiva. Não há sincronização automática com o manuscrito: mudanças de objetivo/metodologia exigem reconciliação explícita.
+O manuscrito **Mono2 — versão revisada.docx**, com modificação no Drive em 12/10/2026, foi consultado em 13/10 como contexto autoral. **Word no Drive é o arquivo principal; João indica a versão vigente.** Cópias de consulta no checkout são privadas/ignoradas pelo Git, identificadas por origem, versão, data e SHA-256. Corpos e links privados do manuscrito e dos PDFs não são distribuídos neste repositório público. Não há sincronização automática nem edição do Word nesta entrega. Passagens que ainda prometem índice obrigatório ou descrevem a unidade anterior precisam de reconciliação futura com o protocolo.
+
+O conector inicialmente não retornou texto de Assaf Neto. Depois do recebimento do exemplar privado, a folha de rosto e os dados editoriais foram conferidos visualmente; essa verificação bibliográfica não equivale à leitura dos capítulos. Os estados abaixo distinguem leitura de conteúdo, confirmação de metadados e proposta de pesquisa.
 
 ## Fundamentos de análise e indicadores
 
 ### Assaf Neto — referência central de análise de balanços
 
-ASSAF NETO, Alexandre. *Estrutura e análise de balanços: um enfoque econômico-financeiro*. 11. ed. São Paulo: Atlas, 2015. **Edição/ano conforme manuscrito; ainda não confrontados com a folha de rosto do exemplar.**
+ASSAF NETO, Alexandre. *Estrutura e análise de balanços: um enfoque econômico-financeiro*. 11. ed. São Paulo: Atlas, 2015. **Autor, título, edição, editora, local e ano confirmados visualmente no exemplar recebido**, páginas 4–5 do PDF (contagem do arquivo), conforme [registro de conferência bibliográfica](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6153092250).
 
-**Uso:** referência central indicada por João para interpretação econômico-financeira, financiamento, aplicações, risco e leitura conjunta de indicadores. **Localizador:** capítulos/páginas do exemplar ainda não verificados. **Limite:** não atribuir fórmula, citação ou recomendação específica ao livro sem ler o trecho; não transferir diretamente indicadores de empresas não financeiras para bancos. **Estado:** identificada no manuscrito; exemplar localizado, conteúdo não extraído. A [página do Instituto Assaf](https://www.institutoassaf.com.br/product/estrutura-e-analise-de-balancos/) foi consultada e identifica uma parte dedicada a bancos, mas não confirma a edição de 2015 nem suas páginas.
+**Uso:** referência central indicada por João para interpretação econômico-financeira, financiamento, aplicações, risco e leitura conjunta de indicadores, a confrontar com cada uma das cinco dimensões. **Localizador:** folha de rosto/dados editoriais, páginas 4–5 do PDF; capítulos, fórmulas e páginas de conteúdo ainda não lidos/verificados. **Limite:** não atribuir fórmula, citação ou recomendação específica ao livro sem ler o trecho; não transferir diretamente indicadores de empresas não financeiras para bancos. **Estado:** metadados bibliográficos confirmados no exemplar; leitura substantiva pendente. A [página do Instituto Assaf](https://www.institutoassaf.com.br/product/estrutura-e-analise-de-balancos/) identifica uma parte dedicada a bancos, mas não substitui a leitura/localização no exemplar de 2015. Exemplar preservado fora do Git público; somente referências e sínteses próprias verificadas poderão compor a documentação.
 
 ### FMI — conceitos, perímetros e indicadores de solidez
 
@@ -65,7 +69,8 @@ WOOLDRIDGE, Jeffrey M. *Econometric Analysis of Cross Section and Panel Data*. 2
 
 | Decisão | Evidência necessária | Ponto de partida |
 |---|---|---|
-| Indicadores comuns e condicionais | Conceito, direção econômica, componentes e adequação às atividades do conglomerado/independente. | Assaf Neto, FMI, Lima e pesquisa por atividade; aprofundar lacunas sem impor indicadores bancários a todo modelo. |
+| Segmentações e componentes antes da pesquisa | Campos/valores, significado, cobertura histórica, nulos, perspectiva; recortes nativos versus derivados e ligação com componentes. | Cadastro, catálogo e bases existentes; conferência de duas referências não é inventário completo nem cobertura da população. |
+| Indicadores nas cinco dimensões obrigatórias | Conceito, direção econômica, componentes e adequação às atividades; dimensão obrigatória não torna toda métrica aplicável. | Assaf Neto, FMI, estudos originais e fontes adequadas por área, após inventário/replanejamento; não impor indicadores bancários a todo modelo. |
 | Disponibilidade conjunta | Componentes na mesma unidade, janela, regime e referência; cobertura por instituição e motivos de ausência. | Catálogo e dados locais autenticados; presença no catálogo não demonstra cobertura conjunta. |
 | Comparação temporal e entre unidades | Estoques/médias, duração dos fluxos, eventos, mudanças de perímetro e 2025. | Pesquisa de comparabilidade e ponte normativa. |
 | Estatística descritiva | Distribuições, extremos, denominadores problemáticos, ausências e composição da amostra. | Desenho a delimitar; não excluir/imputar observações por conveniência. |
