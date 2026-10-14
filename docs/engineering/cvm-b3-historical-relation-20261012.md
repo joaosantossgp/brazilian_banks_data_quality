@@ -146,3 +146,59 @@ O cadastro BCB contém 303.792 linhas: 295.048 Td=I e 8.744 Td=C. Há 6.008 cód
 R3b foi implementada no commit `d1c3bf781bc7de5da8977dc4a04342aef63c932a`: build/verify/query do suplemento, consulta combinada opcional e CLI, nos mesmos três paths. A execução final do componente teve **72 testes/444,481s, com um skip Windows de symlink por privilégio**. A contagem booleana em manifest foi recusada após contraprova causal e reexecução completa. A revisão independente do código está em andamento; não houve build real ou aceite do pacote neste checkpoint.
 
 O [complemento de recurso CI](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108#issuecomment-6160844085) eleva somente o timeout do job offline de 15 para 25 minutos, mantendo Windows em 15 e todos os testes/pins/permissões. O CI da base passou 853 testes em 726,522s; a ampliação do componente fundamenta a margem finita, sem antecipar runtime ou sucesso do CI do novo SHA. Revisão final, pacote real, replay, consultas e integração continuam gates próprios.
+
+## Pacote complementar real e consultas R4
+
+A revisão independente do código R3b aprovou o SHA `d1c3bf781bc7de5da8977dc4a04342aef63c932a`, com dez contraprovas próprias em76,125s e uma conferência focal de clausura em10,899s. A [execução real contratada](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108#issuecomment-6160978661) usou esse código no HEAD documental `c3dd9fb3c51be410bb16468dcdf777e4e83ff9b8`, sem delta nos três arquivos de implementação. O pacote local `data/curated/historical-issuer-supplement-resume-v1/` e seu replay novo têm manifest externo **`b1c5d3ae69b1ee354797fca6a8be46c08969266ceeefde2a72d277473219aca4`**. Índice curado e núcleo conservam seus pins próprios, exigidos novamente por verify/query.
+
+| Ação real | Tempo | Pico de memória privada |
+|---|---:|---:|
+| Build original |92,172s|4.546.490.368 bytes|
+| Verify original independente |94,438s|4.430.323.712 bytes|
+| Build replay independente |88,016s|4.545.425.408 bytes|
+| Verify replay independente |93,984s|4.440.170.496 bytes|
+
+**Integridade e replay: PASS.** Os104 arquivos/81.674.275 bytes têm caminhos, tamanhos, hashes e bytes completos idênticos, incluindo manifest. O índice, seus97 arquivos de evidência e os dez arquivos do núcleo foram reautenticados depois; nenhum guard foi acionado. O monitor guarda amostras de1s do processo próprio, sem alegar limite absoluto entre amostras. Relatório privado `supplement-replay-report.md` e comparação integral `supplement-replay-comparison.json`.
+
+**Domínio do pacote: PASS.** A conferência independente rederivou as25relações esperadas:10individuais,9financeiras,6prudenciais;8em201012 e17em202412. Os oito pontos105 produzem20relações; as duas composições Nu202412 produzemcinco. As quatro listas reconstruídas são byte a byte iguais ao índice externo;20claims105 e45lacunas curadas permanecem integrais. Os17candidatos não geram associações e mantêm17lacunas derivadas `support_not_adoptable`. Relatório `supplement-domain-review.md`, SHA-256 `a360c33e8909042df09ed5b32608cd27ba1a5d2df08363d6bbdc27be71450224`.
+
+A consulta geral real passou e retorna110entidades,25relações,45lacunas curadas,17derivadas e26entidades de instrumentos. O quadro abaixo usa códigos nativos distintos **por companhia/referência/perspectiva**, e não conta duas vezes um grupo compartilhado por operadoras. Não somar individual, financeiro e prudencial.
+
+| Companhia | Referência | Individuais identificadas | Financeiro | Prudencial |
+|---|---|---|---|---|
+|Banco do Brasil|201012|`00000000`|`C0049906`|sem vínculo nativo nesta referência|
+|Banco do Brasil|202412|`00000000`|`C0049906`|`C0080329`|
+|Bradesco|201012|`60746948`|`C0010045`|sem vínculo nativo nesta referência|
+|Bradesco|202412|`60746948`|`C0010045`|`C0080075`|
+|Itaú Unibanco Holding|201012|`60872504`, `60701190`|`C0010069`|sem vínculo nativo nesta referência|
+|Itaú Unibanco Holding|202412|`60872504`, `60701190`|`C0010069`|`C0080099`|
+|Nu Holdings|202412|`18236120`, `30680829`|`C0052058` somente pela Financeira|`C0084693` compartilhado|
+
+Esse quadro é uma identificação pontual documentada. Código igual nos dois extremos não comprova perímetro constante ou continuidade nos trimestres intermediários. Holding e banco permanecem pessoas distintas; compartilhar unidade financeira nativa não torna o conglomerado BCB equivalente à consolidação societária internacional. Ausência de grupo não vira zero ou inelegibilidade.
+
+Instrumentos, registros, eventos e programas conservam datas e naturezas próprias. Observação em carteira BDI, anúncio ou programa corrente não comprova negócio executado, listagem contínua ou presença no trimestre da associação IF.data. As26entidades de instrumentos e os17candidatos BDR não são um universo de mercado certificado. A qualidade fixa `identity_certified=false`, `academic_eligibility_adopted=false` e `market_coverage_incomplete=true`.
+
+**Consultas R4 e revisão de domínio: PASS.** Foram executadas e revisadas seis consultas completas: geral, BB201012/financeiro, Itaú202412/combinada, Nu202412/financeiro, Nu202412/prudencial e Citigroup202412/financeiro. Tempos observados por processo sequenciador:95,000s;93,594s;93,625s;93,578s;94,250s;93,750s. O relatório independente `r4-query-domain-review.md` tem SHA-256 `c3a0b6ce1e16eb2ac9c10b0e48a0b1aa8bf047544fff1fa2cd43e7aaca2d68f9`; recibo de verificações `r4-query-domain-check.json`, SHA-256 `68549dfcd3476da63cc338d6b2f082eb3862e9a20c952fac5d6fbf49e082f1e0`.
+
+BB201012 mostra instituição e grupo com TcbB1/Tc1 e líder00000000; a referência prudencial continua null. Na consulta combinada de Itaú, o núcleo conserva53observações de emissores,22instrumentos e79caminhos, inclusive o conflito real CVM1279/19348 e suas candidaturas aC0010069/C0051444. O suplemento mantém duas operadoras no grupoC0010069, sob seus pontos aceitos; não sobrescreve o conflito do núcleo nem decide elegibilidade. Nu retorna somente Financeira na perspectiva financeira e duas operadoras no mesmo prudencial; a ausência financeira de Pagamentos permanece null. Citigroup retorna zero associações adotadas, mas preserva seisclaims sem referência trimestral, um instrumento, três lacunas curadas e uma derivada: isso não comprova inexistência de unidade financeira.
+
+Na API, `undated_claims` significa **sem referência trimestral atribuída**, podendo existir data literal. A consulta geral tem79registros nessa chave, incluindo programas/instrumentos datados; não descrevê-los todos como semdata. `support_claims` conserva a clausura documental mesmo quando a data da fonte difere da referência filtrada. `events` e `instrument_observations` permanecem separados das associações IF.data, sem retroprojeção de listagem/negociação.
+
+### Consultar o resultado local
+
+Os comandos abaixo pressupõem uma instalação com o códigoR3b, ambiente Python3.12 existente e os pacotes locais nos destinos indicados. Dados são ignorados pelo Git; o clone sozinho não contém os manifests/evidências. Os pins são externos ao pacote consultado; não substituí-los por um hash recém-calculado de um arquivo não confiado.
+
+```powershell
+$Python = '.venv/Scripts/python.exe'
+$Core = 'data/curated/historical-issuer-links-resume-v2-code-key'
+$Supplement = 'data/curated/historical-issuer-supplement-resume-v1'
+$CorePin = '5d3f1fa01872c50b581218be28e602722af242190fd549388ea487a23b859ba0'
+$SupplementPin = 'b1c5d3ae69b1ee354797fca6a8be46c08969266ceeefde2a72d277473219aca4'
+$IndexPin = 'dab03c105115c47dcf2fe3567abda1e2765fb0878c1947a3f4044e921273c411'
+& $Python scripts/build-historical-issuer-links.py supplement-query $Supplement $Core --manifest-sha256 $SupplementPin --index-sha256 $IndexPin --core-sha256 $CorePin --company CIK:1691493 --reference 202412 --perspective financeiro
+& $Python scripts/build-historical-issuer-links.py query $Core --manifest-sha256 $CorePin --entity 60872504000123 --reference 202412 --perspective financeiro --supplement $Supplement --supplement-sha256 $SupplementPin --supplement-index-sha256 $IndexPin
+```
+
+Seletores do suplemento são IDs exatos ou identificadores qualificados (`CIK:`, `CNPJ14:`, etc.), sem busca por nome. Para Citigroup, cujo identificador não foi fechado neste recorte, usar `entity:505e2b0bdecea7dd5fdaecf641414b06ae9c99bb9d0f3e6368a89e717c563d56`. O trio opcional da consulta combinada é obrigatório em conjunto; sem ele, a consulta do núcleo conserva seu contratoV2.
+
+O aceite local de software, fontes, pacote, replay e consultas está documentado acima. A composição do SHA entregue, checks completos, PR, integração e CI pós-merge têm estado autoritativo na [Issue108](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108) e na PR vinculada, sem inferência por este checkpoint. As decisões acadêmicas permanecem na [Issue3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3).

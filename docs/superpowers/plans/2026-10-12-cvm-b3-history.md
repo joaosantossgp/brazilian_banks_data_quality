@@ -44,14 +44,14 @@
 - [x] Implementar tabelas de observações, instrumentos, relações, cadastro, cobertura e fila de lacunas; nenhum zero-fill. Commit local inicial `4d574084c1811b93f89a6de5eef3c09f79139c83`; execução completa ainda não medida. Medidas parciais da primeira tentativa e correção posterior constam abaixo e no ledger.
 - [x] GREEN do autor: 15 históricos, 34 CVM/FRE e sete cadastro. Contraprovas e handoff privados preservados; lexer da saída canônica confrontado com DuckDB devido ao leitor CSV do Python3.12 perder null/vazio.
 - [x] Review independente de código: P2 de ciclos corrigido em `187cc770cc135f8fbbcd213f60efdbf91665351b`, re-review PASS com 16 testes e oráculo independente de 512 grafos.
-- [ ] Build real 60 referências e replay em destinos novos; conferência de chaves/cardinalidades/fontes e não alteração dos inputs. Primeira execução interrompida por pressão de RAM antes de criar saída; diagnóstico preservado, três pins de entrada intactos. Investigar a fase responsável e corrigir/revisar capacidade antes de repetir; não há aceite histórico.
+- [x] Build real60referências e replay em destinos novos, com chaves/cardinalidades/fontes e inputs preservados. A primeira execuçãoV1 interrompida porRAM permanece diagnóstica; a retomadaV2 e correçãoR2a passaram por build/verify/replay e revisão de domínio, conforme checkpoint posterior e ledger, sem afirmar elegibilidade histórica universal.
 
 ## Fatia 4 — BDR e evidência complementar
 
-- [ ] Revisar nota/claims BDR; admitir somente relações com pontas, papéis, datas e fontes comprovados.
-- [ ] Incorporar cadastro estrangeiro/programas correntes como auxiliares, sem universo histórico presumido.
-- [ ] Exibir BDRs não resolvidos e motivo com a mesma prioridade; não atribuir depositário ao grupo do lastro.
-- [ ] Conferência independente de composição e datas/perímetros antes de declarar cobertura.
+- [x] Revisar nota/claims BDR; admitir somente relações com pontas, papéis, datas e fontes comprovados.
+- [x] Incorporar cadastro estrangeiro/programas correntes como auxiliares, sem universo histórico presumido.
+- [x] Exibir BDRs não resolvidos e motivo com a mesma prioridade; não atribuir depositário ao grupo do lastro.
+- [x] Conferência independente de composição e datas/perímetros antes de declarar cobertura.
 
 ## Fatia 5 — entrega verificável
 
@@ -59,10 +59,10 @@
 
 **Arquivos:** nota `docs/engineering/cvm-b3-historical-relation-20261012.md`, entradas pertinentes README/arquitetura; fontes e preparações locais preservadas.
 
-- [ ] Registrar todos os comandos, pins, contagens, decisões, bibliografia/localizadores, falhas e cobertura real.
-- [ ] Comparar diff/allowlist, links e inputs protegidos; revisão independente exata do head.
-- [ ] Checks pertinentes; publicar PR anexada ao chat, integrar após revisão/checks, confirmar CI pós-merge.
-- [ ] Atualizar Issue108/mapa2 e decisões efetivamente tomadas na #3. Encerrar goal somente se o objetivo tiver sido atingido; lacuna material irredutível não pode ser disfarçada de relação completa.
+- [x] Registrar todos os comandos, pins, contagens, decisões, bibliografia/localizadores, falhas e cobertura real.
+- Gate final — Comparar diff/allowlist, links e inputs protegidos; revisão independente exata do head.
+- Gate final — Checks pertinentes; publicar PR anexada ao chat, integrar após revisão/checks, confirmar CI pós-merge.
+- Gate final — Atualizar Issue108/mapa2 e decisões efetivamente tomadas na #3. Encerrar goal somente se o objetivo tiver sido atingido; lacuna material irredutível não pode ser disfarçada de relação completa.
 
 ## Retomada autorizada no receptor — R1 a R4
 
@@ -97,13 +97,13 @@ Preparação de curadoria readonly pode avançar junto à R1, owner pesquisador,
 
 - [x] Inventariar 17 candidatos, identificadores, programa/depositário/lastro/unidade IF.data, datas, natureza/confiança/conflitos, fontes e ausências. Zero admissão automática.
 - [x] Revisar proposta de suplemento finito; especificar fonte/claim/pontas/papéis/datas e validação/tamper antes de escrever comportamento novo. CNPJ/notícias/pesquisa são permitidos, sem prova jurídica universal, mas sem identidade por nome ou retroprojeção temporal.
-- [ ] Admitir o recorte sustentado e exibir não resolvidos; replay e revisão independente de fontes/composição antes de ampliar.
+- [x] Admitir o recorte sustentado e exibir não resolvidos; replay e revisão independente de fontes/composição antes de ampliar.
 
 ### R4 — composição e entrega
 
-- [ ] Relatório/consulta evidencia companhia → instrumento/registro → unidade IF.data, com tipo, fonte, datas sustentadas, entradas/saídas/mudanças observáveis e lacunas. Sem adotar amostra acadêmica por disponibilidade.
-- [ ] Registrar todos os resultados/limites no ledger público existente; atualizar arquitetura para inventário final, sem duplicar tracker.
-- [ ] Full checks pertinentes no marco final, revisão independente do SHA entregue e allowlist; PR, integração, ancestralidade e CI pós-merge. Só então atualizar aceite da108/mapa2 e Goal, preservando decisões3 e pesquisa111 próprias.
+- [x] Relatório/consulta evidencia companhia → instrumento/registro → unidade IF.data, com tipo, fonte, datas sustentadas, entradas/saídas/mudanças observáveis e lacunas. Sem adotar amostra acadêmica por disponibilidade.
+- [x] Registrar todos os resultados/limites no ledger público existente; atualizar arquitetura para inventário final, sem duplicar tracker.
+- Gate final — Full checks pertinentes no marco final, revisão independente do SHA entregue e allowlist; PR, integração, ancestralidade e CI pós-merge. Só então atualizar aceite da108/mapa2 e Goal, preservando decisões3 e pesquisa111 próprias.
 
 ## Checkpoints posteriores e suplemento R3 contratado — 2026-10-14
 
@@ -120,13 +120,15 @@ Contrato R3 adotado na spec existente e na [Issue108](https://github.com/joaosan
 
 ### R3b — derivação pontual, pacote e consultas
 
-- [ ] RED para sete JSONs/evidências deduplicadas/inventário fechado, reconstrução do índice sob pin externo e tamper/repin; core imutável e uma única autenticação/carga por operação.
-- [ ] RED para associations/undated_associations/derived_unresolved separados do unresolved curado; candidato sem relação continua visível; companhia→instrumento→operadora→unidade preserva namespaces, tipo, fonte, data, confiança e lacuna.
-- [ ] GREEN build/verify/query e trio opcional da consulta core conforme assinaturas/schema da spec; matriz temporal impede expansão de desconhecido para60referências e não atribui vigência a anúncio/publicação.
-- [ ] Regressões core/suplemento, review independente, depois build real do input curado revisado, verify/query/replay em destinos novos; confronto integral e revisão de domínio/composição.
+- [x] RED para sete JSONs/evidências deduplicadas/inventário fechado, reconstrução do índice sob pin externo e tamper/repin; core imutável e uma única autenticação/carga por operação.
+- [x] RED para associations/undated_associations/derived_unresolved separados do unresolved curado; candidato sem relação continua visível; companhia→instrumento→operadora→unidade preserva namespaces, tipo, fonte, data, confiança e lacuna.
+- [x] GREEN build/verify/query e trio opcional da consulta core conforme assinaturas/schema da spec; matriz temporal impede expansão de desconhecido para60referências e não atribui vigência a anúncio/publicação.
+- [x] Regressões core/suplemento, review independente, depois build real do input curado revisado, verify/query/replay em destinos novos; confronto integral e revisão de domínio/composição.
 
 ### Curadoria paralela, limites e pausa
 
 Inputbundle novo PRIMARY `data/raw/historical-issuer-supplement-resume-v1/`, budget256MiB/índice4MiB; cópias por hash e projeções dos originais existentes, sem nova coleta, movimento ou sobrescrita. Corpus17BDR+fontes globais revisadas e três companhias/20claims do dossiê105 aceito, pin `5aaf7c8d8beb0dc5fb496483cdfec5d275e6e8865441d7f0473712ad1374812b`. Candidaturas, fatos e compostos propostos permanecem distintos do aceite. Outputs novos `data/curated/historical-issuer-supplement-resume-v1/` e-replay.
 
 João determinou pausa caso não conclua em três horas: limite `2026-10-14T06:29:39Z`, 03:29:39SãoPaulo. Não iniciar nova execução/coleta/teste/publicação/integração após o limite; interromper somente processos/agentes próprios, preservar checkpoint e marcar Goal paused, sem encerramento artificial da108. O monitor privado lê deadline persistido; controller confere o relógio entre etapas.
+
+Estado dos gates finais de SHA/checks/publicação/integração/CI pós-merge e encerramento: autoridade na Issue108 e na PR vinculada, com evidências datadas. Os checkpoints acima registram execução local/revisada e não antecipam o sucesso desses gates. O Goal só fecha após sua confirmação; o deadline humano permanece aplicável enquanto incompleto.
