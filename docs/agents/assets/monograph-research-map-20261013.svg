@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="monograph-research-map-20261013-title monograph-research-map-20261013-desc">
+<title id="monograph-research-map-20261013-title">Percurso da pesquisa monográfica</title>
+<desc id="monograph-research-map-20261013-desc">Identidade e elegibilidade temporal de companhias na CVM/B3 e dados por perspectiva do IF.data sustentam o vínculo com conglomerados financeiros ou instituições independentes; a literatura orienta indicadores candidatos e análise, cujo método final permanece aberto.</desc>
+<defs>
+<style>text{font-family:'Segoe UI',Arial,sans-serif;fill:#2d3142}.body{font-size:16px;fill:#4f5d75}.name{font-size:20px;font-weight:600}.tag{font-size:12px;font-weight:600;letter-spacing:1px;fill:#4f5d75}.edge{fill:none;stroke:#4f5d75;stroke-width:2}</style>
+<marker id="monograph-research-map-20261013-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#4f5d75"/></marker>
+<marker id="monograph-research-map-20261013-arrow-accent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#eb6c36"/></marker>
+<marker id="monograph-research-map-20261013-arrow-link" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#2e5aa8"/></marker>
+</defs>
+<rect width="1200" height="640" fill="#f5f5f5"/>
+<text x="40" y="60" font-size="32" style="font-family:Georgia,serif">Percurso da pesquisa monográfica</text>
+<text class="body" x="40" y="96">Desempenho econômico-financeiro · núcleo 2010–2024 · desenho parcial aprovado</text>
+<g aria-hidden="true" class="edge" marker-end="url(#monograph-research-map-20261013-arrow)">
+<path d="M360 232 H392 Q400 232 400 240 V284 Q400 292 408 292 H440"/>
+<path d="M360 412 H440"/>
+<path d="M760 356 H792 Q800 356 800 364 V372 Q800 380 808 380 H840"/>
+<path d="M1000 252 V300" stroke-dasharray="4 4"/>
+</g>
+
+<g id="monograph-research-map-20261013-cvm-b3" data-node="cvm-b3"><rect x="40" y="160" width="320" height="140" rx="8" fill="#eeeeef" stroke="#9a9ca3" stroke-width="1.2"/>
+<text class="tag" x="60" y="188">IDENTIDADE E ELEGIBILIDADE</text>
+<text class="name" x="60" y="220">Companhias · CVM/B3</text>
+<text class="body" x="60" y="252">Identidade e capital aberto</text>
+<text class="body" x="60" y="276">Evidência temporal de elegibilidade</text>
+</g>
+<g id="monograph-research-map-20261013-ifdata" data-node="ifdata"><rect x="40" y="332" width="320" height="228" rx="8" fill="#ffffff" stroke="#4f5d75" stroke-width="1.2"/>
+<text class="tag" x="60" y="360">VALORES, CADASTRO E CATÁLOGO</text>
+<text class="name" x="60" y="392">IF.data · por perspectiva</text>
+<text class="body" x="60" y="424" font-weight="600">Financeira: medição principal</text>
+<text class="body" x="60" y="456">Prudencial: medidas e comparações</text>
+<text class="body" x="60" y="480">pertinentes, com perímetro próprio</text>
+<text class="body" x="60" y="516">Individual: perguntas específicas</text>
+<text class="body" x="60" y="540">Referência e janela explícitas</text>
+</g>
+<g id="monograph-research-map-20261013-unit" data-node="unit"><rect x="440" y="244" width="320" height="220" rx="8" fill="#f9e9e2" stroke="#eb6c36" stroke-width="1.2"/>
+<text class="tag" x="460" y="272">VÍNCULO TEMPORAL COMPROVADO</text>
+<text class="name" x="460" y="304">Unidade financeira vinculada</text>
+<text class="body" x="460" y="340" font-weight="600">Conglomerado financeiro</text>
+<text class="body" x="460" y="364" font-weight="600">OU instituição independente</text>
+<text class="body" x="460" y="400">Tipo da unidade explícito</text>
+<text class="body" x="460" y="424">Perímetro e referência preservados</text>
+</g>
+<g id="monograph-research-map-20261013-literature" data-node="literature"><rect x="840" y="132" width="320" height="120" rx="8" fill="#eeeeef" stroke="#9a9ca3" stroke-width="1.2"/>
+<text class="tag" x="860" y="160">FUNDAMENTAÇÃO</text>
+<text class="name" x="860" y="192">Literatura</text>
+<text class="body" x="860" y="224">Orienta a elegibilidade de indicadores</text>
+</g>
+<g id="monograph-research-map-20261013-analysis" data-node="analysis"><rect x="840" y="300" width="320" height="204" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1.2"/>
+<text class="tag" x="860" y="328">DA MEDIDA À INTERPRETAÇÃO</text>
+<text class="name" x="860" y="360">Indicadores e análise</text>
+<text class="body" x="860" y="392">Candidatos e seus componentes</text>
+<text class="body" x="860" y="420">Perímetro e janela de apuração</text>
+<text class="body" x="860" y="448">Interpretação econômica e financeira</text>
+<text class="body" x="860" y="480" font-weight="600">Método final ainda aberto</text>
+</g>
+<line x1="40" y1="592" x2="1160" y2="592" stroke="#bfc0c0"/>
+<text class="body" x="40" y="620">Cada perspectiva conserva seu perímetro. Vínculos e dados disponíveis não definem, sozinhos, a amostra ou o método.</text>
+</svg>

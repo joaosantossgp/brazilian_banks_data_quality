@@ -1,8 +1,102 @@
-# Metodologia de indicadores por atividade: pesquisa B1
+# Protocolo da monografia e pesquisa de indicadores por atividade
 
-Pesquisa documental de **2026-10-12**, [Issue 102](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102), derivada da [frente CVM–IF.data](cvm-ifdata-identity-methodology-plan-20261012.md). Base `6535862eed9bce9cfaaaa29b9064cfc8045a5a65`, branch `codex/cvm-ifdata-front-20261012`; pesquisador B1, integração/revisão pelo Root. Único arquivo público desta fatia; preparação privada `.scratch/cvm-front-20261012/b1/`. Destino canônico existente `docs/engineering/`, sem camada nova. **Subsídio para decisão na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3): nenhuma fórmula, amostra, classificação histórica ou estimador foi adotado/calculado.** Revisão independente ainda necessária.
+Protocolo aprovado por João na conversa de 2026-10-13, consolidado na [Issue 112](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/112). A [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3) registra as decisões humanas e suas correções; esta nota reúne o desenho corrente para orientar base, análise e manuscrito. A pesquisa documental de 12/10 e o registro anterior da unidade permanecem abaixo como evidência histórica, com propostas distinguidas de adoção.
 
-## Decisão parcial sobre a unidade — 2026-10-12
+**O desenho está aprovado; a operacionalização ainda não está concluída.** Não há fórmulas finais, limites de representatividade, classificação histórica completa, amostra efetiva ou índice único adotados por esta consolidação. O manuscrito não substitui decisões posteriores de João/orientador.
+
+## Protocolo aprovado — 2026-10-13
+
+### Objeto, população e unidade
+
+A pesquisa examina a evolução do desempenho econômico-financeiro dos negócios financeiros vinculados às companhias elegíveis CVM/B3. O núcleo acadêmico é **2010–2024**; **2025–2026 é complemento separado**, sujeito a disponibilidade e comparabilidade, sem continuidade automática entre regimes.
+
+A população será **dinâmica**. Cada companhia participa da análise principal somente nos períodos em que satisfizer os critérios de elegibilidade de capital aberto/vínculo CVM–B3. Dados anteriores à entrada ou posteriores à saída podem servir de contexto identificado separadamente; sua existência não torna a companhia elegível naquele período. Ações, units e BDRs têm a mesma prioridade de descoberta, preservando instrumento, emissor/programa, natureza e período; isso não autoriza incorporar demonstrações estrangeiras ou confundir depositário e emissor. Datas de referência, eventos e provas suficientes ainda precisam de operacionalização.
+
+Medir diretamente **conglomerados financeiros e instituições independentes** vinculados às companhias elegíveis, mantendo tipo da unidade, perspectiva e vínculo temporal explícitos. Preservar a correspondência com a própria unidade/negócio financeiro; uma subsidiária listada não torna automaticamente elegível todo o grupo controlador. Holding, companhia e conglomerado são conceitos distintos. Relações muitos-emissores/uma-unidade não autorizam dupla contagem. Decompor subsidiárias e agregar seus indicadores à holding não é obrigação.
+
+A **visão prudencial será considerada** onde o perímetro for pertinente, especialmente capital/solidez; seu uso exige unidade, data, regime e vínculo próprios, sem equivalência automática com o financeiro. Individual é recurso para perguntas específicas, sem uma segunda amostra completa obrigatória. Seguradoras, IPs ou outras atividades não ficam automaticamente admitidas em métricas bancárias pela mera relação societária.
+
+**Não há inclusão nominal ou exceção aprovada.** A Caixa foi um exemplo de instituição grande que influencia o mercado, não uma decisão de incluí-la na população. Esse exemplo não ampliou o recorte de capital aberto, não criou um segundo conjunto principal e não mudou título/objetivo. A influência de instituições externas pode ser investigada como contexto, sem confundi-las com integrantes da amostra; a adoção de comparações externas específicas continua dependente de delimitação.
+
+### Pergunta analítica, agregação e apresentação
+
+O foco é **a evolução agregada do universo estudado e possíveis explicações**, com segmentações economicamente justificadas quando ajudarem a interpretar resultados. Não há obrigação de analisar cada companhia individualmente, escolher uma visualização central ou mostrar todos os recortes em toda apresentação. Casos selecionados podem explicar movimentos relevantes; exemplos citados na conversa não são lista de amostra nem classificação sistêmica medida.
+
+Duas leituras são exigidas: **a dimensão econômica do conjunto** e **a distribuição/instituição típica**, com mediana/dispersão ou outras estatísticas justificadas no contrato pertinente. Fórmulas e ponderações dependem do indicador; média de razões e razão de somas não serão tratadas como equivalentes. Não somar observações de perspectivas, janelas ou unidades incompatíveis.
+
+Comparação e investigação fundamentada de possíveis explicações são entregas obrigatórias. Econometria e identificação causal não são requisitos para concluir a monografia; métodos adicionais dependem da pergunta, dados e hipóteses. Separar padrões observados, associações e efeitos sustentados por identificação causal. O **índice/ranking único permanece condicionado** à sustentação teórica e empírica; as comparações por indicadores e dimensões são exigidas mesmo que um índice não seja viável. Não há pesos, normalização ou score aprovados.
+
+### Cinco dimensões obrigatórias
+
+Todas as dimensões abaixo fazem parte do escopo; nenhuma é apenas adicional. As perguntas organizam a seleção futura, sem adotar um indicador universal por dimensão.
+
+| Dimensão | Pergunta orientadora | Cuidado de interpretação |
+|---|---|---|
+| Rentabilidade | Como evolui a geração de resultados em relação aos recursos empregados? | Retorno maior precisa ser interpretado junto de alavancagem, riscos e composição dos resultados. |
+| Qualidade do crédito | Como evoluem deterioração da carteira, provisões e perdas? | Estoque de provisão, despesa de provisão e atraso medem aspectos distintos; adequação depende da atividade. |
+| Capital e alavancagem | Como se relacionam estrutura patrimonial, exposições e absorção de perdas? | Capitalização contábil e capital regulatório mantêm conceitos e perímetros próprios. |
+| Liquidez e financiamento | Como fontes de recursos, composição e dependências de financiamento se relacionam ao desempenho? | Uma razão de estoques isolada não comprova capacidade de cumprir obrigações ou resistir a saques. |
+| Eficiência operacional | Como custos, receitas e características da atividade explicam diferenças de resultado? | Razões contábeis e métodos de fronteira de eficiência respondem a perguntas distintas; nenhum método foi escolhido. |
+
+A obrigatoriedade da dimensão não exige nota agregada nem que toda métrica se aplique a toda atividade. Não preencher lacunas com proxies sem fundamento nem tratar não aplicabilidade como pior desempenho. As cautelas acima sintetizam o contexto de pesquisa já registrado nesta nota; não são fórmulas atribuídas a Assaf ou nova revisão de literatura.
+
+Todas serão bem fundamentadas, com **especial atenção a Assaf Neto** e complementação pelas fontes mais adequadas a cada área. A [bibliografia comentada](../../REFERENCES.md) distingue metadados confirmados, trechos efetivamente lidos, evidência reaproveitada e candidatos. A fundamentação das cinco dimensões ainda será aprofundada após o inventário da base.
+
+### Tempo e mudanças na composição
+
+Usar **análise trimestral com sínteses anuais**, escolhendo a apresentação conforme a pergunta. A janela adequada será definida por indicador: estoques têm data; fluxos têm intervalo; médias, anualização e acumulados em doze meses precisam de fundamento próprio. Dezembro não prova resultado anual e média dos quatro trimestres não é regra universal. Preservar quebras de regime, composição e perímetro, inclusive as fronteiras documentadas nas pesquisas anteriores.
+
+Mostrar composição/cobertura e entradas/saídas relevantes. Comparações entre unidades presentes nos períodos confrontados serão usadas quando úteis e **fáceis de produzir por consultas/filtros reutilizáveis**. Não exigir recortes manuais extensos, decompor toda variação ou manter uma coorte fixa como resultado principal. Painel fixo mais longo é robustez eventual, sujeito a utilidade, cobertura e viabilidade; suas exclusões devem ser explicitadas. Se um contraste importante for inviável, registrar a limitação em vez de presumir sua entrega.
+
+### Segmentações: inventário antes da seleção dos indicadores
+
+“Segmentação” inclui **porte/tamanho, setor/atividade, modelo de negócio, controle e outros recortes economicamente úteis que a base permitir**. Os segmentos prudenciais S1–S5 são apenas uma possibilidade; não substituem atividade, não são medida pura de tamanho nem rating de qualidade. Não retroprojetar classificações correntes nem transportar rótulo prudencial ao financeiro sem vínculo/período demonstrado.
+
+Antes da pesquisa de indicadores, inventariar campos e valores nativos, significados/dicionários, datas/regimes, nulos, cobertura por perspectiva e vínculo com as variáveis disponíveis. Distinguir **recortes nativos de classificações a construir**, como faixas de porte; distinguir atividade da instituição de setor dos tomadores/composição da carteira. Não presumir que todos esses recortes existem ou têm cobertura completa.
+
+A conferência preliminar dos corpos cadastrais de **201003 e 202412**, com hashes conferidos contra o índice recebido, encontrou `Tcb`, `Td`, `Tc`, `SegmentoTb`, `Atividade`, `Sr` e `Situacao`. `Sr` é integralmente nulo em 201003; em 202412 há S1–S5 e nulos. `Atividade` tem lacunas e rótulos históricos. Isso é observação de duas referências do cadastro inteiro, **não inventário do histórico nem cobertura da amostra elegível**, e não comprova o significado de todos os códigos. Ver [cadastro temporal e limites](ifdata-cadastro-20261011.md).
+
+A ordem aprovada é **inventário validado das segmentações e componentes → pesquisa bibliográfica orientada por esses recortes → proposta/seleção fundamentada dos indicadores**. A literatura também avalia a validade dos recortes; disponibilidade não justifica sozinha uma métrica. A [pesquisa das cinco dimensões](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/111) foi interrompida a pedido de João e aguarda esse inventário e replanejamento. Não se afirma pesquisa Feynman executada agora: `deep-research`, `literature-review` e `pdf-explore` foram solicitadas para a etapa futura; `/lit` e `/deepresearch` não têm mecanismo disponível nesta interface.
+
+### Cobertura e saúde da base
+
+Usar o conjunto válido/aplicável por indicador, sem exigir previamente a mesma população completa em todas as métricas. Para cada período, indicador e conjunto usado em uma comparação, permitir identificar:
+
+- Universo elegível/aplicável, **quantas e quais companhias/unidades participam e quais faltam**, mantendo a relação companhia–unidade sem dupla contagem.
+- Motivo de cada ausência: componente faltante, vínculo inconclusivo, janela/perímetro incompatível ou não aplicabilidade, preservando os estados nativos e a diferença entre desconhecido, zero e ausência.
+- Representatividade econômica ausente quando mensurável de forma compatível; denominador desconhecido permanece explícito. Contagem de companhias e cobertura das unidades financeiras são informações diferentes.
+
+**A cobertura das muito representativas é requisito de saúde da base em todos os conjuntos aplicáveis.** Sua ausência não pode ser aceita silenciosamente como cobertura suficiente: requer diagnóstico/remediação ou limitação explícita e decisão antes de aceitar o resultado. Não fabricar valores, substituir perímetros ou forçar indicador inaplicável para completar uma grade. A aplicação desse requisito por atividade ainda deve ser operacionalizada.
+
+Identificar as companhias/unidades essenciais por **representatividade econômica em cada período**, não por lista nominal fixa para todos os anos. Examinar medidas pertinentes, como participação em ativos e crédito, com classificação oficial complementar, e propor critérios/limites após observar a distribuição real. Não há corte percentual, top-N ou enquadramento S1 automático aprovado. Distinguir importância no universo estudado de importância no sistema total; essa avaliação não amplia a elegibilidade.
+
+### Manuscrito, fontes e rastreabilidade
+
+**Word no Drive é o arquivo principal**, com versão vigente indicada por João. Cópias de consulta no checkout são privadas/ignoradas pelo Git e identificadas por origem, versão, data e SHA-256; não substituem o original e não há sincronização automática. O PDF de Assaf também permanece privado. Não publicar rascunhos, links privados ou textos integrais protegidos por esta consolidação.
+
+A versão “Mono2 — versão revisada.docx”, modificada no Drive em 12/10/2026, foi consultada e preservada localmente. Ainda promete índice obrigatório e descreve financeiro como unidade principal; essas passagens precisam de reconciliação futura sob direção de João. A correção do manuscrito não foi executada. Referências presentes no texto não ficam verificadas pelo simples recebimento do arquivo.
+
+A relação histórica deve permitir inspecionar **companhia → instrumento/registro CVM–B3 → unidade IF.data**, tipo, período/intervalo sustentado, fonte e lacunas, distinguindo entradas/saídas e mudanças de vínculo. Observação datada não prova continuidade. Tabela temporal/consulta equivalente pode atender; não foi imposto dashboard. O [esclarecimento para a entrega histórica](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/108#issuecomment-6153770013) preserva ownership e contrato de implementação. Fontes, notícias e concordância de identificadores podem apoiar vínculos com natureza, confiança e alcance temporal explícitos; não há exigência universal de documento jurídico formal por aresta nem permissão de inferir identidade por nome.
+
+### Pendências e condição para avançar
+
+| Pendência | Evidência/decisão necessária |
+|---|---|
+| Segmentações utilizáveis | Inventário validado de valores, significado, história, cobertura e recortes derivados; cruzamento com componentes. |
+| Elegibilidade operacional e vínculos | Datas/eventos/provas, relação temporal aceita e cobertura; não é resolvida pelo cadastro corrente. |
+| Fundamentação das cinco dimensões | Leitura dirigida de Assaf e fontes primárias adequadas por área, com páginas/localizadores e limites, após inventário/replanejamento. |
+| Métricas e tratamentos | Fórmulas, componentes, atividade, escala, perspectiva, janela, médias/anualização, extremos, denominadores e ausências. |
+| Representatividade e completude | Distribuição real, critérios/limites propostos, unidades essenciais por período e diagnóstico de suas lacunas. |
+| Eventual índice e modelos adicionais | Critérios de viabilidade/robustez, hipóteses e aprovação específica; não obrigatórios. |
+| Alinhamento do Word | Versão indicada por João e reconciliação das passagens divergentes com este protocolo. |
+
+Não há outra pergunta necessária para **registrar** este desenho aprovado. Isso não fecha a metodologia operacional inteira, a seleção de indicadores, a relação histórica ou a monografia. A [decisão metodológica](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3) e o [mapa](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2) permanecem abertos.
+
+## Pesquisa documental de 2026-10-12 — contexto preservado
+
+Pesquisa da [Issue 102](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/102), derivada da [frente CVM–IF.data](cvm-ifdata-identity-methodology-plan-20261012.md). Base `6535862eed9bce9cfaaaa29b9064cfc8045a5a65`, branch `codex/cvm-ifdata-front-20261012`; pesquisador B1, integração/revisão pelo Root. Preparação privada `.scratch/cvm-front-20261012/b1/`. Destino existente `docs/engineering/`. O estado de revisão da entrega original consta da Issue/PR correspondente; suas propostas não adotam fórmula, amostra, classificação histórica ou estimador. O protocolo acima sucede somente as decisões humanas anteriores que foram esclarecidas em 13/10.
+
+### Registro anterior — 2026-10-12 (histórico)
 
 Na [Issue 3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6135448592), João respondeu **“Ambos”** e esclareceu **“Principalmente conglomerados”**. A escolha registrada é usar **conglomerados financeiros como unidade principal** da comparação e **instituições individuais como análise complementar**, mantendo os respectivos perímetros identificados. Essa decisão humana define a prioridade analítica; as fórmulas, classificações e estimadores desta pesquisa continuam propostas.
 

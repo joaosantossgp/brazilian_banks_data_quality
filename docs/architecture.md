@@ -46,13 +46,13 @@ Este é o contrato estrutural do projeto, solicitado em 2026-10-03. Toda Issue u
 
 | Destino canônico | Responsabilidade e limites |
 |---|---|
-| Raiz: `README.md`, `AGENTS.md`, `GLOSSARY.md`, `.gitignore`, manifests de dependência existentes | Entradas, linguagem do domínio e configuração do projeto. Novos documentos temáticos vão em `docs/`; não acrescentar relatórios ou scripts avulsos na raiz. |
+| Raiz: `README.md`, `AGENTS.md`, `GLOSSARY.md`, `REFERENCES.md`, `.gitignore`, manifests de dependência existentes | Entradas, linguagem do domínio, bibliografia comentada e configuração do projeto. `REFERENCES.md` foi solicitado por João na Issue 109; reúne fontes/usos/limites sem adotar método. Demais documentos temáticos vão em `docs/`; não acrescentar relatórios ou scripts avulsos na raiz. |
 | `bank_quality/` | Código reutilizável do pipeline e contratos de dados; aquisição, arquivo/proveniência, inventário, cobertura, metadados, replay e Parquet. Reutilizar o módulo responsável, com dependências explícitas; evitar cópias de lógica em scripts. |
 | `scripts/` | Entradas operacionais/CLI, diagnósticos e verificações delimitadas; lógica reutilizável pertence ao pacote. Nome descritivo consistente com os scripts existentes. |
 | `tests/`, `tests/fixtures/` | Verificação de comportamento/integridade e fixtures offline pertinentes. Não misturar fixtures sintéticas com dados financeiros observados nem criar testes que só reproduzam documentação. |
 | `docs/adr/` | Decisões arquiteturais motivadas, numeradas e ligadas à tarefa. Mudança de pasta pequena não exige ADR por rotina; mudança de camada/responsabilidade exige decisão registrada. |
-| `docs/agents/` e `docs/agents/assets/` | Governança operacional e seus visuais SVG/PNG; uma entrada por contrato, referências em vez de cópias. |
-| `docs/engineering/` | Pesquisa técnica, evidência/limites de execução e ledgers datados. Método econômico/contábil/financeiro conserva fontes e autoridade humana. |
+| `docs/agents/` e `docs/agents/assets/` | Governança operacional e seus visuais SVG/PNG; uma entrada por contrato, referências em vez de cópias. A Issue 109 preserva instruções antigas em `operational-history-20261013.md`, sem autoridade corrente, e inclui o mapa didático `assets/monograph-research-map-20261013.svg`/`.png`. |
+| `docs/engineering/` | Pesquisa técnica, evidência/limites de execução e ledgers datados. Método econômico/contábil/financeiro conserva fontes e autoridade humana. `local-queries-20261013.md` concentra comandos antes apresentados no README, com contexto atual e rota histórica separados (Issue 109). |
 | `docs/superpowers/specs/`, `docs/superpowers/plans/` | Specs e planos rastreáveis, nomeados com data e assunto conforme o padrão existente. |
 | `.github/` | Workflows, templates e política de governança existentes. Controles compartilhados têm integrador e allowlist próprios. |
 | `.agents/skills/`, `third_party/` | Skills locais selecionadas e registros/licenças upstream. Não duplicar skills globais nem editar cópias upstream por conveniência. |
