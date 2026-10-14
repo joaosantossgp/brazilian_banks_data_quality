@@ -1051,3 +1051,425 @@ class IssuerSupplementAdmissionTests(unittest.TestCase):
             return raw
         with mock.patch.object(self.api.cvm_reader, '_pinned', side_effect=mutate_index_after_projection), self.assertRaises(ValueError):
             self.api.validate_issuer_supplement_index(self.index, pin, self.root)
+
+class IssuerSupplementPackageTests(unittest.TestCase):
+    """Exercise real tiny authenticated core and supplement packages."""
+    canonical = IssuerSupplementAdmissionTests.canonical
+    fixture = IssuerSupplementAdmissionTests.fixture
+    write = IssuerSupplementAdmissionTests.write
+    loc = IssuerSupplementAdmissionTests.loc
+
+    def setUp(self):
+        IssuerSupplementAdmissionTests.setUp(self)
+        self.core_fixture = HistoricalTests()
+        self.core_fixture.setUp()
+        self.addCleanup(self.core_fixture.doCleanups)
+        for native in self.core_fixture.rows:
+            if native['CodInst'] == '00000000':
+                native['CodInst'] = '00123456'
+            native['CnpjInstituicaoLider'] = '00123456'
+        self.core, self.core_receipt, _ = self.core_fixture.build()
+        self.core_pin = self.core_receipt['manifest_sha256']
+        self.output = self.root / 'supplement'
+
+    def build_supplement(self):
+        self.assertTrue(callable(getattr(self.api, 'build_issuer_supplement', None)), 'R3b supplement builder missing')
+        pin = self.write()
+        receipt = self.api.build_issuer_supplement(self.index, pin, self.root,
+            self.core, self.core_pin, self.output)
+        return receipt, pin
+
+    def verify(self, receipt, pin):
+        return self.api.verify_issuer_supplement(self.output, receipt['manifest_sha256'], pin,
+            self.core, self.core_pin)
+
+    def query(self, receipt, pin, **filters):
+        return self.api.query_issuer_supplement(self.output, receipt['manifest_sha256'], pin,
+            self.core, self.core_pin, **filters)
+
+    def test_build_closed_package_replay_and_source_independence(self):
+        before = {p.name: sha(p) for p in self.core.iterdir()}
+        receipt, pin = self.build_supplement()
+        self.assertEqual({p.name for p in self.output.iterdir()},
+            {'manifest.json', 'sources.json', 'entities.json', 'claims.json',
+             'relations.json', 'unresolved.json', 'quality.json', 'evidence'})
+        self.assertEqual(len(list((self.output / 'evidence').iterdir())), 2)
+        self.index.unlink()
+        (self.root / 'body.pdf').unlink()
+        (self.root / 'projection.txt').unlink()
+        self.verify(receipt, pin)
+        self.assertEqual(before, {p.name: sha(p) for p in self.core.iterdir()})
+        result = self.query(receipt, pin)
+        self.assertEqual(result['quality']['identity_certified'], False)
+        self.assertEqual(result['quality']['academic_eligibility_adopted'], False)
+        self.assertEqual(result['quality']['market_coverage_incomplete'], True)
+
+    def test_punctual_native_associations_preserve_group_leader_support(self):
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin, reference='202412')
+        rows = result['associations']
+        self.assertEqual({(r['reference'], r['perspective'], r['entity']) for r in rows},
+            {('202412', 'individual', '00123456'), ('202412', 'financeiro', 'F001'),
+             ('202412', 'prudencial', 'P001')})
+        self.assertTrue(all(r['academic_eligibility'] == 'not_evaluated' for r in rows))
+        financial = next(r for r in result['vinculos_cadastrais'] if r['perspective'] == 'financeiro')
+        self.assertEqual((financial['institution_Tcb'], financial['group_Tcb'], financial['leader_Tcb']),
+                         ('B3', 'F', 'B3'))
+        self.assertEqual(financial['leader_scope'], 'nativo_nao_desambiguado')
+        self.assertEqual(self.query(receipt, pin, reference='201012')['associations'], [])
+
+    def test_external_index_core_authority_cannot_be_replaced_by_output_repin(self):
+        receipt, pin = self.build_supplement()
+        with self.assertRaises(ValueError):
+            self.verify(receipt, '0' * 64)
+        with self.assertRaises(ValueError):
+            self.api.verify_issuer_supplement(self.output, receipt['manifest_sha256'], pin,
+                self.core, '0' * 64)
+        # A fully rehashed output with altered input payload still fails external index authority.
+        entities = json.loads((self.output / 'entities.json').read_bytes())
+        entities[0]['native_payload']['extra'] = 'unauthorized'
+        (self.output / 'entities.json').write_bytes(self.canonical(entities))
+        manifest = json.loads((self.output / 'manifest.json').read_bytes())
+        manifest['files']['entities.json'].update(sha256=sha(self.output / 'entities.json'),
+            bytes=(self.output / 'entities.json').stat().st_size)
+        (self.output / 'manifest.json').write_bytes(self.canonical(manifest))
+        with self.assertRaises(ValueError):
+            self.api.verify_issuer_supplement(self.output, sha(self.output / 'manifest.json'), pin,
+                self.core, self.core_pin)
+
+    def test_each_operation_authenticates_core_once(self):
+        with mock.patch.object(self.api, '_load', wraps=self.api._load) as load:
+            receipt, pin = self.build_supplement()
+            self.assertEqual(load.call_count, 1)
+        for operation in (self.verify, self.query):
+            with mock.patch.object(self.api, '_load', wraps=self.api._load) as load:
+                operation(receipt, pin)
+                self.assertEqual(load.call_count, 1)
+
+    def test_core_query_optional_trio_requires_all_and_preserves_core_alone(self):
+        before = self.api.query_historical_issuer_links(self.core, self.core_pin, reference='202412')
+        receipt, pin = self.build_supplement()
+        with self.assertRaises(ValueError):
+            self.api.query_historical_issuer_links(self.core, self.core_pin, supplement=self.output)
+        with mock.patch.object(self.api, '_load', wraps=self.api._load) as load:
+            combined = self.api.query_historical_issuer_links(self.core, self.core_pin,
+                reference='202412', entity='00123456000100', supplement=self.output,
+                expected_supplement_sha256=receipt['manifest_sha256'], expected_supplement_index_sha256=pin)
+            self.assertEqual(load.call_count, 1)
+            self.assertEqual(len(combined['suplemento']['associations']), 3)
+        self.assertEqual(self.api.query_historical_issuer_links(self.core, self.core_pin, reference='202412'), before)
+
+    def test_unknown_does_not_expand_and_candidates_remain_visible(self):
+        self.association.update(reference=None, fact_date=None, time_state='unknown')
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin, reference='201003')
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(len(result['undated_associations']), 1)
+        self.assertEqual(result['undated_associations'][0]['reference'], None)
+        self.assertEqual(result['cadastro'], [])
+
+    def test_missing_native_unit_is_gap_not_name_fallback(self):
+        self.operator['identifiers'] = [dict(namespace='CNPJ14', literal='00000000000191',
+            source_id='S', locator=self.loc())]
+        # Append explicit proof; company keeps its different identifier despite a similar name.
+        self.text += '00.000.000/0001-91\n'
+        (self.root / 'projection.txt').write_bytes(self.text.encode())
+        self.source['projection'].update(sha256=sha(self.root / 'projection.txt'), bytes=len(self.text.encode()))
+        self.operator['identifiers'][0]['locator'] = self.loc()
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin)
+        self.assertEqual(result['associations'], [])
+        self.assertEqual({g['reason'] for g in result['derived_unresolved']}, {'native_unit_missing'})
+        self.assertEqual(len(result['entities']), 2)
+        self.assertEqual(len(result['unresolved']), 1)
+
+    def repin_file(self, relative, value):
+        target = self.output / relative
+        target.write_bytes(self.canonical(value))
+        manifest = json.loads((self.output / 'manifest.json').read_bytes())
+        manifest['files'][relative] = dict(sha256=sha(target), bytes=target.stat().st_size)
+        (self.output / 'manifest.json').write_bytes(self.canonical(manifest))
+        return sha(self.output / 'manifest.json')
+
+    def test_rehashed_relations_quality_and_manifest_counts_are_replayed(self):
+        receipt, pin = self.build_supplement()
+        for relative in ('relations.json', 'quality.json'):
+            original = (self.output / relative).read_bytes()
+            original_manifest = (self.output / 'manifest.json').read_bytes()
+            value = json.loads(original)
+            if relative == 'relations.json':
+                value['associations'][0]['entity'] = 'unapproved'
+            else:
+                value['identity_certified'] = True
+            repin = self.repin_file(relative, value)
+            with self.subTest(relative=relative), self.assertRaises(ValueError):
+                self.api.verify_issuer_supplement(self.output, repin, pin, self.core, self.core_pin)
+            (self.output / relative).write_bytes(original)
+            (self.output / 'manifest.json').write_bytes(original_manifest)
+        manifest = json.loads((self.output / 'manifest.json').read_bytes())
+        manifest['counts']['associations'] += 1
+        (self.output / 'manifest.json').write_bytes(self.canonical(manifest))
+        with self.assertRaises(ValueError):
+            self.api.verify_issuer_supplement(self.output, sha(self.output / 'manifest.json'), pin,
+                self.core, self.core_pin)
+
+    def test_closed_inventory_rejects_extra_file_directory_and_missing_evidence(self):
+        receipt, pin = self.build_supplement()
+        extra = self.output / 'evidence' / 'extra.txt'
+        extra.write_text('not declared')
+        with self.assertRaises(ValueError):
+            self.verify(receipt, pin)
+        extra.unlink()
+        extra.mkdir()
+        with self.assertRaises(ValueError):
+            self.verify(receipt, pin)
+        extra.rmdir()
+        next((self.output / 'evidence').iterdir()).unlink()
+        with self.assertRaises(ValueError):
+            self.verify(receipt, pin)
+
+    def test_identical_source_bodies_and_projections_are_copied_once(self):
+        duplicate = json.loads(json.dumps(self.source))
+        duplicate['alias'] = 'same bytes, separately reviewed source'
+        self.value['sources'].append(duplicate)
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin)
+        self.assertEqual(len(result['sources']), 1)  # only referenced sources in query
+        self.assertEqual(self.verify(receipt, pin)['counts']['sources'], 2)
+        self.assertEqual(len(list((self.output / 'evidence').iterdir())), 2)
+
+    def test_exact_selectors_and_zero_associations_keep_seventeen_companies(self):
+        self.association['adoption_state'] = 'candidate'
+        data = self.fixture()
+        for n in range(16):
+            record = dict(role='company', native_name='Candidate ' + str(n), identifiers=[], native_payload={})
+            record['entity_id'] = 'entity:' + hashlib.sha256(self.canonical(record)[:-1]).hexdigest()
+            data['entities'].append(record)
+        data['entities'].sort(key=lambda r: r['entity_id'])
+        pin = self.write(data)
+        receipt = self.api.build_issuer_supplement(self.index, pin, self.root, self.core, self.core_pin, self.output)
+        result = self.query(receipt, pin, reference='201012', perspective='prudencial')
+        self.assertEqual(len([r for r in result['entities'] if r['role'] == 'company']), 17)
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(result['undated_associations'], [])
+        self.assertEqual(len(result['unresolved']), 1)
+        for selector in ('Companhia Alfa', '00123456000100', 'CIK:123', 'CNPJ14:00.123.456/0001-00'):
+            with self.subTest(selector=selector):
+                self.assertEqual(self.query(receipt, pin, company=selector)['entities'], [])
+        exact = self.query(receipt, pin, company='CIK:000123')
+        self.assertEqual(len(exact['entities']), 2)
+        self.assertEqual(len(exact['support_claims']), 2)
+        self.assertEqual(exact['derived_unresolved'][0]['reason'], 'support_not_adoptable')
+
+    def test_cli_supplement_build_verify_query_and_optional_trio(self):
+        pin = self.write()
+        script = Path(__file__).resolve().parents[1] / 'scripts/build-historical-issuer-links.py'
+        build = subprocess.run([sys.executable, '-B', str(script), 'supplement-build', str(self.index),
+            str(self.core), str(self.output), '--index-sha256', pin, '--core-sha256', self.core_pin,
+            '--evidence-root', str(self.root)], capture_output=True, text=True)
+        self.assertEqual(build.returncode, 0, build.stderr)
+        receipt = json.loads(build.stdout)
+        common = [str(self.output), str(self.core), '--manifest-sha256', receipt['manifest_sha256'],
+                  '--index-sha256', pin, '--core-sha256', self.core_pin]
+        for command in ('supplement-verify', 'supplement-query'):
+            child = subprocess.run([sys.executable, '-B', str(script), command, *common], capture_output=True, text=True)
+            self.assertEqual(child.returncode, 0, child.stderr)
+            self.assertEqual(json.loads(child.stdout)['contract'], 'historical-issuer-supplement-v1')
+        child = subprocess.run([sys.executable, '-B', str(script), 'query', str(self.core),
+            '--manifest-sha256', self.core_pin, '--supplement', str(self.output)], capture_output=True, text=True)
+        self.assertNotEqual(child.returncode, 0)
+
+    def test_json_writer_exact_cap_and_existing_output_are_errors(self):
+        raw = self.canonical({'unicode': '😀', 'blank': '', 'null': None})
+        with mock.patch.object(self.api, 'MAX_TABLE_BYTES', len(raw)):
+            self.api._write_supplement_json(self.root / 'exact.json', json.loads(raw))
+        self.assertEqual((self.root / 'exact.json').read_bytes(), raw)
+        with mock.patch.object(self.api, 'MAX_TABLE_BYTES', len(raw) - 1), self.assertRaises(ValueError):
+            self.api._write_supplement_json(self.root / 'over.json', json.loads(raw))
+        self.assertFalse((self.root / 'over.json').exists())
+        self.output.mkdir()
+        pin = self.write()
+        with self.assertRaises(ValueError):
+            self.api.build_issuer_supplement(self.index, pin, self.root, self.core, self.core_pin, self.output)
+
+    def test_replay_is_byte_identical_and_unknown_filters_do_not_guess_namespaces(self):
+        receipt, pin = self.build_supplement()
+        second = self.root / 'replay'
+        again = self.api.build_issuer_supplement(self.index, pin, self.root, self.core, self.core_pin, second)
+        self.assertEqual(again['manifest_sha256'], receipt['manifest_sha256'])
+        self.assertEqual({p.relative_to(self.output).as_posix(): p.read_bytes()
+                          for p in self.output.rglob('*') if p.is_file()},
+                         {p.relative_to(second).as_posix(): p.read_bytes()
+                          for p in second.rglob('*') if p.is_file()})
+        result = self.api.query_historical_issuer_links(self.core, self.core_pin, entity='00123456',
+            supplement=self.output, expected_supplement_sha256=receipt['manifest_sha256'],
+            expected_supplement_index_sha256=pin)
+        self.assertEqual(result['suplemento']['entities'], [])
+        for filters in ({'reference': '202601'}, {'perspective': 'consolidated'}, {'company': ''}):
+            with self.subTest(filters=filters), self.assertRaises(ValueError):
+                self.query(receipt, pin, **filters)
+
+    def test_candidate_deep_support_blocked_source_is_visible_without_association(self):
+        blocked = json.loads(json.dumps(self.source))
+        blocked.update(alias='blocked original', document_state='blocked', source_nature='regulator')
+        self.value['sources'].append(blocked)
+        capture = dict(self.base_claim, fact_type='capture_status', reference=None,
+            fact_date=None, time_state='unknown', subject_id='O', object_id=None,
+            support=[dict(source_id='T', locator=self.loc())], support_claim_ids=[],
+            adoption_state='observation', native_payload=dict(http=403))
+        # B -> Z -> blocked; A -> B. Candidate state must never be silently adopted.
+        self.base_claim['support_claim_ids'] = ['Z']
+        self.association['adoption_state'] = 'candidate'
+        self.value['claims'].insert(0, capture)
+        # fixture aliases are ordinal: B=capture, A=identity, Z=analytical here;
+        # use an explicit topological index instead of conflating those aliases.
+        self.value['claims'] = [capture, dict(self.base_claim, support_claim_ids=['B']),
+                               dict(self.association, support_claim_ids=['A'])]
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin, company='CIK:000123', reference='202412')
+        self.assertEqual(len(result['support_claims']), 3)
+        self.assertEqual(len(result['sources']), 2)
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(result['derived_unresolved'][0]['reason'], 'support_not_adoptable')
+        self.assertEqual({s['document_state'] for s in result['sources']}, {'substantive', 'blocked'})
+
+    def test_temporal_event_and_instrument_do_not_become_historical_market_facts(self):
+        instrument = dict(role='instrument', native_name='ALFA34', identifiers=[dict(namespace='TICKER',
+            literal='ALFA34', source_id='S', locator=self.loc())], native_payload=dict(kind='BDR'))
+        self.value['entities'].append(instrument)
+        observation = dict(self.base_claim, fact_type='instrument_observation', object_id='G',
+            reference=None, fact_date='2026-10-14', time_state='document_point',
+            native_payload=dict(market='current'), support_claim_ids=[])
+        event = dict(self.base_claim, fact_type='event', object_id='G', reference=None,
+            fact_date='2026-10-13', time_state='document_point', native_payload=dict(event='announcement'))
+        self.value['claims'] = [self.base_claim, observation, event]
+        self.value['unresolved'][0]['support_claim_ids'] = ['B']
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin, reference='201012')
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(result['claims'], [])
+        self.assertEqual(len(result['instrument_observations']), 1)
+        self.assertEqual(result['events'][0]['fact_date'], '2026-10-13')
+        self.assertEqual(result['instrument_observations'][0]['reference'], None)
+        self.assertEqual(len(result['instruments']), 1)
+
+    def test_conflicting_operator_bases_are_ambiguous_without_choosing_existing_native(self):
+        self.text += '00.000.000/0001-91\n'
+        (self.root / 'projection.txt').write_bytes(self.text.encode())
+        self.source['projection'].update(sha256=sha(self.root / 'projection.txt'), bytes=len(self.text.encode()))
+        self.operator['identifiers'].append(dict(namespace='CNPJ14', literal='00000000000191',
+            source_id='S', locator=self.loc()))
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin)
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(result['derived_unresolved'][0]['reason'], 'native_unit_ambiguous')
+
+    def test_membership_claim_is_compared_to_native_group_same_reference(self):
+        unit = dict(role='bcb_unit', native_name='declared group', identifiers=[dict(namespace='BCB_CODINST',
+            literal='F001', source_id='S', locator=self.loc())], native_payload={})
+        self.value['entities'].append(unit)
+        membership = dict(self.base_claim, fact_type='bcb_membership', subject_id='O', object_id='G',
+            evidence_nature='native_bcb', native_payload=dict(perspective='prudencial', date_purpose='native_reference'),
+            support_claim_ids=[])
+        self.value['claims'].append(membership)
+        self.association['support_claim_ids'] = ['B', 'Z']
+        # Topological order B identity, A membership, Z association.
+        self.value['claims'] = [self.base_claim, membership, dict(self.association, support_claim_ids=['B', 'A'])]
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin)
+        self.assertEqual(result['associations'], [])
+        self.assertEqual(result['derived_unresolved'][0]['reason'], 'native_membership_mismatch')
+
+    def test_empty_group_is_gap_and_leader_absence_is_not_filled(self):
+        # Use a new authentic core, not a patched table bypass.
+        self.core_fixture.temp.cleanup()
+        self.core_fixture = HistoricalTests()
+        self.core_fixture.setUp()
+        self.addCleanup(self.core_fixture.doCleanups)
+        self.core_fixture.rows[0].update(CodInst='00123456', CodConglomeradoFinanceiro='',
+            CnpjInstituicaoLider='99999999')
+        self.core, self.core_receipt, _ = self.core_fixture.build()
+        self.core_pin = self.core_receipt['manifest_sha256']
+        receipt, pin = self.build_supplement()
+        result = self.query(receipt, pin)
+        self.assertEqual({r['perspective'] for r in result['associations']}, {'individual', 'prudencial'})
+        self.assertTrue(all(r['leader_support'] is None for r in result['associations']))
+        self.assertEqual(result['derived_unresolved'][0]['reason'], 'native_group_empty')
+        self.assertEqual(result['derived_unresolved'][0]['perspective'], 'financeiro')
+
+    def test_combined_query_recognizes_formatted_cnpj_without_other_namespace_guessing(self):
+        receipt, pin = self.build_supplement()
+        result = self.api.query_historical_issuer_links(self.core, self.core_pin, entity='00.123.456/0001-00',
+            supplement=self.output, expected_supplement_sha256=receipt['manifest_sha256'],
+            expected_supplement_index_sha256=pin)
+        self.assertEqual(len(result['suplemento']['associations']), 3)
+
+    def test_unresolved_support_closure_includes_new_entity_gaps_transitively(self):
+        data = self.fixture()
+        original_company = next(r['entity_id'] for r in data['entities'] if r['role'] == 'company')
+        entity = dict(role='company', native_name='Separately identified support company', identifiers=[], native_payload={})
+        entity['entity_id'] = 'entity:' + hashlib.sha256(self.canonical(entity)[:-1]).hexdigest()
+        data['entities'].append(entity)
+        claim = dict(next(r for r in data['claims'] if r['fact_type'] == 'issuer_identity'))
+        claim.pop('claim_id')
+        claim.update(subject_id=entity['entity_id'], support_claim_ids=[], native_payload={'distinct': True, 'date_purpose': 'snapshot'})
+        claim['claim_id'] = 'claim:' + hashlib.sha256(self.canonical(claim)[:-1]).hexdigest()
+        data['claims'].append(claim)
+        for candidate, support, reason in ((original_company, [claim['claim_id']], 'explicit support dependency'),
+                                          (entity['entity_id'], [], 'gap on transitively discovered entity')):
+            unresolved = dict(candidate_id=candidate, missing_claim_kind='issuer_chain', reason=reason,
+                evidence_needed='Reviewed endpoint evidence', support_claim_ids=support)
+            unresolved['unresolved_id'] = 'unresolved:' + hashlib.sha256(self.canonical(unresolved)[:-1]).hexdigest()
+            data['unresolved'].append(unresolved)
+        for name, field in (('entities', 'entity_id'), ('claims', 'claim_id'), ('unresolved', 'unresolved_id')):
+            data[name].sort(key=lambda r: r[field])
+        pin = self.write(data)
+        receipt = self.api.build_issuer_supplement(self.index, pin, self.root, self.core, self.core_pin, self.output)
+        result = self.query(receipt, pin, company='CIK:000123')
+        self.assertEqual(len(result['unresolved']), 3)
+        self.assertEqual(len(result['entities']), 3)
+
+    def test_quality_counts_curated_gap_kinds_separately_from_derived_gaps(self):
+        receipt, pin = self.build_supplement()
+        quality = self.query(receipt, pin)['quality']
+        self.assertEqual(quality.get('curated_gap_kinds'), {'temporal_coverage': 1})
+        self.assertEqual(quality['gap_reasons'], {})
+
+    def test_index_mutation_during_output_projection_leaves_no_accepted_manifest(self):
+        pin = self.write()
+        original = self.api._write_supplement_json
+        def mutate_during_projection(path, value):
+            result = original(path, value)
+            if Path(path).name == 'quality.json':
+                self.index.write_bytes(self.index.read_bytes() + b' ')
+            return result
+        with mock.patch.object(self.api, '_write_supplement_json', side_effect=mutate_during_projection), self.assertRaises(ValueError):
+            self.api.build_issuer_supplement(self.index, pin, self.root, self.core, self.core_pin, self.output)
+        self.assertFalse((self.output / 'manifest.json').exists())
+
+    def test_rehashed_evidence_body_or_projection_cannot_change_external_curated_authority(self):
+        receipt, pin = self.build_supplement()
+        for evidence in (self.output / 'evidence').iterdir():
+            original = evidence.read_bytes()
+            original_manifest = (self.output / 'manifest.json').read_bytes()
+            evidence.write_bytes(original + b' injected')
+            manifest = json.loads(original_manifest)
+            manifest['files'][evidence.relative_to(self.output).as_posix()] = dict(
+                sha256=sha(evidence), bytes=evidence.stat().st_size)
+            (self.output / 'manifest.json').write_bytes(self.canonical(manifest))
+            with self.subTest(evidence=evidence.suffix), self.assertRaises(ValueError):
+                self.api.verify_issuer_supplement(self.output, sha(self.output / 'manifest.json'), pin,
+                    self.core, self.core_pin)
+            evidence.write_bytes(original)
+            (self.output / 'manifest.json').write_bytes(original_manifest)
+        self.verify(receipt, pin)
+
+    def test_manifest_counts_do_not_accept_json_boolean_as_integer(self):
+        receipt, pin = self.build_supplement()
+        manifest = json.loads((self.output / 'manifest.json').read_bytes())
+        self.assertEqual(manifest['counts']['sources'], 1)
+        manifest['counts']['sources'] = True
+        (self.output / 'manifest.json').write_bytes(self.canonical(manifest))
+        with self.assertRaises(ValueError):
+            self.api.verify_issuer_supplement(self.output, sha(self.output / 'manifest.json'), pin,
+                self.core, self.core_pin)

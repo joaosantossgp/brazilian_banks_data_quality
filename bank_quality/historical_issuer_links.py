@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import tempfile
 
 from bank_quality import cvm_metadata as cvm_reader
 from bank_quality import cvm_corporate_metadata as corporate_reader
@@ -563,7 +564,9 @@ def verify_historical_issuer_links(output, expected_manifest_sha256):
     return _load(output, expected_manifest_sha256)[0]
 
 
-def query_historical_issuer_links(output, expected_manifest_sha256, *, reference=None, entity=None, perspective=None):
+def query_historical_issuer_links(output, expected_manifest_sha256, *, reference=None, entity=None, perspective=None,
+                                  supplement=None, expected_supplement_sha256=None,
+                                  expected_supplement_index_sha256=None):
     """Return JSON-ready observations, sources, states and relevant gaps; no sums."""
     if reference is not None and reference not in REFERENCES:
         raise ValueError('Reference must be one of the 60 native AAAAMM quarters')
@@ -571,7 +574,25 @@ def query_historical_issuer_links(output, expected_manifest_sha256, *, reference
         raise ValueError('Invalid perspective')
     if entity is not None and (not isinstance(entity, str) or not entity):
         raise ValueError('Entity must be a nonempty literal identifier')
+    trio = (supplement, expected_supplement_sha256, expected_supplement_index_sha256)
+    if any(item is not None for item in trio) and not all(item is not None for item in trio):
+        raise ValueError('Supplement path, manifest pin and external index pin are required together')
     manifest, tables = _load(output, expected_manifest_sha256)
+    result = _query_historical_tables(manifest, tables, reference, entity, perspective)
+    if supplement is not None:
+        selector = entity
+        if _full(entity) is not None:
+            selector = 'CNPJ14:' + _full(entity)
+        admitted, derived, quality, package = _load_issuer_supplement(supplement,
+            expected_supplement_sha256, expected_supplement_index_sha256,
+            expected_manifest_sha256, tables)
+        result['suplemento'] = _query_issuer_supplement(admitted, derived, quality, package,
+            tables, selector, reference, perspective)
+    return result
+
+
+def _query_historical_tables(manifest, tables, reference, entity, perspective):
+    """Reuse one authenticated image; this helper is not an input API."""
     entity_full = _full(entity)
     matching = {r['cnpj_full'] for r in tables['emissores'] if r['cnpj_full'] and entity is not None and entity in
                 (r['observation_id'], r['cnpj_full'], r['cnpj_basic'], r['cvm_code'])}
@@ -916,3 +937,332 @@ def validate_issuer_supplement_index(index, expected_index_sha256, evidence_root
     admitted = _admit_issuer_supplement_index(index, expected_index_sha256, evidence_root)
     return dict(contract=admitted['contract'], index_sha256=admitted['index_sha256'],
                 counts={name: len(admitted[name]) for name in _SUPPLEMENT_IDS})
+
+
+SUPPLEMENT_CONTRACT = 'historical-issuer-supplement-v1'
+
+
+def _supplement_id(prefix, record):
+    return prefix + ':' + hashlib.sha256(_json_text(record).encode('utf8')).hexdigest()
+
+
+def _supplement_closure(claims, seeds):
+    closure, pending = set(), list(seeds)
+    while pending:
+        claim_id = pending.pop()
+        if claim_id not in closure:
+            closure.add(claim_id)
+            pending.extend(claims[claim_id]['support_claim_ids'])
+    return closure
+
+
+def _derive_issuer_supplement(admitted, tables):
+    """Only explicit curated adoption and native point-in-time CNPJ concordance."""
+    entities = {r['entity_id']: r for r in admitted['entities']}
+    claims = {r['claim_id']: r for r in admitted['claims']}
+    result = dict(associations=[], undated_associations=[], derived_unresolved=[])
+    native = defaultdict(list)
+    for row in tables['cadastro']:
+        if row['Td'] == 'I':
+            native[(row['Data'], row['CodInst'])].append(row)
+    memberships = defaultdict(list)
+    for row in tables['vinculos_cadastrais']:
+        memberships[(row['reference'], row['institution'])].append(row)
+
+    def gap(claim, reason, supports, perspective=None):
+        record = dict(candidate_id=claim['subject_id'], association_claim_id=claim['claim_id'],
+            reference=claim['reference'], perspective=perspective, reason=reason,
+            support_claim_ids=sorted(supports))
+        record['observation_id'] = _supplement_id('derived-gap', record)
+        result['derived_unresolved'].append(record)
+
+    for claim in admitted['claims']:
+        if claim['fact_type'] != 'analytical_identification':
+            continue
+        closure = _supplement_closure(claims, [claim['claim_id']])
+        supports = closure - {claim['claim_id']}
+        if claim['adoption_state'] != 'association':
+            if claim['adoption_state'] == 'candidate':
+                gap(claim, 'support_not_adoptable', closure)
+            continue
+        operator = entities[claim['object_id']]
+        bases = {item['literal'][:8] for item in operator['identifiers']
+                 if item['namespace'] in ('CNPJ14', 'CNPJ_BASE8')}
+        instruments = sorted(r['claim_id'] for r in admitted['claims']
+            if r['subject_id'] == claim['subject_id']
+            and r['fact_type'] in ('instrument_program', 'instrument_observation'))
+        record = dict(company_id=claim['subject_id'], operator_id=claim['object_id'],
+            reference=claim['reference'], perspective=None, entity=None,
+            association_claim_id=claim['claim_id'], instrument_claim_ids=instruments,
+            support_claim_ids=sorted(supports), cadastro_support=None, group_support=None,
+            leader_support=None, time_state=claim['time_state'], evidence_nature=claim['evidence_nature'],
+            identity_confidence=claim['identity_confidence'], temporal_confidence=claim['temporal_confidence'],
+            conflict_state=claim['conflict_state'], academic_eligibility='not_evaluated')
+        if claim['time_state'] == 'unknown':
+            # The operator and its pinned identifiers remain available through operator_id.
+            record['observation_id'] = _supplement_id('association', record)
+            result['undated_associations'].append(record)
+            continue
+        if len(bases) != 1:
+            gap(claim, 'native_unit_ambiguous', closure)
+            continue
+        base = next(iter(bases))
+        rows = native.get((claim['reference'], base), [])
+        if not rows:
+            gap(claim, 'native_unit_missing', closure)
+            continue
+        if len(rows) != 1:
+            gap(claim, 'native_unit_ambiguous', closure)
+            continue
+        row = rows[0]
+        links = memberships.get((claim['reference'], base), [])
+        targets = [('individual', base, None)] + [(v['perspective'], v['entity'], v) for v in links]
+        explicit_codes = {i['literal'] for i in operator['identifiers'] if i['namespace'] == 'BCB_CODINST'}
+        mismatch = bool(explicit_codes - {base})
+        for key in supports:
+            member = claims[key]
+            if member['fact_type'] != 'bcb_membership':
+                continue
+            codes = {i['literal'] for i in entities[member['object_id']]['identifiers']
+                     if i['namespace'] == 'BCB_CODINST'}
+            expected = {target for perspective, target, _ in targets
+                        if perspective == member['native_payload']['perspective'] and target}
+            if (member['subject_id'] != claim['object_id'] or member['reference'] != claim['reference']
+                    or len(codes) != 1 or codes != expected):
+                mismatch = True
+        if mismatch:
+            gap(claim, 'native_membership_mismatch', closure)
+            continue
+        for perspective, target, link in targets:
+            if not target:
+                gap(claim, 'native_group_empty', closure, perspective)
+                continue
+            relation = dict(record, perspective=perspective, entity=target,
+                cadastro_support=row['observation_id'],
+                group_support=link['group_support'] if link else None,
+                leader_support=link['leader_support'] if link else None)
+            relation['observation_id'] = _supplement_id('association', relation)
+            result['associations'].append(relation)
+    for rows in result.values():
+        rows.sort(key=lambda row: row['observation_id'])
+    return result
+
+
+def _supplement_quality(admitted, derived):
+    return dict(identity_certified=False, academic_eligibility_adopted=False,
+        market_coverage_incomplete=True,
+        counts={**{name: len(admitted[name]) for name in _SUPPLEMENT_IDS},
+                **{name: len(rows) for name, rows in derived.items()}},
+        source_natures=dict(sorted(Counter(r['source_nature'] for r in admitted['sources']).items())),
+        claim_states={field: dict(sorted(Counter(r[field] for r in admitted['claims']).items()))
+                      for field in ('evidence_nature', 'identity_confidence', 'temporal_confidence', 'time_state')},
+        gap_reasons=dict(sorted(Counter(r['reason'] for r in derived['derived_unresolved']).items())),
+        curated_gap_kinds=dict(sorted(Counter(r['missing_claim_kind'] for r in admitted['unresolved']).items())))
+
+
+def _supplement_evidence_names(sources):
+    return {r['source_id']: dict(body='evidence/' + r['body_sha256'] + '.body',
+        projection='evidence/' + r['projection']['sha256'] + '.txt' if r['projection'] is not None else None)
+        for r in sources}
+
+
+def _write_supplement_json(path, value):
+    raw = (_json_text(value) + '\n').encode('utf8')
+    _supplement_require(len(raw) <= MAX_TABLE_BYTES, 'JSON byte budget exceeded')
+    with path.open('xb') as stream:
+        stream.write(raw)
+    return dict(sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+
+
+def build_issuer_supplement(index, expected_index_sha256, evidence_root, core, expected_core_sha256, output):
+    """Build a separate immutable package; no network or original-file changes."""
+    output = cvm_reader._plain_path(output)
+    _supplement_require(not output.exists(), 'output destination must be new')
+    admitted = _admit_issuer_supplement_index(index, expected_index_sha256, evidence_root)
+    _, tables = _load(core, expected_core_sha256)
+    derived = _derive_issuer_supplement(admitted, tables)
+    quality = _supplement_quality(admitted, derived)
+    # Admission rechecks the authority; also recheck after the potentially long core load.
+    expected_index = (_json_text({name: admitted[name] for name in ('contract', *_SUPPLEMENT_IDS)}) + '\n').encode('utf8')
+    _supplement_require(cvm_reader._pinned(index, expected_index_sha256, MAX_SUPPLEMENT_INDEX_BYTES) == expected_index,
+                        'index changed during projection')
+    output.mkdir(parents=True, exist_ok=False)
+    (output / 'evidence').mkdir()
+    files, names = {}, _supplement_evidence_names(admitted['sources'])
+    for source_id, mapping in names.items():
+        for kind, relative in mapping.items():
+            if relative is not None and relative not in files:
+                raw = admitted['evidence'][source_id][kind]
+                with (output / relative).open('xb') as stream:
+                    stream.write(raw)
+                files[relative] = dict(sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+    for name in _SUPPLEMENT_IDS:
+        files[name + '.json'] = _write_supplement_json(output / (name + '.json'), admitted[name])
+    files['relations.json'] = _write_supplement_json(output / 'relations.json', derived)
+    files['quality.json'] = _write_supplement_json(output / 'quality.json', quality)
+    manifest = dict(contract=SUPPLEMENT_CONTRACT, index_sha256=expected_index_sha256,
+        core_sha256=expected_core_sha256, evidence=names, files=files, counts=quality['counts'])
+    _supplement_require(cvm_reader._pinned(index, expected_index_sha256, MAX_SUPPLEMENT_INDEX_BYTES) == expected_index,
+                        'index changed during output projection')
+    receipt = _write_supplement_json(output / 'manifest.json', manifest)
+    return dict(manifest=str(output / 'manifest.json'), manifest_sha256=receipt['sha256'], counts=manifest['counts'])
+
+
+def _load_issuer_supplement(output, expected_manifest_sha256, expected_index_sha256, expected_core_sha256, tables):
+    """Authenticate package and replay against an already authenticated private core image."""
+    output = cvm_reader._plain_path(output)
+    raw_manifest = cvm_reader._pinned(output / 'manifest.json', expected_manifest_sha256, MAX_TABLE_BYTES)
+    manifest = cvm_reader._json(raw_manifest)
+    _supplement_schema(manifest, 'contract index_sha256 core_sha256 evidence files counts', 'manifest')
+    _supplement_require(manifest['contract'] == SUPPLEMENT_CONTRACT
+        and manifest['index_sha256'] == expected_index_sha256
+        and manifest['core_sha256'] == expected_core_sha256, 'external index/core pin mismatch')
+    _supplement_require(raw_manifest == (_json_text(manifest) + '\n').encode('utf8'), 'noncanonical manifest')
+    _supplement_require(isinstance(manifest['files'], dict), 'invalid file inventory')
+    blobs = {}
+    for relative, entry in manifest['files'].items():
+        _supplement_schema(entry, 'sha256 bytes', 'file entry')
+        path = cvm_reader._contained(output, relative)
+        _supplement_require(path.relative_to(output).as_posix() == relative, 'noncanonical output path')
+        _supplement_require(type(entry['bytes']) is int and entry['bytes'] >= 0, 'invalid file size')
+        limit = (MAX_SUPPLEMENT_BODY_BYTES if relative.endswith('.body') else
+                 MAX_SUPPLEMENT_EVIDENCE_BYTES if relative.endswith('.txt') else MAX_TABLE_BYTES)
+        raw = cvm_reader._pinned(path, entry['sha256'], limit)
+        _supplement_require(len(raw) == entry['bytes'], 'file byte count mismatch')
+        blobs[relative] = raw
+    # Inspect every directory too: extra empty directories and reparse points are errors.
+    inventory = set()
+    for path in output.rglob('*'):
+        cvm_reader._plain_path(path)
+        relative = path.relative_to(output).as_posix()
+        if path.is_dir():
+            _supplement_require(relative == 'evidence', 'unexpected output directory')
+        elif path.is_file():
+            inventory.add(relative)
+        else:
+            raise ValueError('Issuer supplement: nonregular inventory entry')
+    _supplement_require(inventory == set(blobs) | {'manifest.json'}
+        and (output / 'evidence').is_dir(), 'closed file inventory mismatch')
+    value = dict(contract=SUPPLEMENT_INPUT_CONTRACT)
+    for name in _SUPPLEMENT_IDS:
+        raw = blobs.get(name + '.json')
+        _supplement_require(raw is not None, 'missing curated table')
+        value[name] = cvm_reader._json(raw)
+        _supplement_require(raw == (_json_text(value[name]) + '\n').encode('utf8'), 'noncanonical curated table')
+    index_raw = (_json_text(value) + '\n').encode('utf8')
+    _supplement_require(hashlib.sha256(index_raw).hexdigest() == expected_index_sha256,
+                        'reconstructed external index pin mismatch')
+    mapping = _supplement_evidence_names(value['sources'])
+    expected_files = {name + '.json' for name in _SUPPLEMENT_IDS} | {'relations.json', 'quality.json'}
+    expected_files.update(relative for entry in mapping.values() for relative in entry.values() if relative is not None)
+    _supplement_require(set(blobs) == expected_files and manifest['evidence'] == mapping, 'closed evidence inventory mismatch')
+    # The original four lists retain their input paths and IDs. Materialize only
+    # authenticated bytes in a private temporary image to reuse R3a unchanged.
+    with tempfile.TemporaryDirectory(prefix='issuer-supplement-') as temporary:
+        root = Path(temporary)
+        evidence_root = root / 'inputs'
+        evidence_root.mkdir()
+        index = root / 'index.json'
+        index.write_bytes(index_raw)
+        written = {}
+        for source in value['sources']:
+            source_id = source['source_id']
+            for kind, declared in (('body', source['body_path']),
+                    ('projection', source['projection']['path'] if source['projection'] is not None else None)):
+                if declared is None:
+                    continue
+                raw = blobs[mapping[source_id][kind]]
+                path = cvm_reader._contained(evidence_root, declared)
+                key = str(path).casefold()
+                _supplement_require(key not in written or written[key] == raw, 'conflicting reconstructed evidence path')
+                if key not in written:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(raw)
+                    written[key] = raw
+        admitted = _admit_issuer_supplement_index(index, expected_index_sha256, evidence_root)
+    derived = _derive_issuer_supplement(admitted, tables)
+    quality = _supplement_quality(admitted, derived)
+    for name, expected in (('relations', derived), ('quality', quality)):
+        _supplement_require(blobs[name + '.json'] == (_json_text(expected) + '\n').encode('utf8'),
+                            'derived replay mismatch: ' + name)
+    # JSON booleans/floats cannot substitute for integer counts (True == 1 in Python).
+    _supplement_require(_json_text(manifest['counts']) == _json_text(quality['counts']), 'manifest count mismatch')
+    cvm_reader._pinned(output / 'manifest.json', expected_manifest_sha256, MAX_TABLE_BYTES)
+    return admitted, derived, quality, manifest
+
+
+def verify_issuer_supplement(output, expected_manifest_sha256, expected_index_sha256, core, expected_core_sha256):
+    """Verify external authorities, complete inventory and native semantic replay."""
+    _, tables = _load(core, expected_core_sha256)
+    return _load_issuer_supplement(output, expected_manifest_sha256, expected_index_sha256,
+                                  expected_core_sha256, tables)[3]
+
+
+def _query_issuer_supplement(admitted, derived, quality, manifest, tables, company, reference, perspective):
+    entities = {r['entity_id']: r for r in admitted['entities']}
+    claims = {r['claim_id']: r for r in admitted['claims']}
+    if company is None:
+        selected = set(entities)
+        seeds = set(claims)
+    else:
+        selected = {r['entity_id'] for r in admitted['entities'] if r['entity_id'] == company
+            or any(i['namespace'] + ':' + i['literal'] == company for i in r['identifiers'])}
+        seeds = {r['claim_id'] for r in admitted['claims'] if r['subject_id'] in selected or r['object_id'] in selected}
+        # Include explicit dependent composites, without inventing graph edges.
+        changed = True
+        while changed:
+            additions = {r['claim_id'] for r in admitted['claims'] if set(r['support_claim_ids']) & seeds} - seeds
+            changed = bool(additions)
+            seeds.update(additions)
+    closure = _supplement_closure(claims, seeds)
+    selected.update(entity for key in closure for entity in (claims[key]['subject_id'], claims[key]['object_id']) if entity is not None)
+    # A gap can explicitly introduce support on another endpoint. Include gaps
+    # on that endpoint too, until the finite curated dependency closure settles.
+    while True:
+        previous = (len(closure), len(selected))
+        unresolved = [r for r in admitted['unresolved'] if r['candidate_id'] in selected
+                      or bool(set(r['support_claim_ids']) & closure)]
+        closure |= _supplement_closure(claims, [key for row in unresolved for key in row['support_claim_ids']])
+        selected.update(r['candidate_id'] for r in unresolved)
+        selected.update(entity for key in closure for entity in (claims[key]['subject_id'], claims[key]['object_id']) if entity is not None)
+        if previous == (len(closure), len(selected)):
+            break
+    relevant = [claims[key] for key in sorted(closure)]
+    dated = [r for r in relevant if r['reference'] is not None and (reference is None or r['reference'] == reference)]
+    events = [r for r in relevant if r['fact_type'] == 'event']
+    undated = [r for r in relevant if r['reference'] is None and r['fact_type'] != 'event']
+    associations = [r for r in derived['associations'] if r['association_claim_id'] in closure
+        and (reference is None or r['reference'] == reference) and (perspective is None or r['perspective'] == perspective)]
+    unknown = [r for r in derived['undated_associations'] if r['association_claim_id'] in closure]
+    gaps = [r for r in derived['derived_unresolved'] if r['association_claim_id'] in closure
+        and (reference is None or r['reference'] in (None, reference))
+        and (perspective is None or r['perspective'] in (None, perspective))]
+    # Preserve all support claims even when their own date differs from a filtered point.
+    source_ids = {support['source_id'] for r in relevant for support in r['support']}
+    source_ids.update(i['source_id'] for key in selected for i in entities[key]['identifiers'])
+    native_ids = {r[field] for r in associations for field in ('cadastro_support', 'group_support', 'leader_support') if r[field] is not None}
+    native_rows = [r for r in tables['cadastro'] if r['observation_id'] in native_ids]
+    native_links = [r for r in tables['vinculos_cadastrais'] if any(
+        r['cadastro_support'] == relation['cadastro_support'] and r['perspective'] == relation['perspective']
+        and r['entity'] == relation['entity'] for relation in associations)]
+    return dict(contract=SUPPLEMENT_CONTRACT, index_sha256=manifest['index_sha256'], core_sha256=manifest['core_sha256'],
+        entities=[entities[key] for key in sorted(selected)], claims=dated, events=events, undated_claims=undated,
+        support_claims=relevant, instrument_observations=[r for r in relevant
+            if r['fact_type'] in ('instrument_program', 'instrument_observation')],
+        instruments=[entities[key] for key in sorted(selected) if entities[key]['role'] == 'instrument'],
+        associations=associations, undated_associations=unknown, unresolved=unresolved, derived_unresolved=gaps,
+        sources=[r for r in admitted['sources'] if r['source_id'] in source_ids],
+        evidence={key: manifest['evidence'][key] for key in sorted(source_ids)},
+        cadastro=native_rows, vinculos_cadastrais=native_links, quality=quality)
+
+
+def query_issuer_supplement(output, expected_manifest_sha256, expected_index_sha256, core, expected_core_sha256,
+                           *, company=None, reference=None, perspective=None):
+    """Exact entity/namespace selection; undated observations never acquire a quarter."""
+    _supplement_require(reference is None or reference in REFERENCES, 'invalid reference')
+    _supplement_require(perspective is None or perspective in PERSPECTIVES, 'invalid perspective')
+    _supplement_require(company is None or (isinstance(company, str) and bool(company)), 'invalid company selector')
+    _, tables = _load(core, expected_core_sha256)
+    admitted, derived, quality, manifest = _load_issuer_supplement(output, expected_manifest_sha256,
+        expected_index_sha256, expected_core_sha256, tables)
+    return _query_issuer_supplement(admitted, derived, quality, manifest, tables, company, reference, perspective)
