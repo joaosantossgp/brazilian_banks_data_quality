@@ -2,7 +2,7 @@
 
 [Issue127](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/127), vinculada à [pesquisa111](financial-dimensions-literature-20261014.md), à [amostra125](fixed-financial-sample-2024-20261014.md) e às escolhas humanas na [Issue3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3#issuecomment-6174707162). [Spec](../superpowers/specs/2026-10-14-ifdata-monograph-analysis-design.md) e [plano](../superpowers/plans/2026-10-14-ifdata-monograph-analysis.md) são os contratos desta implementação.
 
-## Estado em14/10/2026
+## Checkpoint de preparação em14/10/2026 — antes da fatia1
 
 Dez medidas e regra temporal foram aprovadas por João. O desenho/plano passaram pela revisão independentev2: lacunas iniciais de dependências temporais, compatibilidade rastreável e aplicabilidade foram corrigidas; também foram conferidos sinais, liberação finita de janelas e deduplicação prudencial. A revisão da composição documental da fatia0 ainda está pendente. **Nenhum motor de cálculo, indicador acadêmico ou output desta Issue está implementado/aceito neste checkpoint.** Publicação e integração da pesquisa111 têm autoridade própria na PR128; este registro não declara CI ou merge dessa PR.
 
@@ -27,3 +27,11 @@ O calendário `native-semester-analysis-v2` propõe extensão explícita da cade
 5. Sessenta trimestres, sínteses anuais, replay em destino separado, preservação de inputs, revisão finalSHA e entregaPR/CI/integração/CIpósmerge/ancestralidade.
 
 Cada checkpoint registra base/head ou hashes do snapshot, inventário, comandos/saídas, testes não executados, parecer e limitações. O plano não equivale a resultado; testes de software não substituem conferência financeira. Companhias permanecem no universo mesmo quando uma métrica falta ou não se aplica, e desconhecido não se converte emzero.
+
+## Correções factuais descobertas na preparação de bindings
+
+A conferência das listas exatas de períodos confirmou que as variantes RWA/IB/ICP são disjuntas por referência. Seus intervalos mínimo–máximo se cruzam, mas isso não demonstra duas definições simultâneas na mesma data. A redação anterior da pesquisa111 usava sobreposição; a Issue127 ampliou a allowlist de nove para dez paths para corrigir somente esse trecho e o alcance das categoriasC na nota existente, com revisão focal. Não há mudança de fórmula, valor, cobertura ou amostra.
+
+O cadastro incorporado no mapa125 é da operadora que sustenta o vínculo; a classificação da unidade financeira alvo exige consulta própria por código/data. Nos1.236pares financeiros observados, o cadastro do alvo está presente;1.063linhas companhia/período diferem em algum campo de classificação entre operadora e alvo. Manter campos e proveniência separados, sem completar SegmentoTb nulo do conglomerado com o tipo de uma subsidiária. Assim, as42.514células segmentadas na pesquisaC descrevem categorias da operadora, não uma classificação automática dos balanços dos conglomerados.
+
+A ponte prudencial declarada em cadastro foi reconciliada por código/data, sem divergências entre operadora e alvo financeiro. Os complementos anuais separados apresentam39ocorrências com várias financeiras para uma prudencial: isso reforça a deduplicação pela perspectiva da métrica, sem admitir vínculo societário ou somar os blocos por essa coincidência. Listas finitas de bindings, aplicabilidade e janelas conservam revisão própria antes de instalação do perfil.
