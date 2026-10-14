@@ -75,7 +75,7 @@ Distribuição usa unidades distintas e razões comparáveis, não companhias du
 
 Recortes disponíveis: Tcb, Td, Tc, Sr, Atividade e SegmentoTb, com null e data literal; companhia/domícilio/instrumentos e vínculos conforme 125. Exportar cobertura por categoria; não projetar Sr antes 2017, não derivar setor do tomador da atividade do banco, não inventar faixas/top N ou cruzamentos arbitrários. Colunas nativas de mesma unidade conflitantes não recebem categoria por conveniência.
 
-Cobertura longa por companhia/unidade/métrica/período: status, motivo/componentes, identidade/vínculo, numerador/denominador, todos os localizadores e ativos conhecidos. Resumo traz contagem esperada/calculável/ausente/não aplicável/desconhecida, listas nominais e participação em AT conhecido compatível; reportar contagem e nomes com AT desconhecido, sem peso zero. Cobertura conjunta das dez métricas é diagnóstico, jamais filtro da amostra. Série de composição comum é sensibilidade identificada, não substituição silenciosa da observada.
+Cobertura longa por companhia/unidade/métrica/período: status, motivo/componentes, identidade/vínculo, numerador/denominador, todos os localizadores e ativos conhecidos. Resumo traz contagem esperada/calculável/ausente/não aplicável/desconhecida, listas nominais e participação em AT conhecido compatível; reportar contagem e nomes com AT desconhecido, sem peso zero. Cobertura conjunta das dez métricas é diagnóstico, jamais filtro da amostra. Explicitar seu bloco e conjunto: seis métricas de estoque mais quatro de fluxo trimestral, ou as mesmas seis mais quatro de fluxo em doze meses. O bloco complementar somente observacional não herda listas completas do principal nem admite atribuição quantitativa por caminho documental de controle. Série de composição comum é sensibilidade identificada, não substituição silenciosa da observada.
 
 ## Interfaces e publicação dos resultados
 
@@ -84,6 +84,8 @@ API proposta: `quarter_flow(current, previous=None)`, `flow_12_months(quarters, 
 `quarter_flow` também retorna period, intervalo start/end, unit_key, definition_id, scale e window_rule herdados e validados. `flow_12_months` recebe quatro desses resultados, confere identidade, intervalos consecutivos/disjuntos e fim solicitado e soma exclusivamente suas value_fraction exatas; jamais soma o value decimal de exibição. Resultados não calculáveis propagam estado e inputs sem valor improvisado.
 
 Saídas determinísticas ordenadas: components, results, company_coverage, aggregates, distributions, segment_coverage em JSON/CSV e Parquet textual quando pertinente; provenance e método no manifest. JSON conserva null versus vazio; CSV usa política QUOTE_NOTNULL existente, sem converter null em 0. Metadados de execução UTC ficam separados das tabelas comparadas em replay. Reservar output inexistente antes da escrita; falha não publica manifest de aceite. `verify` confere âncora externa, inventário/schema/contagens/hashes e contratos; `query` somente SELECT sobre pacote verificado. Arquivos privados/PDF/corpos financeiros não entram no Git.
+
+A escrita e a verificação das representações devem trabalhar por linhas/lotes, evitando cópias integrais adicionais de tabelas financeiras. Essa adaptação de recurso conserva o contrato e a leitura dos pacotes intermediários stage2; não afrouxa checks nem muda precisão, universo ou fórmula. Truncamento, conteúdo extra, IDs duplicados e divergência JSON/CSV/Parquet continuam recusados. A medição e o replay documentam o efeito antes da execução completa.
 
 ## Aceite e sequência de revisão
 

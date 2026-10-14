@@ -549,8 +549,260 @@ def evaluate_metric(metric, inputs, horizon):
 
 
 ANALYSIS_CONTRACT='ifdata-monograph-analysis-2010-2024-v1'
-ANALYSIS_TABLES=('components','results','company_map')
+STAGE2_TABLES=('components','results','company_map')
+ANALYSIS_TABLES=STAGE2_TABLES+('company_coverage','aggregates','distributions','segment_coverage')
 TABLE_COLUMNS=('id','period','metric','horizon','dataset','code','status','payload')
+
+
+def _rational(field):
+    return Fraction(int(field['numerator']),int(field['denominator']))
+
+
+def _result_unit(result):
+    """Recover the native type even for an unavailable temporal result."""
+    for component in result.get('components',{}).values():
+        if component.get('unit_key'):
+            return list(component['unit_key'])
+        for row in component.get('inputs',[]):
+            if row.get('unit_key'):return list(row['unit_key'])
+    return [result['dataset'], '3' if result['dataset']=='capital' else '2', result['code']]
+
+
+def analysis_coverage(maps,results,components,complementary):
+    """Expand expected company dates, not the subset of successful results.
+
+    Compact rows reference result/component/map IDs in the authenticated package;
+    they never copy temporal input provenance. Financial AT is a contemporaneous
+    own-unit stock, independent of the perspective used by the indicator.
+    Complementary rows are annual observations with no quantitative adoption.
+    """
+    relation_results={(r['dataset'],r['code'],r['period'],r['metric'],r['horizon']):r for r in results}
+    by_component={(r['component'],r['dataset'],r['code'],r['period']):r for r in components}
+    output=[]
+    for mapping in sorted(maps,key=lambda r:r['id']):
+        period=mapping['period'];fcode=mapping['financial_code']
+        asset=by_component.get(('AT','financial',fcode,period))
+        asset_result=_temporal_component('AT',[asset],period,'point') if asset else None
+        asset_status=asset_result['status'] if asset_result else 'missing_asset'
+        asset_value=_rational(asset_result['value_fraction']) if asset_result and asset_status=='ok' else None
+        if asset and (not asset.get('target_cadastro') or asset['target_cadastro'].get('Data')!=period):
+            asset_value=None;asset_status='missing_dated_cadastro'
+        for metric in METRICS:
+            dataset='capital' if metric in ('C3','C4') else 'financial'
+            code=mapping['prudential_code'] if dataset=='capital' else fcode
+            for horizon in (('quarter','ttm') if metric in FLOW_METRICS else ('point',)):
+                result=relation_results.get((dataset,code,period,metric,horizon))
+                # A result is usable only through this explicit dated mapping.
+                if result and result['id'] not in mapping['result_ids']:result=None
+                missing=next((r['status'] for r in mapping.get('unavailable',[])
+                              if r['metric']==metric and r['horizon']==horizon),
+                             'missing_unit' if not code else 'missing_result')
+                cadre=mapping.get('prudential_target_cadastro' if dataset=='capital' else 'financial_target_cadastro') or {}
+                row=dict(id=mapping['id']+'|'+metric+'|'+horizon,block='principal',company=mapping['company'],
+                         company_name=mapping['company_name'],period=period,metric=metric,horizon=horizon,
+                         dataset=dataset,code=code,unit_key=_result_unit(result) if result else
+                         ([dataset,'3' if dataset=='capital' else '2',code] if code else None),
+                         financial_unit_key=['financial','2',fcode] if fcode else None,
+                         map_id=mapping['id'],result_id=result['id'] if result else None,
+                         status=result['status'] if result else missing,
+                         applicability=result['applicability'] if result else 'unknown',
+                         applicability_evidence=deepcopy(result.get('applicability_evidence')) if result else None,
+                         target_cadastro={k:v for k,v in cadre.items()
+                            if k in ('Data','Tcb','Td','Tc','Sr','Atividade','SegmentoTb')},
+                         asset_component_id=asset['id'] if asset else None,
+                         asset_fraction=_fraction_field(asset_value) if asset_value is not None else None,
+                         asset_status=asset_status,flags=list(result['flags']) if result else [],
+                         annual_summary=period.endswith('12') and horizon in ('point','ttm'))
+                for field in ('value_fraction','numerator_fraction','denominator_fraction'):
+                    row[field]=deepcopy(result.get(field)) if result else None
+                row['calculable']=row['status']=='ok' and row['value_fraction'] is not None
+                row['eligible']=row['calculable'] and row['applicability']=='applicable'
+                output.append(row)
+    for number,observation in enumerate(sorted(complementary,key=lambda r:json.dumps(r,sort_keys=True,ensure_ascii=False))):
+        period=observation['period']
+        if period not in {r['period'] for r in maps}:continue
+        if not period.endswith('12') or _period_date(period) is None:
+            raise ValueError('Complementary observation must be a native annual date')
+        pair=observation['pair_2024'];fcode=observation.get('native_financial_target')
+        company_name=next((r['company_name'] for r in maps if r['company']==pair['company_cnpj14']),None)
+        own_cadastro=next((r.get('target_cadastro') for r in components if r['dataset']=='financial'
+                          and r['code']==fcode and r['period']==period and r.get('target_cadastro')),None)
+        # Only own financial component availability is reported here. The
+        # operator's prudential code is not a certified quantitative bridge.
+        evidence_written=False
+        for metric,names in METRICS.items():
+            dataset='capital' if metric in ('C3','C4') else 'financial'
+            for horizon in (('ttm',) if metric in FLOW_METRICS else ('point',)):
+                availability=[]
+                for name in names:
+                    component=by_component.get((name,'financial',fcode,period)) if dataset=='financial' else None
+                    availability.append(dict(component=name,component_id=component['id'] if component else None,
+                        date_scope='annual_observation_point_not_ttm_calculability',
+                        status=component['status'] if component else 'unadopted_prudential_bridge' if dataset=='capital' else 'missing_component'))
+                evidence_id='complementary|'+str(number)+'|'+period+'|R1|ttm'
+                entry=dict(id='complementary|'+str(number)+'|'+period+'|'+metric+'|'+horizon,
+                    block='complementary',company=pair['company_cnpj14'],company_name=company_name,
+                    period=period,metric=metric,horizon=horizon,dataset=dataset,code=fcode if dataset=='financial' else None,
+                    unit_key=['financial','2',fcode] if dataset=='financial' and fcode else None,
+                    financial_unit_key=['financial','2',fcode] if fcode else None,
+                    status='observation_only_no_quantitative_adoption',applicability='unknown',calculable=False,eligible=False,
+                    value_fraction=None,numerator_fraction=None,denominator_fraction=None,asset_fraction=None,
+                    adoption=observation.get('adoption'),non_adoption_reason='sample125_no_quantitative_adoption',
+                    observation_scope='unit_observation_only',annual_summary=horizon in ('point','ttm'),
+                    target_cadastro={k:v for k,v in (own_cadastro or {}).items()
+                                     if k in ('Data','Tcb','Td','Tc','Sr','Atividade','SegmentoTb')} if dataset=='financial' else None,
+                    component_availability=availability,observation_evidence_id=evidence_id,flags=[])
+                if not evidence_written:
+                    entry['evidence']=deepcopy(observation);evidence_written=True
+                output.append(entry)
+    return sorted(output,key=lambda r:r['id'])
+
+
+def _quantile2(values,p):
+    """Empirical type 2 quantile over sorted exact fractions."""
+    n=len(values);position=n*p
+    if position<=0:return values[0]
+    if position>=n:return values[-1]
+    if position.denominator==1:
+        k=int(position);return (values[k-1]+values[k])/2
+    return values[(position.numerator+position.denominator-1)//position.denominator-1]
+
+
+def _summarize_coverage(rows,context):
+    units={}
+    for row in rows:
+        if row.get('unit_key'):units.setdefault(tuple(row['unit_key']),[]).append(row)
+    conflicts=[];eligible=[]
+    for key,observations in sorted(units.items()):
+        signatures={json.dumps({k:r.get(k) for k in ('status','applicability','numerator_fraction','denominator_fraction','value_fraction')},sort_keys=True)
+                    for r in observations}
+        if len(signatures)!=1:conflicts.append(list(key));continue
+        row=observations[0]
+        if (context['block']=='principal' and row['status']=='ok' and row['applicability']=='applicable'
+                and row.get('numerator_fraction') is not None and row.get('denominator_fraction') is not None
+                and _rational(row['denominator_fraction'])!=0):
+            eligible.append((key,row))
+    eligible_keys={key for key,_ in eligible}
+    def companies(predicate):return sorted({r['company'] for r in rows if predicate(r)})
+    calculable=lambda r:r['status']=='ok' and r.get('value_fraction') is not None
+    categories=dict(expected=companies(lambda r:True),calculable=companies(calculable),
+        eligible=companies(lambda r:tuple(r['unit_key']) in eligible_keys if r.get('unit_key') else False),
+        missing=companies(lambda r:not calculable(r)),
+        not_applicable=companies(lambda r:r['applicability']=='not_applicable' and bool(r.get('applicability_evidence'))),
+        unknown=companies(lambda r:r['applicability']=='unknown' or
+                          (r['applicability']=='not_applicable' and not r.get('applicability_evidence'))),
+        diagnostic=companies(lambda r:calculable(r) and r['applicability']!='applicable'))
+    lists={k+'_companies':v for k,v in categories.items()}
+    lists.update(expected_units=[list(k) for k in sorted(units)],eligible_units=[list(k) for k,_ in eligible],conflicting_units=conflicts)
+    for category,names in categories.items():
+        if category=='eligible':continue
+        # Categories describe units with at least one nominal relation in the
+        # category; conflicts remain separately explicit and never eligible.
+        lists[category+'_units']=[list(key) for key,observations in sorted(units.items())
+                                 if any(r['company'] in names for r in observations)]
+    counts={k:len(v) for k,v in lists.items()}
+    # AT references remain financial even in a prudential aggregate. Repeated
+    # inconsistent references are unknown, never picked by order or setdefault.
+    assets={}
+    for row in rows:
+        key=tuple(row['financial_unit_key']) if row.get('financial_unit_key') else None
+        assets.setdefault(key,[]).append(row)
+    known=[];covered=[];unknown=[];negative=False
+    for key,observations in sorted(assets.items(),key=lambda item:str(item[0])):
+        values={_rational(r['asset_fraction']) if r.get('asset_fraction') else None for r in observations}
+        if key is None or len(values)!=1 or None in values:
+            unknown.extend(r['company'] for r in observations);continue
+        value=next(iter(values));known.append((key,value));negative|=value<0
+        if any(r.get('unit_key') and tuple(r['unit_key']) in eligible_keys for r in observations):covered.append((key,value))
+    total=sum((v for _,v in known),Fraction());covered_total=sum((v for _,v in covered),Fraction())
+    share=covered_total/total if total else None
+    asset_coverage=dict(status='partial_known_assets' if unknown else 'known_assets' if total else 'zero_known_asset_total',
+        known_financial_units=len(known),unknown_companies=sorted(set(unknown)),unknown_company_count=len(set(unknown)),
+        known_asset_fraction=_fraction_field(total),eligible_known_asset_fraction=_fraction_field(covered_total),
+        share_of_known_fraction=_fraction_field(share) if share is not None else None,
+        share_of_total_fraction=_fraction_field(share) if share is not None and not unknown else None,
+        flags=['negative_asset_weights'] if negative else [],reference='contemporaneous_own_financial_AT')
+    numerator=sum((_rational(r['numerator_fraction']) for _,r in eligible),Fraction())
+    denominator=sum((_rational(r['denominator_fraction']) for _,r in eligible),Fraction())
+    flags=sorted({f for _,r in eligible for f in r.get('flags',[])})
+    if any(_rational(r['denominator_fraction'])<=0 for _,r in eligible):flags.append('non_convex_denominator_weights')
+    state=('no_adopted_complementary_units' if context['block']=='complementary' else
+           'no_eligible_units' if not eligible else 'zero_denominator' if not denominator else 'ok')
+    aggregate=dict(context,status=state,counts=counts,lists=lists,asset_coverage=asset_coverage,flags=sorted(set(flags)),
+        company_names={company:sorted({r.get('company_name') for r in rows if r['company']==company and r.get('company_name') is not None})
+                       for company in categories['expected']},
+        numerator_fraction=_fraction_field(numerator) if eligible else None,
+        denominator_fraction=_fraction_field(denominator) if eligible else None,value_fraction=None,value=None,
+        method='ratio_of_sums_same_eligible_native_unit_intersection')
+    if state=='ok':aggregate=_valued(aggregate,numerator/denominator)
+    values=sorted(_rational(r['numerator_fraction'])/_rational(r['denominator_fraction']) for _,r in eligible)
+    distribution=dict(context,status='ok' if values else state,n=len(values),method='empirical_quantile_type2',
+                      eligible_units=lists['eligible_units'],flags=aggregate['flags'])
+    quantiles={name:_quantile2(values,p) if values else None for name,p in
+               [('q1',Fraction(1,4)),('median',Fraction(1,2)),('q3',Fraction(3,4))]}
+    quantiles['iqr']=quantiles['q3']-quantiles['q1'] if values else None
+    for name,value in quantiles.items():
+        distribution[name+'_fraction']=_fraction_field(value) if value is not None else None
+        distribution[name]=_valued({},value)['value'] if value is not None else None
+    return aggregate,distribution
+
+
+def aggregate_results(rows):
+    """Pure nominal aggregation returning aggregates/distributions/segment_coverage.
+
+    Each row is one expected company/date/metric/horizon relation with block,
+    dataset, unit_key=(dataset,native type,code), financial_unit_key, status,
+    applicability, exact numerator_fraction/denominator_fraction/value_fraction,
+    asset_fraction (own contemporaneous financial AT or null), target_cadastro
+    (own dated native fields), and company/name. analysis_coverage emits this
+    schema. Only calculable applicable principal units enter sums/distribution;
+    duplicate unit disagreements are excluded with explicit conflicts. All
+    companies remain in lists. Complementary observations are never additive.
+    """
+    groups={};joint={}
+    for row in rows:
+        key=tuple(row[k] for k in ('block','period','metric','horizon','dataset'))
+        groups.setdefault(key,[]).append(row)
+        if row['block']=='principal':joint.setdefault((row['period'],row['company']),[]).append(row)
+    # Same-horizon conjunction uses point metrics plus the chosen flow horizon.
+    # It is diagnostic only and never changes individual metric eligibility.
+    output=dict(aggregates=[],distributions=[],segment_coverage=[])
+    for key,group in sorted(groups.items()):
+        context=dict(zip(('block','period','metric','horizon','dataset'),key));context['id']='|'.join(key)
+        aggregate,distribution=_summarize_coverage(group,context)
+        complete=[]
+        flow_horizon='ttm' if context['horizon']=='ttm' else 'quarter'
+        for (period,company),observations in sorted(joint.items()):
+            if period!=context['period'] or context['block']!='principal':continue
+            valid={r['metric'] for r in observations if r['horizon'] in ('point',flow_horizon) and
+                   r['status']=='ok' and r['applicability']=='applicable' and r.get('value_fraction') is not None}
+            if set(METRICS)<=valid:complete.append(company)
+        aggregate['joint_coverage']=dict(scope='ten_metrics_point_plus_'+flow_horizon,complete_companies=complete,
+                                         block=context['block'],status='diagnostic' if context['block']=='principal' else 'no_adopted_complementary_units',
+                                         population_scope='all_expected_principal_companies_at_date' if context['block']=='principal' else 'unadopted_complementary_observations',
+                                         diagnostic_only=True,not_an_eligibility_filter=True)
+        output['aggregates'].append(aggregate);output['distributions'].append(distribution)
+        for field in ('Tcb','Td','Tc','Sr','Atividade','SegmentoTb'):
+            by_unit={}
+            for row in group:
+                cadre=row.get('target_cadastro')
+                if not cadre or cadre.get('Data')!=row['period']:category=('missing_dated_cadastro',None)
+                elif field not in cadre:category=('missing_field',None)
+                else:
+                    value=cadre[field];category=('null' if value is None else 'empty' if value=='' else 'value',value)
+                unit=tuple(row['unit_key']) if row.get('unit_key') else ('missing',row['company'])
+                by_unit.setdefault(unit,[]).append((row,category))
+            segments={}
+            for unit,items in sorted(by_unit.items()):
+                categories={json.dumps(c,ensure_ascii=False,sort_keys=True) for _,c in items}
+                category=('conflict',None) if len(categories)>1 else items[0][1]
+                segments.setdefault(category,[]).extend(r for r,_ in items)
+            for (state,category),subset in sorted(segments.items(),key=lambda item:json.dumps(item[0],ensure_ascii=False)):
+                segment_context=dict(context,field=field,category_state=state,category=category)
+                segment_context['id']=context['id']+'|'+field+'|'+json.dumps([state,category],ensure_ascii=False)
+                a,d=_summarize_coverage(subset,segment_context)
+                output['segment_coverage'].append(dict(a,distribution=d))
+    return output
 
 
 def _digest_file(path):
@@ -659,29 +911,97 @@ def _read_sample(root,manifest):
 def _write_tables(output,tables):
     import duckdb
     files=[]
-    for table in ANALYSIS_TABLES:
+    for table in tables:
         rows=tables[table]
         json_path=output/(table+'.json')
-        json_path.write_text(json.dumps(rows,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+        # Preserve the original pretty JSON bytes, without serializing the
+        # complete array or duplicating every row's payload in a Python list.
+        with json_path.open('w',encoding='utf-8') as stream:
+            stream.write('[\n' if rows else '[]\n')
+            for number,row in enumerate(rows):
+                if number:stream.write(',\n')
+                stream.write('  '+json.dumps(row,ensure_ascii=False,sort_keys=True,indent=2).replace('\n','\n  '))
+            if rows:stream.write('\n]\n')
         csv_path=output/(table+'.csv')
+        max_row_bytes=0
         with csv_path.open('w',newline='',encoding='utf-8') as stream:
             writer=csv.writer(stream,quoting=csv.QUOTE_NOTNULL);writer.writerow(TABLE_COLUMNS)
+            row_stream=io.StringIO(newline='');row_writer=csv.writer(row_stream,quoting=csv.QUOTE_NOTNULL)
             for row in rows:
-                writer.writerow([row.get(k) for k in TABLE_COLUMNS[:-1]]+
+                row_writer.writerow([row.get(k) for k in TABLE_COLUMNS[:-1]]+
                                 [json.dumps(row,ensure_ascii=False,sort_keys=True)])
+                encoded_row=row_stream.getvalue()
+                max_row_bytes=max(max_row_bytes,len(encoded_row.encode('utf-8')))
+                stream.write(encoded_row);row_stream.seek(0);row_stream.truncate(0)
         with duckdb.connect() as conn:
-            conn.execute('create table rows ('+','.join(k+' varchar' for k in TABLE_COLUMNS)+')')
-            if rows:
-                conn.executemany('insert into rows values ('+','.join('?' for _ in TABLE_COLUMNS)+')',
-                  [[row.get(k) for k in TABLE_COLUMNS[:-1]]+[json.dumps(row,ensure_ascii=False,sort_keys=True)] for row in rows])
-            conn.execute('copy rows to ? (format parquet, compression zstd)',[str(output/(table+'.parquet'))])
+            columns='{'+','.join("'"+k+"':'VARCHAR'" for k in TABLE_COLUMNS)+'}'
+            # This is our own canonical CSV, never an untrusted input path.
+            # Disable inference/parallel reading; quoted empty stays empty,
+            # unquoted empty stays null. Size is derived from observed rows.
+            conn.execute('copy (select * from read_csv($source, header=true, auto_detect=false, columns='+columns+
+                         ", delim=',', quote='\"', escape='\"', nullstr='', allow_quoted_nulls=false, parallel=false, max_line_size=$line_limit)) "+
+                         'to $destination (format parquet, compression zstd)',
+                         dict(source=str(csv_path),line_limit=str(max(2*1024*1024,max_row_bytes*2+1024)),
+                              destination=str(output/(table+'.parquet'))))
         for ext in ('json','csv','parquet'):
             path=output/(table+'.'+ext);files.append(dict(file=path.name,sha256=_digest_file(path),rows=len(rows)))
     return files
 
 
+def _iter_json_array(path):
+    """Yield strict array members with memory bounded by one member + chunk.
+
+    UTF-8 decoding is incremental through TextIO. Duplicate object keys,
+    truncation, missing separators, trailing commas and post-array content are
+    rejected; whitespace after the closing bracket is allowed.
+    """
+    def pairs(items):
+        result={}
+        for key,value in items:
+            if key in result:raise ValueError('Duplicate JSON key')
+            result[key]=value
+        return result
+    decoder=json.JSONDecoder(object_pairs_hook=pairs)
+    with path.open('r',encoding='utf-8',newline='') as stream:
+        buffer='';position=0;eof=False
+        def more():
+            nonlocal buffer,position,eof
+            chunk=stream.read(65536)
+            buffer=buffer[position:]+chunk;position=0;eof=not chunk
+        def whitespace():
+            nonlocal position
+            while True:
+                while position<len(buffer) and buffer[position] in ' \t\r\n':position+=1
+                if position<len(buffer) or eof:return
+                more()
+        whitespace()
+        if position>=len(buffer) or buffer[position]!='[':raise ValueError('Output must be JSON array')
+        position+=1;whitespace()
+        if position<len(buffer) and buffer[position]==']':position+=1
+        else:
+            while True:
+                whitespace()
+                if position>=len(buffer):raise ValueError('Truncated JSON array')
+                while True:
+                    try:value,end=decoder.raw_decode(buffer,position);break
+                    except json.JSONDecodeError as error:
+                        if eof:raise ValueError('Malformed/truncated JSON member') from error
+                        more()
+                position=end
+                yield value
+                whitespace()
+                if position>=len(buffer):raise ValueError('Truncated JSON array')
+                separator=buffer[position];position+=1
+                if separator==']':break
+                if separator!=',':raise ValueError('Invalid JSON array separator')
+                whitespace()
+                if position<len(buffer) and buffer[position]==']':raise ValueError('Trailing JSON array comma')
+        whitespace()
+        if position<len(buffer):raise ValueError('Trailing JSON content')
+
+
 def build_analysis(config,output):
-    """Build stage2 in a new directory using externally pinned accepted readers.
+    """Build analysis in a new directory using externally pinned accepted readers.
 
     config={periods:[YYYYMM],profile_expected_sha256,inputs:{sample,catalogue,
     cadastro,financial,capital,[opening]}}. Each input has root and external
@@ -728,7 +1048,9 @@ def build_analysis(config,output):
     if not selected:raise ValueError('Requested periods have no sample mappings')
     # Close dependencies for each unit at its output date; a new native code
     # never receives its predecessor's observations merely by company name.
-    financial_codes=sorted({r['native_target_code'] for r in selected if r['native_target_code']})
+    complementary_selected=[r for r in complementary if r['period'] in config['periods']]
+    financial_codes=sorted({r['native_target_code'] for r in selected if r['native_target_code']} |
+                           {r['native_financial_target'] for r in complementary_selected if r.get('native_financial_target')})
     operator_codes=sorted({r['operator_base8'] for r in selected if r['operator_base8']})
     with open_cadastro(accepted['cadastro'][0]) as conn:
         _schema(conn,'cadastro',FIELDS+ORIGIN)
@@ -814,17 +1136,29 @@ def build_analysis(config,output):
                     results[key]=evaluated
                 results[key]['companies'].append(row['company_cnpj14']);mapping['result_ids'].append(identifier)
         mapping['result_ids']=sorted(mapping['result_ids']);maps.append(mapping)
+    # AT coverage is required for every expected relation, including metrics
+    # unavailable through a prudential bridge or missing financial bindings.
+    for mapping in maps:
+        if mapping['financial_code']:component('AT','financial',mapping['financial_code'],mapping['period'])
+    for observation in complementary_selected:
+        code=observation.get('native_financial_target')
+        if code:
+            for name in {name for metric,names in METRICS.items() if metric not in ('C3','C4') for name in names}:
+                component(name,'financial',code,observation['period'])
     output.mkdir(parents=True,exist_ok=False)
     tables=dict(components=sorted(component_cache.values(),key=lambda r:r['id']),results=sorted(results.values(),key=lambda r:r['id']),company_map=maps)
     for r in tables['results']:r['companies']=sorted(set(r['companies']))
+    tables['company_coverage']=analysis_coverage(maps,tables['results'],tables['components'],complementary_selected)
+    tables.update(aggregate_results(tables['company_coverage']))
     files=_write_tables(output,tables)
     # Detect persistent source mutation during the bounded read before accepting.
     for name,contract in contracts.items():_authenticate(inputs[name],contract)
-    manifest=dict(contract=ANALYSIS_CONTRACT,stage='bindings-and-calculations',created_utc=datetime.now(timezone.utc).isoformat(),
+    manifest=dict(contract=ANALYSIS_CONTRACT,stage='coverage-and-aggregation',created_utc=datetime.now(timezone.utc).isoformat(),
       periods=sorted(config['periods']),dependency_periods=dependencies,profile_sha256=config['profile_expected_sha256'],inputs=deepcopy(inputs),
       files=files,tables={k:len(v) for k,v in tables.items()},table_columns=list(TABLE_COLUMNS),
-      complementary_rows_available=len(complementary),complementary_execution='reserved_for_stage3',precision=100,
-      limitations=['No aggregates/distributions at stage2','No continuous historical issuer control certified',
+      complementary_rows_available=len(complementary),complementary_rows_selected=len(complementary_selected),
+      complementary_execution='annual_observation_only_no_quantitative_adoption',precision=100,
+      limitations=['No continuous historical issuer control certified','Complementary observations are nonadditive and not quantitatively adopted',
                    'E2-B selected income proxy, economic representativeness not certified',
                    'Q2 provision result scope not certified exclusive to gross credit',
                    'Opening200912 finite reviewed stocks only; absent input remains missing_opening'])
@@ -833,32 +1167,40 @@ def build_analysis(config,output):
 
 
 def verify_analysis(output,expected_manifest_sha256):
-    """Authenticate the complete immutable stage2 package, schemas and counts."""
+    """Authenticate complete stage2 or final packages, schemas and counts."""
     import duckdb
     root,manifest=_authenticate(dict(root=str(output),expected_manifest_sha256=expected_manifest_sha256),ANALYSIS_CONTRACT,True)
-    expected={table+'.'+ext for table in ANALYSIS_TABLES for ext in ('json','csv','parquet')}
-    if ({item['file'] for item in manifest['files']}!=expected or manifest.get('stage')!='bindings-and-calculations'
-        or manifest.get('table_columns')!=list(TABLE_COLUMNS) or set(manifest.get('tables',{}))!=set(ANALYSIS_TABLES)):
+    tables=STAGE2_TABLES if manifest.get('stage')=='bindings-and-calculations' else ANALYSIS_TABLES
+    expected={table+'.'+ext for table in tables for ext in ('json','csv','parquet')}
+    if ({item['file'] for item in manifest['files']}!=expected or manifest.get('stage') not in ('bindings-and-calculations','coverage-and-aggregation')
+        or manifest.get('table_columns')!=list(TABLE_COLUMNS) or set(manifest.get('tables',{}))!=set(tables)):
         raise ValueError('Incomplete analysis contract/inventory')
     with duckdb.connect() as conn:
-        for table in ANALYSIS_TABLES:
-            rows=_json_unique((root/(table+'.json')).read_bytes())
-            if not isinstance(rows,list) or len(rows)!=manifest['tables'][table] or any(not isinstance(r,dict) or not isinstance(r.get('id'),str) for r in rows):
-                raise ValueError('Output schema/count mismatch')
-            if len({r['id'] for r in rows})!=len(rows):raise ValueError('Duplicate output identity')
+        for table in tables:
+            declared_count=manifest['tables'][table]
+            if type(declared_count) is not int or declared_count<0:raise ValueError('Invalid output count')
             conn.from_parquet(str(root/(table+'.parquet'))).create_view('checked',replace=True)
             _schema(conn,'checked',TABLE_COLUMNS)
-            parquet=_records(conn.execute('select * from checked'))
-            expected_rows=[{**{k:r.get(k) for k in TABLE_COLUMNS[:-1]},'payload':json.dumps(r,ensure_ascii=False,sort_keys=True)} for r in rows]
+            parquet=conn.execute('select * from checked')
             # Python3.12 QUOTE_NOTNULL preserves the distinction when writing
             # but its reader does not restore None. Compare canonical CSV bytes
             # so unquoted null and quoted empty remain distinguishable.
             stream=io.StringIO(newline='');writer=csv.writer(stream,quoting=csv.QUOTE_NOTNULL)
-            writer.writerow(TABLE_COLUMNS)
-            writer.writerows([[r[k] for k in TABLE_COLUMNS] for r in expected_rows])
-            if parquet!=expected_rows or (root/(table+'.csv')).read_bytes()!=stream.getvalue().encode('utf-8'):
+            canonical_hash=hashlib.sha256();seen=set();count=0
+            writer.writerow(TABLE_COLUMNS);canonical_hash.update(stream.getvalue().encode('utf-8'))
+            stream.seek(0);stream.truncate(0)
+            for row in _iter_json_array(root/(table+'.json')):
+                if not isinstance(row,dict) or not isinstance(row.get('id'),str):raise ValueError('Output schema/count mismatch')
+                if row['id'] in seen:raise ValueError('Duplicate output identity')
+                seen.add(row['id']);count+=1
+                expected_row=tuple(row.get(k) for k in TABLE_COLUMNS[:-1])+(json.dumps(row,ensure_ascii=False,sort_keys=True),)
+                if parquet.fetchone()!=expected_row:raise ValueError('Output representations disagree')
+                writer.writerow(expected_row);canonical_hash.update(stream.getvalue().encode('utf-8'))
+                stream.seek(0);stream.truncate(0)
+            if count!=declared_count:raise ValueError('Output schema/count mismatch')
+            if parquet.fetchone() is not None or _digest_file(root/(table+'.csv'))!=canonical_hash.hexdigest():
                 raise ValueError('Output representations disagree')
-            if any(item['rows']!=len(rows) for item in manifest['files'] if item['file'].startswith(table+'.')):
+            if any(type(item.get('rows')) is not int or item['rows']!=count for item in manifest['files'] if item['file'].startswith(table+'.')):
                 raise ValueError('Output part count mismatch')
     return manifest
 
@@ -866,10 +1208,10 @@ def verify_analysis(output,expected_manifest_sha256):
 def query_analysis(output,expected_manifest_sha256,sql):
     """One SELECT over verified materialized result tables, with no external I/O."""
     import duckdb
-    verify_analysis(output,expected_manifest_sha256)
+    manifest=verify_analysis(output,expected_manifest_sha256)
     root=Path(output).resolve()
     with duckdb.connect(config={'autoload_known_extensions':False,'autoinstall_known_extensions':False}) as conn:
-        for table in ANALYSIS_TABLES:
+        for table in manifest['tables']:
             conn.execute('create table '+table+' as select * from read_parquet(?)',[str(root/(table+'.parquet'))])
         conn.execute('set enable_external_access=false')
         statements=conn.extract_statements(sql)

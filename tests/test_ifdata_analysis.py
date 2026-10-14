@@ -258,7 +258,7 @@ class PackageTests(unittest.TestCase):
         self.assertTrue(hasattr(self.api,'build_analysis'),'Authenticated build missing')
         config=self.fixtures();out=self.root/'analysis'
         manifest=self.api.build_analysis(config,out)
-        self.assertEqual(manifest['stage'],'bindings-and-calculations')
+        self.assertEqual(manifest['stage'],'coverage-and-aggregation')
         self.assertEqual(manifest['dependency_periods'],['202312','202403','202406','202409','202412'])
         results=json.loads((out/'results.json').read_text(encoding='utf-8'))
         self.assertEqual(len([r for r in results if r['metric']=='C3']),1)
@@ -606,6 +606,292 @@ class TemporalTests(unittest.TestCase):
         self.assertIn('annual_control_not_continuous', result['flags'])
         points[0]['sources'][0]['file'] = 'changed-after-call'
         self.assertEqual(result['inputs'][0]['sources'][0]['file'], 'captured.json')
+
+
+
+class CoverageTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis
+        self.api=ifdata_analysis
+
+    @staticmethod
+    def f(n,d=1):return {'numerator':str(n),'denominator':str(d)}
+
+    def row(self,company,code,n,d,**changes):
+        row=dict(id=company+'|'+code,company=company,company_name=company,block='principal',period='202412',metric='R1',horizon='quarter',
+            dataset='financial',code=code,unit_key=['financial','2',code],financial_unit_key=['financial','2',code],
+            status='ok',applicability='applicable',numerator_fraction=self.f(n),denominator_fraction=self.f(d),
+            value_fraction=self.f(n,d),asset_fraction=self.f(d),target_cadastro={'Data':'202412','Tcb':'B1','Sr':None},flags=[])
+        row.update(changes);return row
+
+    def run_rows(self,rows):
+        self.assertTrue(callable(getattr(self.api,'aggregate_results',None)), 'Exact coverage aggregation is missing')
+        return self.api.aggregate_results(rows)
+
+    def test_ratio_of_sums_dedup_and_exact_median_are_distinct(self):
+        rows=[self.row('A','a',1,100),self.row('B','b',18,900),self.row('C','a',1,100)]
+        out=self.run_rows(rows);a=out['aggregates'][0];d=out['distributions'][0]
+        self.assertEqual(a['value_fraction'],self.f(19,1000))
+        self.assertEqual(a['counts']['expected_companies'],3)
+        self.assertEqual(a['counts']['eligible_units'],2)
+        self.assertEqual(d['median_fraction'],self.f(3,200))
+        self.assertEqual(a['asset_coverage']['share_of_known_fraction'],self.f(1))
+        self.assertEqual(out,self.run_rows(list(reversed(rows))))
+
+    def test_missing_large_unit_and_unknown_assets_remain_named(self):
+        rows=[self.row('A','a',1,100),self.row('B','b',18,900,status='native_null',value_fraction=None)]
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['asset_coverage']['share_of_known_fraction'],self.f(1,10))
+        self.assertEqual(a['lists']['missing_companies'],['B'])
+        rows[1]['asset_fraction']=None
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['asset_coverage']['status'],'partial_known_assets')
+        self.assertEqual(a['asset_coverage']['unknown_companies'],['B'])
+        self.assertIsNone(a['asset_coverage']['share_of_total_fraction'])
+
+    def test_unknown_calculable_is_diagnostic_and_no_eligible_is_explicit(self):
+        a=self.run_rows([self.row('A','a',1,100,applicability='unknown')])['aggregates'][0]
+        self.assertEqual(a['status'],'no_eligible_units')
+        self.assertEqual(a['lists']['diagnostic_companies'],['A'])
+        self.assertEqual(a['counts']['calculable_companies'],1)
+        self.assertEqual(a['counts']['unknown_companies'],1)
+
+    def test_prudential_dedup_is_separate_from_financial_asset_coverage(self):
+        rows=[self.row('A','p',1,100,metric='C3',horizon='point',dataset='capital',unit_key=['capital','3','p'],financial_unit_key=['financial','2','a'],asset_fraction=self.f(100)),
+              self.row('B','p',1,100,metric='C3',horizon='point',dataset='capital',unit_key=['capital','3','p'],financial_unit_key=['financial','2','b'],asset_fraction=self.f(900))]
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['counts']['eligible_units'],1)
+        self.assertEqual(a['asset_coverage']['known_financial_units'],2)
+        self.assertEqual(a['denominator_fraction'],self.f(100))
+
+    def test_own_denominator_negative_and_zero_sum_are_preserved(self):
+        rows=[self.row('A','a',2,10,metric='Q2'),self.row('B','b',3,-10,metric='Q2')]
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['status'],'zero_denominator')
+        self.assertIn('non_convex_denominator_weights',a['flags'])
+        rows[1]['denominator_fraction']=self.f(-5)
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['value_fraction'],self.f(1))
+        rows[0]['metric']=rows[1]['metric']='R2'
+        self.assertEqual(self.run_rows(rows)['aggregates'][0]['value_fraction'],self.f(1))
+
+    def test_disagreeing_duplicate_unit_is_not_arbitrarily_selected(self):
+        a=self.run_rows([self.row('A','a',1,100),self.row('B','a',2,100)])['aggregates'][0]
+        self.assertEqual(a['status'],'no_eligible_units')
+        self.assertEqual(a['lists']['conflicting_units'],[['financial','2','a']])
+
+    def test_type2_manual_quantiles_n1_n2_n4_n5_n20_and_ties(self):
+        for values,wanted in [([7],(7,7,7,0)),([1,3],(1,2,3,2)),([1,2,3,4],('1.5','2.5','3.5',2)),
+                              ([1,2,3,4,5],(2,3,4,2)),(list(range(1,21)),('5.5','10.5','15.5',10)),([2,2,2,2],(2,2,2,0))]:
+            out=self.run_rows([self.row(str(i),str(i),n,1) for i,n in enumerate(values)])['distributions'][0]
+            self.assertEqual(tuple(out[k] for k in ('q1','median','q3','iqr')),tuple(map(str,wanted)))
+
+    def test_segments_preserve_native_null_empty_and_conflict(self):
+        rows=[self.row('A','a',1,10),self.row('B','b',1,10,target_cadastro={'Data':'202412','Sr':''}),
+              self.row('C','a',1,10,target_cadastro={'Data':'202412','Sr':'S1'})]
+        out=self.run_rows(rows)
+        sr=[r for r in out['segment_coverage'] if r['field']=='Sr']
+        self.assertEqual({r['category_state'] for r in sr},{'conflict','empty'})
+        solo=self.run_rows(rows[:1]);sr=[r for r in solo['segment_coverage'] if r['field']=='Sr'][0]
+        self.assertEqual(sr['category_state'],'null')
+        rows[0]['target_cadastro']['Data']='202409'
+        sr=[r for r in self.run_rows(rows[:1])['segment_coverage'] if r['field']=='Sr'][0]
+        self.assertEqual(sr['category_state'],'missing_dated_cadastro')
+
+    def test_complementary_documentary_control_never_adopts_quantity(self):
+        row=self.row('A','a',1,100,block='complementary',adoption='complementary_observation_only_no_quantitative_adoption_no_backfilled_control',documentary_state='annual_filing_explicit_control_path')
+        out=self.run_rows([row]);a=out['aggregates'][0]
+        self.assertEqual(a['status'],'no_adopted_complementary_units')
+        self.assertEqual(out['distributions'][0]['n'],0)
+        self.assertEqual(a['counts']['expected_companies'],1)
+
+    def test_expected_map_drives_coverage_and_joint_is_only_diagnostic(self):
+        self.assertTrue(callable(getattr(self.api,'analysis_coverage',None)), 'Expected nominal coverage missing')
+        maps=[dict(id='A|202412',company='A',company_name='A',period='202412',financial_code='a',prudential_code=None,
+                   financial_target_cadastro={'Data':'202412'},prudential_target_cadastro=None,result_ids=['r']),
+              dict(id='B|202412',company='B',company_name='B',period='202412',financial_code=None,prudential_code=None,
+                   financial_target_cadastro=None,prudential_target_cadastro=None,result_ids=[])]
+        result=self.row('A','a',1,100,id='r')
+        coverage=self.api.analysis_coverage(maps,[result],[],[])
+        self.assertEqual(len(coverage),28)
+        b=[r for r in coverage if r['company']=='B']
+        self.assertEqual(len(b),14)
+        self.assertTrue(all(r['status']=='missing_unit' for r in b))
+        a=self.run_rows(coverage)['aggregates']
+        r1=next(r for r in a if r['metric']=='R1' and r['horizon']=='quarter')
+        self.assertEqual(r1['counts']['eligible_companies'],1)
+        self.assertEqual(r1['joint_coverage']['complete_companies'],[])
+
+    def test_build_final_tables_and_replay_are_deterministic(self):
+        package=PackageTests();package.setUp();self.addCleanup(package.doCleanups)
+        config=package.fixtures();first=package.root/'first';second=package.root/'second'
+        manifest=self.api.build_analysis(config,first)
+        self.assertEqual(manifest['stage'],'coverage-and-aggregation')
+        self.assertEqual(manifest['tables']['company_coverage'],42)
+        self.assertIn('aggregates',manifest['tables'])
+        self.api.build_analysis(config,second)
+        for table in manifest['tables']:
+            self.assertEqual((first/(table+'.json')).read_bytes(),(second/(table+'.json')).read_bytes())
+        rows=self.api.query_analysis(first,package.digest(first/'manifest.json'),'select count(*) as n from company_coverage')
+        self.assertEqual(rows,[{'n':42}])
+
+
+    def test_complementary_annual_availability_preserves_nonadoption_even_with_control_evidence(self):
+        self.assertTrue(callable(getattr(self.api,'analysis_coverage',None)))
+        maps=[dict(id='A|202412',company='A',company_name='A',period='202412',financial_code=None,
+                   prudential_code=None,financial_target_cadastro=None,result_ids=[])]
+        observation=dict(period='202412',native_financial_target='F',pair_2024={'company_cnpj14':'A'},
+            adoption='complementary_observation_only_no_quantitative_adoption_no_backfilled_control',
+            annual_documentary_evidence={'state':'annual_filing_explicit_control_path'})
+        component=dict(id='AT|financial|F|202412',component='AT',dataset='financial',code='F',period='202412',status='ok',
+                       target_cadastro={'Data':'202412','Tcb':'OWN_NATIVE','Sr':None})
+        rows=[r for r in self.api.analysis_coverage(maps,[],[component],[observation]) if r['block']=='complementary']
+        self.assertEqual(len(rows),10)
+        self.assertEqual({r['horizon'] for r in rows},{'point','ttm'})
+        self.assertTrue(all(r['annual_summary'] for r in rows))
+        self.assertEqual(sum('evidence' in r for r in rows),1)
+        c1=next(r for r in rows if r['metric']=='C1')
+        self.assertEqual(next(c for c in c1['component_availability'] if c['component']=='AT')['status'],'ok')
+        self.assertEqual(c1.get('target_cadastro',{}).get('Tcb'),'OWN_NATIVE')
+        self.assertTrue(all(r['status']=='observation_only_no_quantitative_adoption' for r in rows))
+        observation['period']='202409';maps[0]['period']='202409'
+        with self.assertRaises(ValueError):self.api.analysis_coverage(maps,[],[],[observation])
+
+    def test_unit_counts_and_company_names_cover_missing_and_proven_not_applicable(self):
+        rows=[self.row('A','a',1,100,company_name='Alpha'),self.row('B','b',18,900,status='native_null',value_fraction=None,company_name='Beta'),
+              self.row('C','c',0,1,applicability='not_applicable',applicability_evidence={'source':'dated activity proof'})]
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['counts'].get('missing_units'),1)
+        self.assertEqual(a['counts']['calculable_units'],2)
+        self.assertEqual(a['counts']['not_applicable_units'],1)
+        self.assertEqual(a['company_names']['B'],['Beta'])
+        del rows[2]['applicability_evidence']
+        a=self.run_rows(rows)['aggregates'][0]
+        self.assertEqual(a['counts']['not_applicable_companies'],0)
+        self.assertIn('C',a['lists']['unknown_companies'])
+
+    def test_asset_wrong_currency_is_unknown_and_zero_is_known(self):
+        self.assertTrue(callable(getattr(self.api,'analysis_coverage',None)))
+        mapping=dict(id='A|202412',company='A',company_name='A',period='202412',financial_code='F',
+            prudential_code=None,financial_target_cadastro={'Data':'202412'},result_ids=[])
+        asset=stock('202412','10',scale='USD',id='asset',component='AT',dataset='financial',code='F',
+                    target_cadastro={'Data':'202412'})
+        rows=self.api.analysis_coverage([mapping],[],[asset],[])
+        self.assertTrue(all(r['asset_fraction'] is None for r in rows))
+        self.assertTrue(all(r['asset_status']=='invalid_scale' for r in rows))
+        asset.update(scale='BRL',token='0')
+        rows=self.api.analysis_coverage([mapping],[],[asset],[])
+        self.assertTrue(all(r['asset_fraction']==self.f(0) for r in rows))
+
+
+    def test_preexisting_stage2_remains_verifiable_and_queryable(self):
+        package=PackageTests();package.setUp();self.addCleanup(package.doCleanups)
+        config=package.fixtures();out=package.root/'final';manifest=self.api.build_analysis(config,out)
+        old=package.root/'stage2';old.mkdir()
+        old_tables=('components','results','company_map')
+        manifest['stage']='bindings-and-calculations'
+        manifest['tables']={k:v for k,v in manifest['tables'].items() if k in old_tables}
+        manifest['files']=[r for r in manifest['files'] if r['file'].split('.')[0] in old_tables]
+        for entry in manifest['files']:(old/entry['file']).write_bytes((out/entry['file']).read_bytes())
+        (old/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
+        self.assertEqual(self.api.verify_analysis(old,package.digest(old/'manifest.json'))['stage'],'bindings-and-calculations')
+        self.assertEqual(self.api.query_analysis(old,package.digest(old/'manifest.json'),'select count(*) as n from company_map'),[{'n':3}])
+
+
+
+class BoundedIOTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis
+        self.api=ifdata_analysis
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name)
+
+    def package(self,rows):
+        out=self.root/'package';out.mkdir()
+        tables=dict(components=rows,results=[],company_map=[])
+        files=self.api._write_tables(out,tables)
+        manifest=dict(contract=self.api.ANALYSIS_CONTRACT,stage='bindings-and-calculations',files=files,
+            tables={k:len(v) for k,v in tables.items()},table_columns=list(self.api.TABLE_COLUMNS))
+        self.write_manifest(out,manifest)
+        return out,manifest
+
+    def write_manifest(self,out,manifest):
+        for entry in manifest['files']:
+            entry['sha256']=hashlib.sha256((out/entry['file']).read_bytes()).hexdigest()
+        (out/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
+        return hashlib.sha256((out/'manifest.json').read_bytes()).hexdigest()
+
+    def test_streamed_json_preserves_legacy_pretty_bytes_and_platform_newlines(self):
+        out,_=self.package([{'id':'á'}])
+        expected=self.root/'legacy.json'
+        expected.write_text('[\n  {\n    "id": "á"\n  }\n]\n',encoding='utf-8')
+        self.assertEqual((out/'components.json').read_bytes(),expected.read_bytes())
+
+    def test_joint_diagnostic_cannot_leak_principal_companies_into_complementary_block(self):
+        fixture=CoverageTests();fixture.setUp()
+        rows=[fixture.row('PRINCIPAL_ONLY','p',1,100,metric=m,horizon='quarter' if m in ('R1','R2','Q2','E2-B') else 'point')
+              for m in ('R1','R2','Q1','Q2','C1','C3','C4','L2','L3','E2-B')]
+        rows.append(fixture.row('COMPLEMENT_ONLY','c',1,100,block='complementary'))
+        aggregates=self.api.aggregate_results(rows)['aggregates']
+        complementary=next(r for r in aggregates if r['block']=='complementary')
+        self.assertEqual(complementary['joint_coverage']['complete_companies'],[])
+        self.assertEqual(complementary['joint_coverage'].get('block'),'complementary')
+        self.assertEqual(complementary['joint_coverage'].get('status'),'no_adopted_complementary_units')
+        principal=next(r for r in aggregates if r['block']=='principal')
+        self.assertEqual(principal['joint_coverage']['complete_companies'],['PRINCIPAL_ONLY'])
+        self.assertEqual(principal['joint_coverage'].get('block'),'principal')
+        self.assertEqual(principal['joint_coverage'].get('population_scope'),'all_expected_principal_companies_at_date')
+
+    def test_writer_and_verify_python_memory_do_not_scale_with_total_payload(self):
+        import tracemalloc
+        blob='á\t"\n'+('x'*(512*1024))
+        rows=[dict(id=str(i),period='202412',metric=None if i%2 else '',horizon='point',dataset='financial',
+                   code='F',status='ok',nested={'text':blob,'exact':'12345678901234567890.12345678901234567890'}) for i in range(32)]
+        out=self.root/'package';out.mkdir()
+        tracemalloc.start()
+        try:
+            files=self.api._write_tables(out,dict(components=rows,results=[],company_map=[]))
+            writer_peak=tracemalloc.get_traced_memory()[1]
+        finally:tracemalloc.stop()
+        with self.subTest(operation='writer'):
+            self.assertLess(writer_peak,12*1024*1024,'Writer duplicated the complete payload in Python')
+        manifest=dict(contract=self.api.ANALYSIS_CONTRACT,stage='bindings-and-calculations',files=files,
+            tables={'components':32,'results':0,'company_map':0},table_columns=list(self.api.TABLE_COLUMNS))
+        pin=self.write_manifest(out,manifest)
+        tracemalloc.start()
+        try:
+            self.api.verify_analysis(out,pin)
+            verify_peak=tracemalloc.get_traced_memory()[1]
+        finally:tracemalloc.stop()
+        self.assertLess(verify_peak,12*1024*1024,'Verifier materialized the complete payload in Python')
+        self.assertGreater((out/'components.json').stat().st_size,16*1024*1024)
+
+    def test_textual_io_preserves_null_empty_quotes_newline_unicode_and_exact_payload(self):
+        row=dict(id='línea\t"\n',period=None,metric='',horizon='point',dataset='financial',code='',status=None,
+                 nested={'null':None,'empty':'','precise':'99999999999999999999.00000000000000000001'})
+        out,manifest=self.package([row]);pin=self.write_manifest(out,manifest)
+        self.api.verify_analysis(out,pin)
+        actual=self.api.query_analysis(out,pin,'select period,metric,code,status,payload from components')[0]
+        self.assertIsNone(actual['period']);self.assertEqual(actual['metric'],'');self.assertEqual(actual['code'],'')
+        self.assertIsNone(actual['status']);self.assertEqual(json.loads(actual['payload']),row)
+
+    def test_streaming_array_rejects_truncation_trailing_garbage_duplicate_keys_and_ids(self):
+        out,manifest=self.package([dict(id='one',metric=None),dict(id='two',metric='')])
+        original=(out/'components.json').read_text(encoding='utf-8')
+        mutations=['{}',original[:-3],original+'{}',original.replace('"id": "one"','"id": "one", "id": "duplicate"'),
+                   original.replace('"two"','"one"'),original.replace('},','},,',1),'[', '[1]', '[{"id":"x"},]',
+                   '\u00a0'+original,original+'\u00a0',original.replace('[','[\u2003',1)]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation[:60]):
+                (out/'components.json').write_text(mutation,encoding='utf-8')
+                pin=self.write_manifest(out,manifest)
+                with self.assertRaises(ValueError):self.api.verify_analysis(out,pin)
+        (out/'components.json').write_text(original,encoding='utf-8')
+        # A repinned CSV that interchanges null and quoted empty must still fail.
+        original_csv=(out/'components.csv').read_bytes()
+        (out/'components.csv').write_bytes(original_csv.replace(b'"one",,',b'"one","",',1))
+        pin=self.write_manifest(out,manifest)
+        with self.assertRaises(ValueError):self.api.verify_analysis(out,pin)
 
 
 if __name__ == '__main__':
