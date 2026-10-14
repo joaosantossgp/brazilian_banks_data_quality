@@ -870,6 +870,9 @@ class IssuerSupplementAdmissionTests(unittest.TestCase):
 
     def test_case_variant_paths_cannot_hide_alias_collisions(self):
         data = self.fixture()
+        # Both paths must exist on case-sensitive hosts, regardless of source
+        # ID ordering. On Windows this writes identical bytes to the same file.
+        (self.root / 'BODY.PDF').write_bytes((self.root / 'body.pdf').read_bytes())
         source = dict(data['sources'][0], alias='case-variant', body_path='BODY.PDF')
         source.pop('source_id')
         source['source_id'] = 'source:' + hashlib.sha256(self.canonical(source)[:-1]).hexdigest()
