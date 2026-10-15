@@ -1097,6 +1097,8 @@ def _accept_checkpoint(output,manifest,producer,guard):
 
 def finalize_universe_analysis(checkpoint,expected_manifest_sha256,output):
     """Hardlink a verified unit stage and regenerate only five derived tables."""
+    # Verification belongs to this operation's initial source/runtime interval.
+    producer=_operation_producer({},'finalize_universe_analysis',expected_manifest_sha256)
     source,output=_checkpoint_paths(checkpoint,output)
     _ordinary(source/'manifest.json')
     manifest=verify(source,expected_manifest_sha256)
@@ -1106,11 +1108,13 @@ def finalize_universe_analysis(checkpoint,expected_manifest_sha256,output):
             or original.get('source_stability')!='verified_before_manifest'):
         raise ValueError('Checkpoint producer/logical payload provenance missing or invalid')
     if manifest['stage']!='unit-calculations':raise ValueError('Finalization requires unit-calculations')
-    producer=_operation_producer(manifest['config'],'finalize_universe_analysis',expected_manifest_sha256)
     prepared=_prepare_inputs(manifest['config']);population=prepared[7]
     template=_unit_manifest(manifest['config'],manifest['files'],manifest['tables'])
     for key in template:
         if manifest.get(key)!=template[key]:raise ValueError('Checkpoint normalized configuration mismatch: '+key)
+    # Attach authenticated config without refreshing the initial source snapshot.
+    producer['config_sha256']=hashlib.sha256(canonical(dict(config=manifest['config'],
+        operation=producer['operation'],external_pin=expected_manifest_sha256)).encode()).hexdigest()
     inventory=_unit_inventory(source)
     _guard_units(source,None,inventory)
     _link_units(source,output,inventory)

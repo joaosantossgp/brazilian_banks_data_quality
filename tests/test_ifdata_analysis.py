@@ -1676,3 +1676,21 @@ class UniverseCheckpointTests(unittest.TestCase):
         redirected=self.root/'external-components.json';(source/'components.json').rename(redirected);os.symlink(redirected,source/'components.json')
         with self.assertRaises(ValueError):u.finalize_universe_analysis(source,pin,self.root/'final2')
         self.assertFalse((self.root/'final2/manifest.json').exists())
+
+    def test_source_change_during_initial_verification_blocks_final_manifest(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'unit';u.build(cfg,source,stage='unit-calculations')
+        pin=self.digest(source/'manifest.json');before={p.name:self.digest(p) for p in source.iterdir()}
+        state={'changed':False};digest=u.math._digest_file;verify=u.verify
+        def changed(path):
+            if state['changed'] and Path(path).resolve()==Path(u.__file__).resolve():return '0'*64
+            return digest(path)
+        def verification(*args):
+            state['changed']=True
+            return verify(*args)
+        output=self.root/'during-verify'
+        with patch.object(u.math,'_digest_file',side_effect=changed),patch.object(u,'verify',side_effect=verification),self.assertRaisesRegex(ValueError,'Producer source changed'):
+            u.finalize_universe_analysis(source,pin,output)
+        self.assertFalse((output/'manifest.json').exists())
+        self.assertEqual(before,{p.name:self.digest(p) for p in source.iterdir()})

@@ -141,3 +141,11 @@ Substitui explicitamente a frase histórica “Não criar API de recuperação d
 - [ ] Executar comparação pública127 com verificação completa do principal, verificação completa independente do replay, igualdade de todos os payloads e auditoria econômica independente. Prosseguir com os gates finais da fatia4 já listados, sem considerar probes/candidatos como aceite global.
 
 Impacto na arquitetura permanece nos destinos existentes e nas mesmas doze entradas autorizadas. Hardlink solicitado exige volume compatível; não haverá fallback volumoso silencioso, mudança de ACL/atributo, sobrescrita de fonte ou reparo do parcial. Fluxo futuro explícito: build unitário público e depois finalizador. Não acrescentar opção de checkpoint intermediário ao build integral por conveniência neste recorte.
+
+## Checkpoint de execução — 15/10/2026, admissões e finalizador R1
+
+As duas admissões unitárias foram aceitas com verificação integral e guardas terminais; doze payloads, contagens e hash lógico coincidem. Evidência e pins no ledger `docs/engineering/ifdata-universe-analysis-20261014.md`, seção “Admissões unitárias aceitas e reprodução exata”. Preservar os estágios aceitos e os cálculos originais; não repetir fórmulas ou admissão pela correção exclusiva do finalizador.
+
+Antes de finalizar, a revisão focal identificou e corrigiu o intervalo de captura da identidade do código: snapshot no início da operação, mantendo a identidade inicial até a guarda final. RED causal anterior e GREEN da correção/equivalência foram revisados independentemente. Root transferiu os dois arquivos exatamente testados após ambos os processos de admissão encerrarem e conferiu o inventário inalterado. A revisão final do SHA/composição permanece separada.
+
+Finalização requer novo HEAD congelado, pins dos estágios e revisão R1, destinos exclusivos, recursos medidos depois dos imports e guarda antes/depois. Inicialmente um finalizador pesado por vez; qualquer paralelismo exige nova justificativa de capacidade, destinos temporários separados e autorização técnica registrada. Verificação completa, regressão127, replay final, auditoria financeira, PR/checks/integração/CI pós-merge/ancestralidade e atualização das Issues continuam pendentes. Nenhum PASS global é inferido da equivalência unitária.
