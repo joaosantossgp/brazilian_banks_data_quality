@@ -2,6 +2,24 @@
 
 ## Estado corrente — simplificação de15/10/2026
 
+### Cobertura financeira observada em202412
+
+Relatório econômico independente consolidado RAW `8136a026df1a477ce0726b3b0c4e2e71f2fae9d287f5c9eae291eaab757a9486`, sem discrepâncias materiais no recorte. As proporções abaixo medem somente o ativo próprio conhecido; sete unidades comATdesconhecido permanecem separadas. Não são cobertura garantida de toda a população, peso universal dos indicadores ou limiar de aceite.
+
+| Indicador/horizonte | Unidades elegíveis /1.422 | Participação no AT conhecido |
+|---|---:|---:|
+| C1 pontual | 1.415 | 100,0000% |
+| R1/R2 em12meses | 1.336 | 99,4517% |
+| E2-B em12meses | 1.347 | 99,4716% |
+| Q1 pontual | 1.065 | 94,9776% |
+| Q2 em12meses | 1.050 | 94,6114% |
+| L2 pontual | 676 | 85,9659% |
+| L3 pontual | 969 | 97,9280% |
+
+Entre as maiores ausências observadas deR1/R2/E2-BporATconhecido estão Banco Original, PicPay Financeiro eTerra, com `binding_missing`; não foi inventado contexto nem substituído perímetro para preencher o resultado. L2 tem denominador de depósitos à vista zero em unidades comoBNDES, Nubank eRedecard;Q1/Q2têm denominador de crédito zero em unidades comoRedecard, Cielo eNuPagamentos. Os nomes vêm do cadastro da própria unidade/data. Esses casos não provam não aplicabilidade jurídica nem autorizam imputação ou julgamento adverso de desempenho. A análise deve usar a interseção elegível explícita, incluindo as lacunas nominais, e interpretar indicadores conforme atividade/perímetro.
+
+Na comparação histórica127,1.068relações nominais sem observação equivalente permanecem explícitas:768prudenciais sem unidade em2010–2013,192prudenciais com binding não verificado em2014e108financeiras daDMem201003–201203. Diferem dos168placeholders de chave nativa porque várias companhias podem compartilhar uma unidade e uma relação sem unidade não gera chave nativa. Nenhum valor calculado foi perdido. São limitações históricas da fonte/vinculação, sem bloquear os resultados efetivamente elegíveis ou certificar comparabilidade universal.
+
 **Auditoria econômico-contábil independente concluída no recorte:** além dos87resultados unitários já recompostos, oracle próprio com `Fraction`, sem importar as fórmulas de produção, conferiu201706e202412nas três perspectivas:36grupos de métrica/horizonte,144coortes,36partições pelos seis eixos e1.704comparações de resumos, incluindo1.096estados `ok` e608 `no_eligible_units`. Conferiu interseçãoN/D, deduplicação, quantisType2, diferenças entre coortes e78referências de ativos próprios. Zero achados materiais; relatório de resultados RAW `33fc168372d417bf3ac69b28c54c2b569e988b18a6d8ff667eb5708689fb708e`,8,925s. Não é conferência manual de todos os resumos históricos; a verificação integral e reprodução por código têm esse escopo distinto.
 
 As24companhias permaneceram nominalmente nos grupos auditados de ambas as datas, sem linha nominal perdida por falta de unidade. Elegibilidade varia por indicador: nos recortes financeiros auditados, B3 não contribui aQ1/Q2; Porto, BR Partners eDM não contribuem aL2;DM não contribui aL3em201706. Isso não exclui companhia da amostra nem preenche variável ausente. C3/C4prudenciais têm24companhias elegíveis nas duas datas, conservando a indisponibilidade de ativo próprio prudencial. Nomes são rótulos da seleção2024porCNPJ, não prova de identidade histórica ou critério de essencialidade; tamanho conhecido não autoriza excluir silenciosamente ausências de tamanho desconhecido.
