@@ -416,7 +416,7 @@ def resolve_component(profile, component, dataset, code, period, rows):
         if opening:
             contexts=[c for c in profile['contexts'] if c['context_sha256']==opening['context_sha256']
                       and c['component']==component and c['window_rule']=='stock']
-    identity=dict(period=period,token=None,unit_key=(dataset,'1' if dataset=='capital' else '2',code),
+    identity=dict(period=period,token=None,unit_key=(dataset,'1' if dataset=='capital' else '3' if dataset=='individual' else '2',code),
                   definition_id=component,scale='BRL',window_rule='stock',binding={},sources=[])
     if len(contexts)!=1:
         return dict(identity,status='binding_unverified' if not contexts else 'ambiguous_binding')
@@ -1218,3 +1218,35 @@ def query_analysis(output,expected_manifest_sha256,sql):
         if len(statements)!=1 or statements[0].type!=duckdb.StatementType.SELECT:
             raise ValueError('Query must be one SELECT')
         return _records(conn.execute(sql))
+
+# Lazy public entry points keep population/analysis imports acyclic.
+UNIVERSE_PROFILE_PATH=Path(__file__).with_name('ifdata-analysis-universe-profile-2010-2024.json')
+
+def load_universe_profile(profile_id='universe-2010-2024',expected_sha256=None):
+    from .ifdata_universe_analysis import load_profile
+    return load_profile(profile_id,expected_sha256)
+
+def build_universe_analysis(config,output,*,batch_size=32):
+    from .ifdata_universe_analysis import build
+    return build(config,output,batch_size=batch_size)
+
+def prepare_universe_opening(raw_root,output,profile_id,profile_expected_sha256):
+    from .ifdata_universe_analysis import prepare_opening
+    return prepare_opening(raw_root,output,profile_id,profile_expected_sha256)
+
+def verify_universe_analysis(output,expected_manifest_sha256):
+    from .ifdata_universe_analysis import verify
+    return verify(output,expected_manifest_sha256)
+
+def resolve_universe_result(output,expected_manifest_sha256,result_id):
+    from .ifdata_universe_analysis import resolve_result
+    return resolve_result(output,expected_manifest_sha256,result_id)
+
+
+def compare_universe_analysis(output,expected_manifest_sha256,baseline,baseline_manifest_sha256):
+    from .ifdata_universe_analysis import compare
+    return compare(output,expected_manifest_sha256,baseline,baseline_manifest_sha256)
+
+def query_universe_analysis(output,expected_manifest_sha256,sql):
+    from .ifdata_universe_analysis import query
+    return query(output,expected_manifest_sha256,sql)

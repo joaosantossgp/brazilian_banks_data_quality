@@ -894,5 +894,178 @@ class BoundedIOTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.api.verify_analysis(out,pin)
 
 
+
+
+class UniverseTests(PackageTests):
+    # Inherit fixture utilities, not the legacy test methods (removed below).
+    def setUp(self):
+        super().setUp()
+        self.assertTrue(hasattr(self.api, 'build_universe_analysis'), 'Missing bounded universe builder')
+
+    def universe_fixture(self):
+        from bank_quality.ifdata_population import build_population
+        from bank_quality.ifdata_odata import COLUMNS, CONTRACT
+        from bank_quality.ifdata_variable_catalog import build_catalog
+        cfg=self.fixtures()
+        profile=self.api.load_universe_profile('universe-2010-2024')
+        rows=[]
+        for code,amount in [('I','200'),('J','0')]:
+            for period in ['202312','202403','202406','202409','202412']:
+                for c in profile['contexts']:
+                    if c['literal_context']['dataset']!='individual' or period not in c['periods']:continue
+                    r={k:v for k,v in c['literal_context'].items() if k!='dataset'}
+                    r.update(AnoMes=period,CodInst=code,Saldo=amount,source_file='own.gz',source_sha256='b'*64,
+                             source_row=str(len(rows)+1),source_context='literal',source_url='https://example.invalid/own',source_collected_utc='2026-10-14T00:00:00Z')
+                    rows.append(r)
+        cfg['inputs']['individual']=self.native_package('individual',rows,COLUMNS,CONTRACT)
+        # Population requires explicit period/type in each native part. Split
+        # the actual fixture rows; no fabricated population output is accepted.
+        import duckdb
+        for ds in ['financial','individual','capital','cadastro']:
+            root=Path(cfg['inputs'][ds]['root']);m=json.loads((root/'manifest.json').read_text())
+            with duckdb.connect() as con:
+                con.from_parquet(str(root/'part.parquet')).create_view('source')
+                m['files']=[]
+                for period in ['202312','202403','202406','202409','202412']:
+                    field='Data' if ds=='cadastro' else 'AnoMes'
+                    target=root/(period+'.parquet')
+                    con.execute('copy (select * from source where '+field+'=$period) to $target (format parquet)',dict(period=period,target=str(target)))
+                    count=con.execute('select count(*) from read_parquet(?)',[str(target)]).fetchone()[0]
+                    part=dict(file=target.name,rows=count,period=period,sha256=self.digest(target))
+                    if ds!='cadastro':part['type']={'financial':2,'individual':3,'capital':1}[ds]
+                    m['files'].append(part)
+            (root/'part.parquet').unlink()
+            (root/'manifest.json').write_text(json.dumps(m),encoding='utf-8')
+            cfg['inputs'][ds]['expected_manifest_sha256']=self.digest(root/'manifest.json')
+        cat=self.root/'universe-catalogue'
+        build_catalog({ds:cfg['inputs'][ds]['root'] for ds in ['financial','individual','capital']},cat)
+        cfg['inputs']['catalogue']=dict(root=str(cat),expected_manifest_sha256=self.digest(cat/'manifest.json'))
+        sample=Path(cfg['inputs']['sample']['root'])
+        maps=json.loads((sample/'company-quarter-map.json').read_text())
+        maps.extend(dict(maps[0],company_cnpj14=str(i)) for i in range(4,25))
+        (sample/'company-quarter-map.json').write_text(json.dumps(maps),encoding='utf-8')
+        sm=json.loads((sample/'manifest.json').read_text());sm['files']['company-quarter-map.json']=self.digest(sample/'company-quarter-map.json')
+        (sample/'manifest.json').write_text(json.dumps(sm),encoding='utf-8')
+        cfg['inputs']['sample']['expected_manifest_sha256']=self.digest(sample/'manifest.json')
+        pop=self.root/'population'
+        build_population(dict(periods=['202412'],datasets=['financial','individual','capital'],inputs=cfg['inputs']),pop)
+        return dict(periods=['202412'],datasets=['financial','individual','capital'],profile_id='universe-2010-2024',
+                    profile_expected_sha256=self.digest(self.api.UNIVERSE_PROFILE_PATH),
+                    population=dict(root=str(pop),expected_manifest_sha256=self.digest(pop/'manifest.json')))
+
+    def test_universe_own_types_unknown_membership_exact_and_batch_invariance(self):
+        cfg=self.universe_fixture();a=self.root/'a';b=self.root/'b'
+        ma=self.api.build_universe_analysis(cfg,a,batch_size=1)
+        self.api.build_universe_analysis(cfg,b,batch_size=3)
+        rows=json.loads((a/'results.json').read_text())
+        self.assertEqual(len(rows),38)
+        self.assertEqual(len({r['id'] for r in rows}),38)
+        ci=next(r for r in rows if r['code']=='I' and r['metric']=='C1')
+        self.assertEqual((ci['value'],ci['applicability']),('1','applicable'))
+        self.assertEqual(ci['unit_key'],['individual','3','I'])
+        self.assertEqual(ci['membership'],'unknown')
+        cj=next(r for r in rows if r['code']=='J' and r['metric']=='C1')
+        self.assertEqual(cj['status'],'zero_denominator')
+        cp=next(r for r in rows if r['metric']=='C3')
+        self.assertEqual(cp['applicability'],'applicable')
+        self.assertEqual(ma['stage'],'unit-calculations')
+        for item in ma['files']:self.assertEqual((a/item['file']).read_bytes(),(b/item['file']).read_bytes())
+        self.api.verify_universe_analysis(a,self.digest(a/'manifest.json'))
+        with self.assertRaises(FileExistsError):self.api.build_universe_analysis(cfg,a)
+
+    def test_universe_fail_closed_config_and_external_pins(self):
+        cfg=self.universe_fixture()
+        for key,val in [('profile_id','arbitrary.json'),('profile_expected_sha256','0'*64),('datasets',['segmentation']),('periods',['202503'])]:
+            bad=deepcopy(cfg);bad[key]=val
+            with self.subTest(key=key),self.assertRaises(ValueError):self.api.build_universe_analysis(bad,self.root/'bad')
+        bad=deepcopy(cfg);bad['population']['expected_manifest_sha256']='0'*64
+        with self.assertRaises(ValueError):self.api.build_universe_analysis(bad,self.root/'bad')
+        bad=deepcopy(cfg);bad['profile_path']='arbitrary'
+        with self.assertRaises(ValueError):self.api.build_universe_analysis(bad,self.root/'bad')
+        bad=deepcopy(cfg);bad['opening']=dict(root='unknown',expected_manifest_sha256='0'*64)
+        with self.assertRaises((ValueError,FileNotFoundError)):self.api.build_universe_analysis(bad,self.root/'bad')
+
+    def test_universe_verifier_rejects_coherent_dangling_reference_and_query_blocks_io(self):
+        from bank_quality.ifdata_universe_analysis import Writer
+        from contextlib import ExitStack
+        import duckdb
+        cfg=self.universe_fixture();out=self.root/'a';m=self.api.build_universe_analysis(cfg,out)
+        query=self.api.query_universe_analysis(out,self.digest(out/'manifest.json'),"select count(*) as n from results where dataset='individual'")
+        self.assertEqual(query,[{'n':24}])
+        with self.assertRaisesRegex(ValueError,'Query row limit'):
+            self.api.query_universe_analysis(out,self.digest(out/'manifest.json'),'select * from range(10001)')
+        for sql in ("select * from read_csv('external.csv')",'select 1;select 2','delete from results'):
+            with self.assertRaises(Exception):self.api.query_universe_analysis(out,self.digest(out/'manifest.json'),sql)
+        rows=list(self.api._iter_json_array(out/'results.json'))
+        first=next(r for r in rows if r['metric']=='C1')
+        first['components']['AT']['inputs'][0]={'component_ref':'missing'}
+        with ExitStack() as stack,duckdb.connect() as con:
+            w=Writer(out,'results',stack)
+            for r in rows:w.append(r)
+            new=w.finish(con)
+        m['files']=[e for e in m['files'] if not e['file'].startswith('results.')]+new
+        (out/'manifest.json').write_text(json.dumps(m),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'Unresolved component reference'):
+            self.api.verify_universe_analysis(out,self.digest(out/'manifest.json'))
+
+    def test_universe_regression_reports_unobserved_legacy_unit_nominally(self):
+        cfg=self.universe_fixture();out=self.root/'u';self.api.build_universe_analysis(cfg,out)
+        pm=json.loads((Path(cfg['population']['root'])/'manifest.json').read_text())
+        old=dict(periods=['202412'],profile_expected_sha256=self.digest(self.api.PROFILE_PATH),inputs={k:v for k,v in pm['config']['inputs'].items() if k!='individual'})
+        baseline=self.root/'baseline';self.api.build_analysis(old,baseline)
+        self.assertTrue(hasattr(self.api,'compare_universe_analysis'),'Missing automated baseline comparator')
+        report=self.api.compare_universe_analysis(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        self.assertEqual(report['matched'],14)
+        self.assertEqual(report['differences'],[])
+        self.assertEqual(len(report['missing_baseline_keys']),12)
+        self.assertEqual({r['code'] for r in report['missing_baseline_keys']},{'F2'})
+        self.assertEqual({r['cause'] for r in report['missing_baseline_keys']},{'native_unit_not_reported_in_population'})
+
+    def test_universe_component_dependencies_are_native_and_bounded(self):
+        cfg=self.universe_fixture();out=self.root/'a';self.api.build_universe_analysis(cfg,out)
+        rows=list(self.api._iter_json_array(out/'results.json'))
+        q=next(r for r in rows if r['code']=='I' and r['metric']=='R1' and r['horizon']=='quarter')
+        resolved=self.api.resolve_universe_result(out,self.digest(out/'manifest.json'),q['id'])
+        self.assertEqual(resolved['components']['LL']['inputs'][0]['unit_key'],['individual','3','I'])
+        self.assertEqual({r['period'] for r in resolved['components']['AT']['inputs']},{'202409','202412'})
+        self.assertEqual(resolved['components']['LL']['inputs'][0]['binding']['literal_context']['dataset'],'individual')
+
+# Prevent duplicated legacy test execution while sharing its native fixture helpers.
+for _name in list(PackageTests.__dict__):
+    if _name.startswith('test_') and _name not in UniverseTests.__dict__:
+        setattr(UniverseTests,_name,None)
+
+class UniverseNormalizationTests(unittest.TestCase):
+    def test_normalization_preserves_ambiguous_and_null_native_tokens(self):
+        from bank_quality.ifdata_universe_analysis import _compact_component,_expand_component,load_profile
+        p=load_profile();c=next(c for c in p['contexts'] if c['component']=='AT' and c['literal_context']['dataset']=='individual')
+        sources=[dict({k:v for k,v in c['literal_context'].items() if k!='dataset'},CodInst='X',AnoMes='202412',Saldo=token,source_row=str(i)) for i,token in enumerate([None,'','1.00','2.00'])]
+        ob=stock('202412',None,unit_key=('individual','3','X'),binding=c,sources=sources)
+        ob.update(id='ref',dataset='individual',code='X',status='ambiguous_occurrence')
+        self.assertEqual(_expand_component(_compact_component(ob),p),ob)
+
+    def test_opening_predicate_own_identity_flags_zero_and_missing(self):
+        from bank_quality.ifdata_universe_analysis import opening_observation,load_profile
+        p=load_profile();c=next(c for c in p['contexts'] if c['component']=='credit_gross' and c['literal_context']['dataset']=='individual')
+        row=dict({k:v for k,v in c['literal_context'].items() if k!='dataset'},CodInst='X',AnoMes='200912',Saldo='0')
+        nextrow=dict(row,AnoMes='201003')
+        a=dict(CodInst='X',Td='I',CodConglomeradoFinanceiro=None,CodConglomeradoPrudencial=None,CnpjInstituicaoLider=None,Atividade='old')
+        cad={('X','200912'):a,('X','201003'):dict(a,Atividade='new')}
+        ob=opening_observation(p,'credit','individual','X',[row],[nextrow],cad)
+        self.assertEqual((ob['token'],ob['status']),('0','ok'))
+        self.assertEqual(ob['flags'],['opening_cadastro_classification_change'])
+        cad[('X','201003')]['CnpjInstituicaoLider']='different'
+        self.assertEqual(opening_observation(p,'credit','individual','X',[row],[nextrow],cad)['status'],'opening_identity_changed')
+        self.assertEqual(opening_observation(p,'credit','individual','X',[],[nextrow],cad)['status'],'opening_occurrence_missing_or_ambiguous')
+        self.assertEqual(opening_observation(p,'LL','individual','X',[row],[nextrow],cad)['status'],'opening_not_released')
+
+class UniverseSignatureTests(unittest.TestCase):
+    def test_regression_detects_changed_diagnostic_exact_residual(self):
+        from bank_quality.ifdata_universe_analysis import _economic_signature
+        row=dict(period='202412',metric='Q1',horizon='point',status='ok',components={},diagnostics={'credit_identity':{'status':'exact','residual_fraction':{'numerator':'0','denominator':'1'},'inputs':[]}})
+        altered=deepcopy(row);altered['diagnostics']['credit_identity']['residual_fraction']['numerator']='1'
+        self.assertNotEqual(_economic_signature(row),_economic_signature(altered))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -42,12 +42,14 @@ Config contém períodos, perspectivas e pares root/hash externo para cadastro, 
 
 `partition_membership` é a redução pura de linhas com `unit_id`, `membership` (sample/remaining/unknown) e companhia opcional. Retorna conjuntos `total`, `sample`, `remaining`, `unknown`; unidade repetida em companhias não duplica contagem e pertencimentos conflitantes da mesma unidade produzem unknown com diagnóstico preservado pelo caller. IDs incorporam a chave canônica, não apenas CodInst.
 
-Ampliação adjacente em `ifdata_analysis.py` e CLI existente:
+Ampliação com módulo adjacente `ifdata_universe_analysis.py`, wrappers públicos lazy em `ifdata_analysis.py` e CLI existente:
 
 ```python
 def build_universe_analysis(config: dict, output: Path) -> dict: ...
 def aggregate_unit_results(rows: list[dict]) -> dict: ...
 ```
+
+**Ajuste técnico de14/10/2026, registrado na Issue antes da escrita:** o módulo novo concentra configuração/autenticação, admissão de abertura, I/O por janela/lote, normalização, verificação e comparação do contrato130. A matemática e o contrato127 permanecem no módulo existente, reutilizados sem cópia de fórmulas. Alternativa de incorporar tudo ao legado de cerca de1.225linhas aumentaria acoplamento e o levaria a2.000+linhas. Wrappers preservam os nomes públicos planejados e evitam importação circular. É responsabilidade adjacente no mesmo pacote, sem pasta/camada/dependência nova; a allowlist passa de onze para doze paths. Testes antigos/novos, regressão exata e revisão independente verificarão a fronteira e composição.
 
 Nova entrada explícita `build-universe` e contrato `ifdata-universe-analysis-v1`; build/verify/query legados continuam aceitando os pacotes e configurações da 127. Perfis instalados têm seleção finita por ID e pin externo; manter o perfil 127 intacto e criar `ifdata-analysis-universe-profile-2010-2024.json`. Não aceitar perfil arbitrário em caminho externo.
 

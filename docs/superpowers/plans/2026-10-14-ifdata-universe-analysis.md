@@ -12,7 +12,7 @@
 
 ## Estado e restrições globais
 
-**Execução autorizada em 14/10/2026:** Goal ativo e branch `codex/ifdata-universe-analysis-20261014`, base `d33d4fd762bf11dcef2b8746e99235956f3c7fb0`, após integração do planejamento PR131 e CI pós-merge bem-sucedido. A Issue130 confirma os onze paths da execução abaixo. A fatia0 passou após correção focal do pertencimento; fatia1 em implementação. Estados iniciais de planejamento neste documento são checkpoints históricos. Priorizar regras, comparação e replay em código versionado, conforme requisito de João incorporado à spec; os scripts privados de diagnóstico não serão o mecanismo único de reprodução.
+**Execução autorizada em 14/10/2026:** Goal ativo e branch `codex/ifdata-universe-analysis-20261014`, base `d33d4fd762bf11dcef2b8746e99235956f3c7fb0`, após integração do planejamento PR131 e CI pós-merge bem-sucedido. A Issue130 confirma os doze paths vigentes abaixo, incluindo o ajuste técnico da fatia2. Fatias0/1 revisadas e concluídas; fatia2 em implementação. Estados iniciais de planejamento neste documento são checkpoints históricos. Priorizar regras, comparação e replay em código versionado, conforme requisito de João incorporado à spec; os scripts privados de diagnóstico não serão o mecanismo único de reprodução.
 
 Planejamento em 14/10/2026, base `3c983b0fbabd3cbe03ecbd3c5f5f98b7c4a41d9b`. Nenhum novo cálculo/código implementado por este plano. João aprovou universo completo incluindo a amostra, financeiro principal e prudencial/individual separados. Fórmulas, núcleo 2010–2024, precisão e ausência seguem a spec 127. Sem coleta financeira nova, alterações globais, índice/ranking ou pesquisa bibliográfica integral repetida.
 
@@ -26,6 +26,7 @@ Allowlist proposta da execução, a reconfirmar no contrato da Issue 130 antes d
 
 - Criar `bank_quality/ifdata_population.py` e `tests/test_ifdata_population.py`: população e pertencimento temporal, responsabilidade adjacente aos leitores.
 - Modificar `bank_quality/ifdata_analysis.py`, `scripts/analyze-ifdata.py`, `tests/test_ifdata_analysis.py`: novo build explícito, processamento limitado e saídas próprias, mantendo o legado.
+- Criar `bank_quality/ifdata_universe_analysis.py`: orquestração do contrato130, autenticação/admissão/I/O/verificação/comparação; reutiliza matemática127 via wrappers lazy no módulo legado. Ajuste técnico justificado e adicionado à Issue antes da criação, sem nova camada/dependência; allowlist total de doze paths.
 - Criar `bank_quality/ifdata-analysis-universe-profile-2010-2024.json`: bindings liberados e abertura do universo, sem modificar o perfil 127.
 - Atualizar `docs/architecture.md`, spec/plano e nota metodológica; criar `docs/engineering/ifdata-universe-analysis-20261014.md` como ledger de execução.
 
@@ -48,8 +49,8 @@ Protegidos: perfil e saídas 127, fontes/manifests aceitos, leitores/piloto, ben
 
 **Paths:** novo módulo/teste de população; ledger/arquitetura. **Consome:** pares root/hash dos inputs. **Produz:** `build_population(config, output)` e `open_population(output, expected_manifest_sha256)`, tabelas unit_periods/membership_links com schema da spec. **Dependência:** fatia 0 revisada.
 
-- [ ] Escrever RED para identidade `(dataset, TipoInstituicao, CodInst, period)`, duplicata, fonte adulterada, código nulo e agregado nativo não liberado.
-- [ ] Escrever o caso abaixo como teste de pertencimento, sem fabricar CNPJ de instituição não listada:
+- [x] Escrever RED para identidade `(dataset, TipoInstituicao, CodInst, period)`, duplicata, fonte adulterada, código nulo e agregado nativo não liberado.
+- [x] Escrever o caso abaixo como teste de pertencimento, sem fabricar CNPJ de instituição não listada:
 
 ```python
 # Fixture: duas companhias mapeiam para A; B não pertence à seleção;
@@ -73,9 +74,9 @@ assert not (sample_units & remaining_units)
 assert total_units == sample_units | remaining_units | unknown_membership_units
 ```
 
-- [ ] Testar vínculo prudencial muitos-financeiros/uma-unidade, vínculo individual comprovado versus código coincidente, ausência de um emissor da amostra no trimestre e classificação histórica null/conflitante.
-- [ ] Implementar autenticação, seleção e tabelas sem restringir universo aos códigos da amostra; manifest por último e output exclusivo. Não atribuir vínculo atual ao passado.
-- [ ] GREEN focal, replay da população e revisão independente de chaves/pertencimento/cobertura antes do motor.
+- [x] Testar vínculo prudencial muitos-financeiros/uma-unidade, vínculo individual comprovado versus código coincidente, ausência de um emissor da amostra no trimestre e classificação histórica null/conflitante.
+- [x] Implementar autenticação, seleção e tabelas sem restringir universo aos códigos da amostra; manifest por último e output exclusivo. Não atribuir vínculo atual ao passado.
+- [x] GREEN focal, replay da população e revisão independente de chaves/pertencimento/cobertura antes do motor.
 
 Run focal planejado, cwd na branch de execução, usando Python do Primary:
 
@@ -85,7 +86,7 @@ Run focal planejado, cwd na branch de execução, usando Python do Primary:
 
 ## Fatia 2 — reaproveitar matemática e limitar memória
 
-**Paths:** módulo/testes de análise, CLI, novo perfil; ledger/arquitetura. **Consome:** população autenticada, contextos liberados e dependências temporais. **Produz:** `build_universe_analysis(config, output)` e subcomando `build-universe`; antigo build/verify/query preservado. **Dependência:** fatia 1 e liberações da fatia 0 revisadas.
+**Paths:** módulo adjacente `ifdata_universe_analysis.py`, wrappers no módulo/testes de análise existentes, CLI, novo perfil; ledger/arquitetura. **Consome:** população autenticada, contextos liberados e dependências temporais. **Produz:** `build_universe_analysis(config, output)` e subcomando `build-universe`; antigo build/verify/query preservado. **Dependência:** fatia 1 e liberações da fatia 0 revisadas. A nova fronteira evita misturar orquestração130 com matemática/contrato127; revisão confere ausência de cópia de fórmulas e preservação dos consumidores legados.
 
 - [ ] RED para rejeição de hash/perfil arbitrário, perspectiva errada, abertura não liberada, escrita em destino aceito e configuração legada que deve continuar válida.
 - [ ] Testar ausência sem reduzir população esperada, zero de denominador, reversão, definição de lucro incompatível, unidade sucessora e estoque de abertura faltante.
