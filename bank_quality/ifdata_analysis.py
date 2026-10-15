@@ -1252,6 +1252,11 @@ def query_universe_analysis(output,expected_manifest_sha256,sql):
     return query(output,expected_manifest_sha256,sql)
 
 
+def compare_universe_replay(output,expected_manifest_sha256,replay_unit_checkpoint,expected_replay_manifest_sha256,derived_source_root):
+    from .ifdata_universe_analysis import compare_replay
+    return compare_replay(output,expected_manifest_sha256,replay_unit_checkpoint,expected_replay_manifest_sha256,derived_source_root)
+
+
 def aggregate_unit_results(rows):
     from .ifdata_universe_analysis import aggregate_unit_results as aggregate
     return aggregate(rows)

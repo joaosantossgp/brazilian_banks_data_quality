@@ -109,6 +109,21 @@ Fatia2 aceita no commit `49eb70dc10d15908ca703502ae25c5db21274f8e`, após corre�
 - [x] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
 - [x] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
 
+## Revisão técnica vigente da fatia4 — 15/10/2026
+
+Conforme a simplificação da spec e a solicitação de João, os itens históricos abaixo que exigiam finalizar e verificar integralmente um segundo pacote ficam substituídos pelos passos desta seção. Não se altera método acadêmico nem se declara cumprimento do critério físico anterior.
+
+- [x] Admitir separadamente as duas origens unitárias, verificar integralmente esse estágio e comparar seus doze arquivos. Preservar cálculos e checkpoints aceitos.
+- [x] Finalizar uma vez o principal em destino novo: nove tabelas e27payloads, manifest externo `b61c30ee0ac3e1a0d4dadb4ae85ecc3a54dc9e6b23f23aeade51c3de8db6f192`. Geração não equivale a aceite semântico final.
+- [x] Implementar e revisar candidato privado de consulta somente das tabelas referenciadas e reprodução lógica12+5; nove testes pertinentes PASS. Transferência dos mesmos bytes aguarda término e guardas do principal.
+- [x] Concluir comparação pública127 com verificação integral do principal, reconciliação das representações e rederivação dos cinco derivados.16.482resultados e17.884grupos equivalentes sem diferenças;168ausências nativas explícitas, nenhum valor calculado perdido. Transferência byte-exata do candidato revisado após guards terminais concluída; sem outra verificação isolada equivalente.
+- [ ] Executar comparador público de replay dos doze arquivos unitários e cinco CSVs completos da outra origem; capturar recibo real. Prova preliminar dos CSVs não substitui recibo nem demonstra persistência dos Parquets do replay.
+- [ ] Demonstrar consulta real limitada a uma tabela aceita, com tempo medido.
+- [ ] Concluir oracle financeiro independente de agregados, quantis, cobertura e segmentações, aproveitando os87resultados unitários já conferidos.
+- [ ] Concluir documentação, revisão da composição/SHA, checks, PR, integração, CI pós-merge, ancestralidade e atualização130/mapa2.
+
+Mesmos paths e responsáveis. Sem segundo pacote físico ou novas tentativas de paralelismo por conveniência. Achado material exige correção e revalidação do recorte afetado; não repetir verificações satisfeitas sem motivo novo.
+
 ## Fatia 4 — execução completa e entrega
 
 **Paths:** ledger/spec/plano/metodologia/arquitetura conforme resultado, sem ampliar código sem correção causal. **Dependência:** fatias anteriores aceitas e inputs/destinos/pins confirmados.

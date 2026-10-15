@@ -1010,19 +1010,147 @@ def _compare_aggregates(root,manifest,oldroot):
     return report
 
 
+def _snapshot_manifest(output,expected_manifest_sha256):
+    """Authenticate accepted snapshot metadata; never claim financial revalidation."""
+    if not isinstance(expected_manifest_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_manifest_sha256):
+        raise ValueError('Invalid external pin')
+    root=_ordinary(output).resolve();raw=_ordinary(root/'manifest.json').read_bytes()
+    if hashlib.sha256(raw).hexdigest()!=expected_manifest_sha256:raise ValueError('Manifest external pin mismatch')
+    m=math._json_unique(raw)
+    if not isinstance(m,dict) or m.get('contract')!=CONTRACT:raise ValueError('Input contract mismatch')
+    tables=TABLES if m.get('stage')=='unit-calculations' else FINAL_TABLES if m.get('stage')=='coverage-and-aggregation' else ()
+    if not tables or set(m.get('tables',{}))!=set(tables) or m.get('table_columns')!=list(math.TABLE_COLUMNS):
+        raise ValueError('Universe stage/schema mismatch')
+    files=m.get('files');expected={t+'.'+e for t in tables for e in ('json','csv','parquet')}
+    if not isinstance(files,list) or len(files)!=len(expected):raise ValueError('Universe inventory mismatch')
+    seen=set()
+    for entry in files:
+        if (not isinstance(entry,dict) or entry.get('file') not in expected or entry['file'] in seen
+                or not isinstance(entry.get('sha256'),str) or not re.fullmatch('[0-9a-f]{64}',entry['sha256'])
+                or type(entry.get('rows')) is not int or entry['rows']<0
+                or entry['rows']!=m['tables'][entry['file'].rsplit('.',1)[0]]):
+            raise ValueError('Invalid universe inventory item')
+        seen.add(entry['file'])
+        if not _ordinary(root/entry['file']).is_file():raise ValueError('Missing ordinary snapshot file')
+    if {p.name for p in root.iterdir()}!=expected|{'manifest.json'}:raise ValueError('Universe inventory mismatch')
+    config=m.get('config',{})
+    if (config.get('profile_expected_sha256')!=m.get('profile_sha256') or config.get('periods')!=m.get('periods')
+            or m.get('dependency_periods')!=math.dependency_periods(config['periods'])
+            or m.get('reference_contract')!='profile-context-and-window-component-v1'):
+        raise ValueError('Universe metadata contract mismatch')
+    load_profile(config['profile_id'],m['profile_sha256'])
+    if m.get('logical_payload_sha256')!=logical_payload_sha256(m):raise ValueError('Universe logical metadata mismatch')
+    return root,m
+
+
+def _capture_payload(root,entry,destination=None):
+    """Hash a bounded stream, optionally retaining exactly those bytes for SQL."""
+    path=_ordinary(root/entry['file']);before=path.stat();digest=hashlib.sha256()
+    with ExitStack() as stack:
+        source=stack.enter_context(path.open('rb'))
+        target=stack.enter_context(Path(destination).open('xb')) if destination is not None else None
+        for block in iter(lambda:source.read(1024*1024),b''):
+            digest.update(block)
+            if target is not None:target.write(block)
+    after=_ordinary(path).stat()
+    identity=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    if identity(before)!=identity(after) or digest.hexdigest()!=entry['sha256']:raise ValueError('Snapshot payload hash/identity changed: '+entry['file'])
+    return digest.hexdigest()
+
+
 def query(output,expected_manifest_sha256,sql):
+    """Query selected authenticated bytes of a caller-pinned accepted snapshot.
+
+    Full financial verification remains the separate verify/compare gate.
+    """
     import duckdb
-    manifest=verify(output,expected_manifest_sha256);root=Path(output)
     import tempfile
-    # An ephemeral on-disk database keeps the authenticated snapshot readable
-    # after external access is disabled without materializing it in RAM.
-    with tempfile.TemporaryDirectory(prefix='ifdata-universe-query-') as temporary, duckdb.connect(str(Path(temporary)/'query.duckdb'),config={'memory_limit':'512MiB','threads':1,'autoload_known_extensions':False,'autoinstall_known_extensions':False}) as con:
-        for table in manifest['tables']:con.execute('create table '+table+' as select * from read_parquet(?)',[str(root/(table+'.parquet'))])
-        con.execute('set enable_external_access=false');statements=con.extract_statements(sql)
+    settings={'memory_limit':'512MiB','threads':1,'autoload_known_extensions':False,'autoinstall_known_extensions':False}
+    # DuckDB's own parser identifies references before any payload is read.
+    with duckdb.connect(config=dict(settings,enable_external_access=False)) as parser:
+        statements=parser.extract_statements(sql)
         if len(statements)!=1 or statements[0].type!=duckdb.StatementType.SELECT:raise ValueError('Query must be one SELECT')
+        selected={name.lower() for name in parser.get_table_names(sql,qualified=True)}
+    if not selected<=set(FINAL_TABLES):raise ValueError('Query references a table outside the universe allowlist')
+    root,manifest=_snapshot_manifest(output,expected_manifest_sha256)
+    if not selected<=set(manifest['tables']):raise ValueError('Query table unavailable in this snapshot stage')
+    entries={e['file']:e for e in manifest['files']}
+    with tempfile.TemporaryDirectory(prefix='ifdata-universe-query-') as temporary, duckdb.connect(str(Path(temporary)/'query.duckdb'),config=settings) as con:
+        for table in sorted(selected):
+            copy=Path(temporary)/(table+'.parquet');_capture_payload(root,entries[copy.name],copy)
+            con.execute('create table '+table+' as select * from read_parquet(?)',[str(copy)])
+            math._schema(con,table,math.TABLE_COLUMNS)
+        con.execute('set enable_external_access=false')
         cur=con.execute(sql);fields=[c[0] for c in cur.description];rows=cur.fetchmany(10001)
         if len(rows)>10000:raise ValueError('Query row limit exceeded; select an explicit smaller scope')
         return [dict(zip(fields,row)) for row in rows]
+
+def _original_calculation(manifest,checkpoint):
+    """Read already accepted admission evidence, not later finalization identity."""
+    calculation=manifest.get('calculation_producer',{})
+    if (calculation.get('evidence_kind')!='caller_preflight_and_failed_terminal_receipt'
+            or checkpoint.get('capture_timing')!='captured_at_checkpoint_admission'
+            or checkpoint.get('file_hashes_captured_later') is not True):
+        raise ValueError('Replay requires the admitted original calculation evidence')
+    evidence=checkpoint.get('evidence',{});blob=evidence.get('preflight',{})
+    raw=blob.get('raw_utf8','').encode('utf-8')
+    if hashlib.sha256(raw).hexdigest()!=blob.get('sha256'):raise ValueError('Original calculation receipt hash mismatch')
+    pre=math._json_unique(raw)
+    source=_ordinary(checkpoint.get('source_root','')).resolve()
+    if (_ordinary(pre.get('output','')).resolve()!=source or type(pre.get('pid')) is not int
+            or not pre.get('started_utc') or pre.get('pid')!=calculation.get('pid')
+            or pre.get('started_utc')!=calculation.get('started_utc')
+            or pre.get('source_before')!=calculation.get('source_sha256')):
+        raise ValueError('Original calculation identity mismatch')
+    return dict(source_root=str(source),pid=pre['pid'],started_utc=pre['started_utc'],
+        process_created_utc=pre.get('process_created_utc'),finished_utc=calculation.get('finished_utc'),
+        head=calculation.get('head'),source_sha256=calculation['source_sha256'],runtime=calculation.get('runtime'),
+        evidence_descriptor_sha256=evidence.get('descriptor_sha256'),
+        limitation=calculation.get('attribution_limit'),file_hashes_captured_later=True)
+
+
+def compare_replay(output,expected_manifest_sha256,replay_unit_checkpoint,expected_replay_manifest_sha256,derived_source_root):
+    """Compare accepted unit payloads and original derived CSV logical values.
+
+    The caller must separately complete main full semantic validation. This
+    report neither reaccepts failed derived prefixes nor certifies 27 physical
+    representations of a second final package.
+    """
+    _,main=_snapshot_manifest(output,expected_manifest_sha256)
+    replay_root,replay=_snapshot_manifest(replay_unit_checkpoint,expected_replay_manifest_sha256)
+    if main['stage']!='coverage-and-aggregation' or replay['stage']!='unit-calculations':
+        raise ValueError('Replay requires final main and accepted unit checkpoint')
+    for key in ('config','inputs','profile_sha256','periods','dependency_periods','table_columns','reference_contract'):
+        if main.get(key)!=replay.get(key):raise ValueError('Replay configuration/schema mismatch: '+key)
+    main_checkpoint=main.get('unit_checkpoint',{})
+    a=_original_calculation(main,main_checkpoint.get('provenance',{}))
+    b=_original_calculation(replay,replay.get('unit_checkpoint',{}))
+    if (expected_replay_manifest_sha256==main_checkpoint.get('manifest_sha256')
+            or a['source_root']==b['source_root']
+            or (a['pid'],a['started_utc'])==(b['pid'],b['started_utc'])):
+        raise ValueError('Replay reused the same original calculation')
+    if a['source_sha256']!=b['source_sha256']:raise ValueError('Replay original calculation source mismatch')
+    derived_root=_ordinary(derived_source_root).resolve()
+    if str(derived_root)!=b['source_root']:raise ValueError('Replay derived source root differs from accepted checkpoint')
+    expected={e['file']:e for e in main['files']}
+    unit=[];derived=[]
+    for entry in replay['files']:
+        if entry!=expected[entry['file']]:raise ValueError('Replay unit payload metadata mismatch')
+        _capture_payload(replay_root,entry)
+        unit.append(dict(entry,comparison='physical_bytes_equal',row_count_basis='accepted_manifest_and_byte_equality'))
+    for table in DERIVED_TABLES:
+        entry=expected[table+'.csv'];_capture_payload(derived_root,entry)
+        derived.append(dict(table=table,**entry,comparison='csv_logical_values_byte_equal',
+            row_count_basis='main_validated_manifest_and_byte_equality_not_reparsed'))
+    return dict(status='equal',contract=CONTRACT,main_manifest_sha256=expected_manifest_sha256,
+        replay_unit_manifest_sha256=expected_replay_manifest_sha256,
+        unit_physical_payloads=unit,derived_csv_logical_tables=derived,
+        original_calculations=dict(main=a,replay=b),
+        main_full_semantic_validation='required_separate_gate',financial_acceptance=False,
+        limitations=['Original failure-time unit hashes do not exist; hashes were captured at admission',
+            'Distinct original process receipts and source roots support replay attribution; finalizations alone do not',
+            'Only 12 unit physical payloads and five derived CSV logical tables compared; no second 27-file physical replay claim'])
+
 
 def _ordinary(path):
     """Reject redirects before resolving, including Windows junctions."""

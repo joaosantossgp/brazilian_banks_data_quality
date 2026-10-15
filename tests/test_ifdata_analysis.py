@@ -1500,6 +1500,155 @@ class UniversePersistenceLineageTests(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+class UniverseBoundedQueryTests(unittest.TestCase):
+    setUp=PackageTests.setUp
+    digest=PackageTests.digest
+    native_package=PackageTests.native_package
+    fixtures=PackageTests.fixtures
+    universe_fixture=UniverseTests.universe_fixture
+
+    def test_query_authenticates_only_selected_payload_and_does_not_reverify_finances(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        out=self.root/'query';m=u.build(self.universe_fixture(),out)
+        pin=self.digest(out/'manifest.json')
+        # An unused payload can be unavailable without making selected rows
+        # claim global integrity. The finite inventory must still be present.
+        (out/'components.parquet').write_bytes(b'unavailable')
+        with patch.object(u,'verify',side_effect=AssertionError('full verification repeated')),patch.object(u,'_capture_payload',wraps=u._capture_payload) as capture:
+            rows=u.query(out,pin,'with x as (select id from results) select count(*) as n from x')
+            self.assertEqual(rows,[{'n':m['tables']['results']}])
+            self.assertEqual([c.args[1]['file'] for c in capture.call_args_list],['results.parquet'])
+            self.assertEqual(u.query(out,pin,'select count(*) as n from RESULTS'),rows)
+            capture.reset_mock()
+            self.assertEqual(u.query(out,pin,'select 1 as n'),[{'n':1}])
+            capture.assert_not_called()
+
+    def test_query_uses_captured_bytes_after_source_replacement(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        out=self.root/'query';m=u.build(self.universe_fixture(),out);pin=self.digest(out/'manifest.json')
+        capture=u._capture_payload
+        def replace(root,entry,destination=None):
+            value=capture(root,entry,destination)
+            (root/entry['file']).write_bytes(b'untrusted replacement after authentication')
+            return value
+        with patch.object(u,'_capture_payload',side_effect=replace):
+            self.assertEqual(u.query(out,pin,'select count(*) as n from results'),[{'n':m['tables']['results']}])
+        with self.assertRaisesRegex(ValueError,'hash'):u.query(out,pin,'select id from results')
+
+    def test_source_change_during_capture_is_rejected_even_with_preserved_stat(self):
+        import os
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        path=self.root/'capture.parquet';path.write_bytes(b'a'*(2*1024*1024))
+        entry=dict(file=path.name,sha256=self.digest(path));before=path.stat();real=hashlib.sha256
+        class ChangingDigest:
+            def __init__(self):self.digest=real();self.changed=False
+            def update(self,block):
+                self.digest.update(block)
+                if not self.changed:
+                    self.changed=True
+                    with path.open('r+b') as f:f.seek(-1,2);f.write(b'b')
+                    os.utime(path,ns=(before.st_atime_ns,before.st_mtime_ns))
+            def hexdigest(self):return self.digest.hexdigest()
+        with patch.object(u.hashlib,'sha256',ChangingDigest),self.assertRaisesRegex(ValueError,'hash'):
+            u._capture_payload(self.root,entry,self.root/'captured.parquet')
+
+    def test_invalid_sql_is_rejected_before_snapshot_preparation(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        for sql in ('select from','select 1; select 2','drop table results','select * from forbidden',"select * from read_csv('external.csv')"):
+            with self.subTest(sql=sql),patch.object(u,'_snapshot_manifest',side_effect=AssertionError('snapshot prepared')):
+                with self.assertRaises(Exception) as error:u.query(self.root,'0'*64,sql)
+                self.assertNotIsInstance(error.exception,AssertionError)
+
+    def test_query_rejects_tampering_preserving_stat_and_invalid_or_external_sql(self):
+        import os
+        from bank_quality import ifdata_universe_analysis as u
+        out=self.root/'query';u.build(self.universe_fixture(),out);pin=self.digest(out/'manifest.json')
+        path=out/'results.parquet';before=path.stat();raw=path.read_bytes()
+        path.write_bytes(raw[:-1]+bytes([raw[-1]^1]));os.utime(path,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError,'hash'):u.query(out,pin,'select id from results')
+        path.write_bytes(raw)
+        for sql in ('select 1; select 2','delete from results','select from','select * from forbidden',
+                    "select * from read_csv('untrusted.csv')",'select * from range(10001)'):
+            with self.subTest(sql=sql),self.assertRaises(Exception):u.query(out,pin,sql)
+
+
+class UniverseLogicalReplayTests(unittest.TestCase):
+    setUp=PackageTests.setUp
+    digest=PackageTests.digest
+    native_package=PackageTests.native_package
+    fixtures=PackageTests.fixtures
+    universe_fixture=UniverseTests.universe_fixture
+
+    def test_cli_routes_bounded_replay_arguments_to_existing_api(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        script=Path(self.api.__file__).resolve().parent.parent/'scripts/analyze-ifdata.py'
+        spec=importlib.util.spec_from_file_location('bounded_replay_cli',script)
+        cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
+        argv=[str(script),'compare-universe-replay','--output','main','--expected-manifest-sha256','a'*64,
+              '--replay-unit-checkpoint','replay','--expected-replay-manifest-sha256','b'*64,'--derived-source-root','original']
+        with patch('sys.argv',argv),patch.object(cli,'compare_universe_replay',return_value={'status':'equal'}) as compare,redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(),0)
+        compare.assert_called_once_with('main','a'*64,'replay','b'*64,'original')
+
+    def replay_fixture(self):
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();main=self.root/'main-source';replay=self.root/'replay-source'
+        # Both originals execute calculations and derived CSV writing. Admission
+        # does not regenerate them and incomplete Parquet/JSON are not consumed.
+        u.build(cfg,main);u.build(cfg,replay)
+        outputs=[]
+        for index,source in enumerate((main,replay)):
+            (source/'manifest.json').unlink()
+            paths,pre,end,save=UniverseCheckpointTests.receipt_fixture(self,cfg,source)
+            pre['pid']+=index;end['pid']=pre['pid']
+            paths['preflight'].write_text(json.dumps(pre),encoding='utf-8')
+            paths['terminal'].write_text(json.dumps(end),encoding='utf-8')
+            evidence,pin=save();out=self.root/('checkpoint-'+str(index))
+            u.admit_universe_unit_checkpoint(cfg,source,out,evidence=evidence,expected_evidence_sha256=pin)
+            outputs.append(out)
+        final=self.root/'final';u.finalize_universe_analysis(outputs[0],self.digest(outputs[0]/'manifest.json'),final)
+        (replay/'aggregates.json').write_bytes(b'[invalid-prefix')
+        (replay/'aggregates.parquet').write_bytes(b'invalid-prefix')
+        return final,outputs[1],replay
+
+    def test_logical_replay_compares_twelve_unit_payloads_and_five_original_csvs(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.assertTrue(callable(getattr(self.api,'compare_universe_replay',None)),'Missing logical replay API')
+        final,replay,source=self.replay_fixture()
+        report=self.api.compare_universe_replay(final,self.digest(final/'manifest.json'),replay,self.digest(replay/'manifest.json'),source)
+        self.assertEqual(report['status'],'equal')
+        self.assertEqual(len(report['unit_physical_payloads']),12)
+        self.assertEqual(len(report['derived_csv_logical_tables']),5)
+        self.assertEqual(report['main_full_semantic_validation'],'required_separate_gate')
+        self.assertFalse(report['financial_acceptance'])
+        self.assertNotEqual(report['original_calculations']['main']['source_root'],report['original_calculations']['replay']['source_root'])
+
+    def test_logical_replay_rejects_tampered_csv_units_config_and_original_reuse(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.assertTrue(callable(getattr(u,'compare_replay',None)),'Missing bounded replay comparison')
+        final,replay,source=self.replay_fixture();a=self.digest(final/'manifest.json');b=self.digest(replay/'manifest.json')
+        for path in (source/'aggregates.csv',replay/'results.parquet'):
+            raw=path.read_bytes();path.write_bytes(raw+b' ')
+            with self.subTest(path=path.name),self.assertRaisesRegex(ValueError,'hash'):
+                u.compare_replay(final,a,replay,b,source)
+            path.write_bytes(raw)
+        with self.assertRaisesRegex(ValueError,'source root'):u.compare_replay(final,a,replay,b,self.root/'unrelated')
+        original=json.loads((replay/'manifest.json').read_bytes())
+        changed=deepcopy(original);changed['config']['datasets']=['financial'];changed['logical_payload_sha256']=u.logical_payload_sha256(changed)
+        (replay/'manifest.json').write_text(json.dumps(changed),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'configuration'):u.compare_replay(final,a,replay,self.digest(replay/'manifest.json'),source)
+        reused=deepcopy(original);m=json.loads((final/'manifest.json').read_bytes());reused['calculation_producer']=m['calculation_producer']
+        reused['unit_checkpoint']=m['unit_checkpoint']['provenance']
+        (replay/'manifest.json').write_text(json.dumps(reused),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'original calculation'):u.compare_replay(final,a,replay,self.digest(replay/'manifest.json'),Path(reused['unit_checkpoint']['source_root']))
+
+
 class UniverseCheckpointTests(unittest.TestCase):
     setUp=PackageTests.setUp
     digest=PackageTests.digest
