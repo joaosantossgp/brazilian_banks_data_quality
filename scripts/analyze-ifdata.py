@@ -15,7 +15,9 @@ def main():
     commands=parser.add_subparsers(dest='command',required=True)
     for name in ('build','build-universe'):
         sub=commands.add_parser(name);sub.add_argument('--config',required=True);sub.add_argument('--output',required=True)
-        if name=='build-universe':sub.add_argument('--batch-size',type=int,default=32)
+        if name=='build-universe':
+            sub.add_argument('--batch-size',type=int,default=32)
+            sub.add_argument('--stage',choices=('unit-calculations','coverage-and-aggregation'),default='coverage-and-aggregation')
     opening=commands.add_parser('prepare-universe-opening')
     for option in ('raw-root','output','profile-id','profile-expected-sha256'):opening.add_argument('--'+option,required=True)
     for name in ('verify','query','verify-universe','query-universe','compare-universe','resolve-universe'):
@@ -26,7 +28,7 @@ def main():
     args=parser.parse_args()
     if args.command in ('build','build-universe'):
         cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
-        result=build_analysis(cfg,args.output) if args.command=='build' else build_universe_analysis(cfg,args.output,batch_size=args.batch_size)
+        result=build_analysis(cfg,args.output) if args.command=='build' else build_universe_analysis(cfg,args.output,batch_size=args.batch_size,stage=args.stage)
     elif args.command=='prepare-universe-opening':result=prepare_universe_opening(args.raw_root,args.output,args.profile_id,args.profile_expected_sha256)
     elif args.command in ('verify','verify-universe'):
         result=(verify_analysis if args.command=='verify' else verify_universe_analysis)(args.output,args.expected_manifest_sha256)

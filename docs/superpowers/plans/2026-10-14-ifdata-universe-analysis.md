@@ -88,23 +88,25 @@ Run focal planejado, cwd na branch de execução, usando Python do Primary:
 
 **Paths:** módulo adjacente `ifdata_universe_analysis.py`, wrappers no módulo/testes de análise existentes, CLI, novo perfil; ledger/arquitetura. **Consome:** população autenticada, contextos liberados e dependências temporais. **Produz:** `build_universe_analysis(config, output)` e subcomando `build-universe`; antigo build/verify/query preservado. **Dependência:** fatia 1 e liberações da fatia 0 revisadas. A nova fronteira evita misturar orquestração130 com matemática/contrato127; revisão confere ausência de cópia de fórmulas e preservação dos consumidores legados.
 
-- [ ] RED para rejeição de hash/perfil arbitrário, perspectiva errada, abertura não liberada, escrita em destino aceito e configuração legada que deve continuar válida.
-- [ ] Testar ausência sem reduzir população esperada, zero de denominador, reversão, definição de lucro incompatível, unidade sucessora e estoque de abertura faltante.
-- [ ] Reutilizar quarter_flow/flow_12_months/mean_stock/evaluate_metric; ampliar somente despacho de inputs e seleção finita de perfil. Não duplicar fórmulas ou forçar oito métricas financeiras no prudencial.
-- [ ] Processar uma janela e lotes de unidades; persistir componentes/resultados em ordem determinística, com frações exatas. Testar que dados lidos do lote anterior não vazam para o seguinte.
+- [x] RED para rejeição de hash/perfil arbitrário, perspectiva errada, abertura não liberada, escrita em destino aceito e configuração legada que deve continuar válida.
+- [x] Testar ausência sem reduzir população esperada, zero de denominador, reversão, definição de lucro incompatível, unidade sucessora e estoque de abertura faltante.
+- [x] Reutilizar quarter_flow/flow_12_months/mean_stock/evaluate_metric; ampliar somente despacho de inputs e seleção finita de perfil. Não duplicar fórmulas ou forçar oito métricas financeiras no prudencial.
+- [x] Processar uma janela e lotes de unidades; persistir componentes/resultados em ordem determinística, com frações exatas. Testar que dados lidos do lote anterior não vazam para o seguinte.
 - [ ] Comparar todas as linhas sobrepostas à amostra 127 sob os mesmos pins/perímetros, incluindo estados e dependências, sem arredondamento para obter igualdade.
-- [ ] Rodar lote delimitado com conglomerado, instituição fora da amostra, cooperativa e não bancária quando presentes nas fontes; medir memória/tempo e verificar todas as representações.
-- [ ] GREEN focal e revisão independente econômica/contábil antes de ampliar agregação.
+- [x] Rodar lote delimitado com conglomerado, instituição fora da amostra, cooperativa e não bancária quando presentes nas fontes; medir memória/tempo e verificar todas as representações.
+- [x] GREEN focal e revisão independente econômica/contábil antes de ampliar agregação.
+
+Fatia2 aceita no commit `49eb70dc10d15908ca703502ae25c5db21274f8e`, após correção e re-review dos quatro achados do verificador/comparador; detalhes e pins no ledger. Os três recortes reais têm814resultados comuns exatamente iguais, incluindo derivações trimestrais e compatibilidade. A comparação de todas as linhas dos60trimestres continua no gate da fatia4; o item integral acima permanece aberto. Fatia3 em implementação, sem execução completa declarada.
 
 ## Fatia 3 — agregados, segmentos e comparações
 
 **Paths:** módulo/testes/CLI, ledger. **Consome:** resultados por unidade e pertencimento. **Produz:** `aggregate_unit_results(rows)` e tabelas aggregates/distributions/segment_coverage/cohort_comparisons. **Dependência:** fatia 2 revisada.
 
-- [ ] Escrever RED com A = 1/100 e B = 18/900: agregado total 19/1000, amostra A = 1/100, restante B = 18/900; média simples 0,015 não é o total 0,019.
-- [ ] Testar reconciliação por N/D com pertencimento desconhecido, métricas sem unidades elegíveis e denominadores assinados; não somar razões, medianas ou quartis.
-- [ ] Testar cada eixo Tcb/Td/Tc/Sr/Atividade/SegmentoTb com categoria histórica, null, sem cadastro e conflito; Situacao diagnóstico e Uf/Municipio apenas sede.
-- [ ] Implementar recortes a partir do mesmo resultado unitário, sem recalcular ou duplicar unidade por companhia. Total inclui a amostra; comparar dentro de cada perspectiva e categoria compatível.
-- [ ] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
+- [x] Escrever RED com A = 1/100 e B = 18/900: agregado total 19/1000, amostra A = 1/100, restante B = 18/900; média simples 0,015 não é o total 0,019.
+- [x] Testar reconciliação por N/D com pertencimento desconhecido, métricas sem unidades elegíveis e denominadores assinados; não somar razões, medianas ou quartis.
+- [x] Testar cada eixo Tcb/Td/Tc/Sr/Atividade/SegmentoTb com categoria histórica, null, sem cadastro e conflito; Situacao diagnóstico e Uf/Municipio apenas sede.
+- [x] Implementar recortes a partir do mesmo resultado unitário, sem recalcular ou duplicar unidade por companhia. Total inclui a amostra; comparar dentro de cada perspectiva e categoria compatível.
+- [x] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
 - [ ] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
 
 ## Fatia 4 — execução completa e entrega

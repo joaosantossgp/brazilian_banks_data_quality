@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import re
+from fractions import Fraction
 
 from . import ifdata_analysis as math
 
@@ -19,6 +20,156 @@ PROFILE_PATH=Path(__file__).with_name('ifdata-analysis-universe-profile-2010-202
 CONTRACT='ifdata-universe-analysis-v1'
 TABLES=('components','results','unit_periods','membership_links')
 TYPES={'financial':'2','individual':'3','capital':'1'}
+DERIVED_TABLES=('unit_coverage','aggregates','distributions','segment_coverage','cohort_comparisons')
+FINAL_TABLES=TABLES+DERIVED_TABLES
+AXES=('Tcb','Td','Tc','Sr','Atividade','SegmentoTb')
+COHORTS=('total','sample','remaining','unknown')
+
+
+def _category(row,field):
+    if row.get('classification_states',{}).get(field)=='conflict':return ('conflict',None)
+    cadre=row.get('target_cadastro')
+    if not cadre or cadre.get('Data')!=row['period']:return ('missing_dated_cadastro',None)
+    if field not in cadre:return ('missing_field',None)
+    value=cadre[field]
+    return ('null' if value is None else 'empty' if value=='' else 'value',value)
+
+
+def _eligible(row):
+    return bool(row.get('unit_id') and row['status']=='ok' and row['applicability']=='applicable'
+                and row.get('numerator_fraction') is not None and row.get('denominator_fraction') is not None
+                and math._rational(row['denominator_fraction'])!=0)
+
+
+def _unit_summary(rows,context):
+    """Reduce native contributions, keeping company relations nominal only."""
+    units=sorted((r for r in rows if r.get('unit_id')),key=lambda r:r['unit_id'])
+    eligible=[r for r in units if _eligible(r)]
+    calculable=lambda r:r['status']=='ok' and r.get('value_fraction') is not None
+    predicates=dict(expected=lambda r:True,eligible=_eligible,calculable=calculable,
+        missing=lambda r:not calculable(r),not_applicable=lambda r:r['applicability']=='not_applicable' and bool(r.get('applicability_evidence')),
+        unknown=lambda r:r['applicability']=='unknown' or (r['applicability']=='not_applicable' and not r.get('applicability_evidence')),
+        diagnostic=lambda r:calculable(r) and r['applicability']!='applicable')
+    lists={name+'_units':[r['unit_id'] for r in units if predicate(r)] for name,predicate in predicates.items()}
+    companies=sorted({c for r in rows for c in r.get('companies',[])})
+    for name,predicate in predicates.items():
+        # A company with multiple native links is missing only when none is
+        # calculable; it is never an additional economic contributor.
+        lists[name+'_companies']=[c for c in companies if
+            (not any(calculable(r) for r in rows if c in r.get('companies',[])) if name=='missing' else
+             any(predicate(r) for r in rows if c in r.get('companies',[])))]
+    known=[r for r in units if r.get('asset_fraction') is not None]
+    unknown=[r['unit_id'] for r in units if r.get('asset_fraction') is None]
+    unknown_companies=sorted({c for r in rows if r.get('asset_fraction') is None for c in r.get('companies',[])})
+    total=sum((math._rational(r['asset_fraction']) for r in known),Fraction())
+    covered=sum((math._rational(r['asset_fraction']) for r in known if _eligible(r)),Fraction())
+    share=covered/total if total else None
+    f=math._fraction_field
+    assets=dict(reference='contemporaneous_own_'+context['dataset']+'_AT',
+        status='own_assets_unavailable' if context['dataset']=='capital' else 'partial_known_assets' if unknown else 'known_assets',
+        known_units=[r['unit_id'] for r in known],unknown_units=unknown,unknown_companies=unknown_companies,
+        known_asset_fraction=f(total),eligible_known_asset_fraction=f(covered),
+        share_of_known_fraction=f(share) if share is not None else None,
+        share_of_total_fraction=f(share) if share is not None and not unknown and not unknown_companies else None,
+        flags=['negative_asset_weights'] if any(math._rational(r['asset_fraction'])<0 for r in known) else [])
+    numerator=sum((math._rational(r['numerator_fraction']) for r in eligible),Fraction())
+    denominator=sum((math._rational(r['denominator_fraction']) for r in eligible),Fraction())
+    flags={flag for r in eligible for flag in r.get('flags',[])}
+    if any(math._rational(r['denominator_fraction'])<0 for r in eligible):flags.add('non_convex_denominator_weights')
+    status='no_eligible_units' if not eligible else 'zero_denominator' if not denominator else 'ok'
+    overlap=dict(status='prudential_overlap_unproven' if context['dataset']=='capital' else 'financial_intergroup_exposures_retained' if context['dataset']=='financial' else 'individual_unconsolidated',
+        certified_system_total=False,copresence=sorted({canonical(p) for r in units for p in r.get('parent_copresence',[])}))
+    overlap['copresence']=[json.loads(p) for p in overlap['copresence']]
+    a=dict(context,status=status,method='ratio_of_sums_same_eligible_native_unit_intersection',
+        numerator_fraction=f(numerator) if eligible else None,denominator_fraction=f(denominator) if eligible else None,
+        value_fraction=None,value=None,lists=lists,counts={k:len(v) for k,v in lists.items()},asset_coverage=assets,
+        flags=sorted(flags),overlap=overlap,limits=sorted({limit for r in rows for limit in (r.get('limits') or [])}),
+        population_states=sorted({r['population_state'] for r in rows if r.get('population_state')}),
+        missing_reasons={state:sorted(r['unit_id'] for r in units if r['status']==state) for state in sorted({r['status'] for r in units if r['status']!='ok'})},
+        annual_summary=context['period'].endswith('12') and context['horizon'] in ('point','ttm'))
+    if status=='ok':a=math._valued(a,numerator/denominator)
+    values=sorted(math._rational(r['numerator_fraction'])/math._rational(r['denominator_fraction']) for r in eligible)
+    d=dict(context,status='ok' if values else 'no_eligible_units',n=len(values),method='empirical_quantile_type2',eligible_units=lists['eligible_units'],flags=a['flags'])
+    quantiles={name:math._quantile2(values,p) if values else None for name,p in [('q1',Fraction(1,4)),('median',Fraction(1,2)),('q3',Fraction(3,4))]}
+    quantiles['iqr']=quantiles['q3']-quantiles['q1'] if values else None
+    for name,value in quantiles.items():
+        d[name+'_fraction']=f(value) if value is not None else None
+        d[name]=math._valued({},value)['value'] if value is not None else None
+    return a,d
+
+
+def _comparisons(aggregates,context):
+    total=aggregates['total'];parts=[aggregates[c] for c in COHORTS[1:]]
+    def fraction(row,key):return math._rational(row[key]) if row[key] is not None else Fraction()
+    checks={key:total['counts'][key]==sum(a['counts'][key] for a in parts) for key in total['counts'] if key.endswith('_units')}
+    checks.update({key:fraction(total,key)==sum((fraction(a,key) for a in parts),Fraction()) for key in ('numerator_fraction','denominator_fraction')})
+    for key in ('known_asset_fraction','eligible_known_asset_fraction'):
+        checks[key]=fraction(total['asset_coverage'],key)==sum((fraction(a['asset_coverage'],key) for a in parts),Fraction())
+    if not all(checks.values()):raise ValueError('Native cohort reconciliation failed')
+    output=[]
+    for left,right in [('sample','total'),('sample','remaining'),('unknown','total')]:
+        a,b=aggregates[left],aggregates[right]
+        valid=a['status']==b['status']=='ok'
+        denominator=math._rational(b['asset_coverage']['known_asset_fraction'])
+        output.append(dict(context,id=context['id']+'|'+left+'-vs-'+right,left=left,right=right,
+            left_aggregate_id=a['id'],right_aggregate_id=b['id'],status='descriptive' if valid else 'unavailable',
+            difference_fraction=math._fraction_field(math._rational(a['value_fraction'])-math._rational(b['value_fraction'])) if valid else None,
+            eligible_intersection=sorted(set(a['lists']['eligible_units'])&set(b['lists']['eligible_units'])),
+            left_eligible_count=a['counts']['eligible_units'],right_eligible_count=b['counts']['eligible_units'],
+            known_asset_share_fraction=math._fraction_field(math._rational(a['asset_coverage']['known_asset_fraction'])/denominator) if denominator else None,
+            asset_share_scope='known_own_assets_only_not_certified_population_share',
+            reconciliation=dict(status='exact',checks=checks,identity='total=sample+remaining+unknown',ratios_and_quantiles_additive=False),
+            interpretation='descriptive_only_total_includes_sample_no_causal_or_statistical_inference'))
+    return output
+
+
+def aggregate_unit_results(rows):
+    """Exact pure reduction of native metric coverage, independently per axis.
+
+    Native rows have unit_id/unit_key, membership, companies, own dated cadastro
+    and AT, and result fractions/status/applicability. A missing company may have
+    a nominal row with unit_id/unit_key=None; it never contributes a unit/value.
+    Duplicate native contributors are rejected, including equal duplicates.
+    """
+    groups={};seen=set();seen_ids=set()
+    for row in rows:
+        key=tuple(row[k] for k in ('period','dataset','metric','horizon'))
+        if row['membership'] not in COHORTS[1:]:raise ValueError('Invalid native membership')
+        if row.get('unit_id'):
+            identity=(key,canonical(row['unit_key']))
+            if identity in seen or (key,row['unit_id']) in seen_ids:raise ValueError('Duplicate native contributor')
+            seen.add(identity)
+            seen_ids.add((key,row['unit_id']))
+            if row['unit_key']!=[row['dataset'],TYPES[row['dataset']],row['code']]:raise ValueError('Native coverage identity mismatch')
+            if row['status']=='ok':
+                n,d,v=(math._rational(row[k]) for k in ('numerator_fraction','denominator_fraction','value_fraction'))
+                if not d or n/d!=v:raise ValueError('Inconsistent native result fraction')
+            if row['dataset']=='capital' and row.get('asset_fraction') is not None:raise ValueError('Capital own assets unavailable')
+        elif row.get('unit_key') is not None or row.get('value_fraction') is not None or row.get('asset_fraction') is not None:
+            raise ValueError('Nominal company cannot contribute native value')
+        groups.setdefault(key,[]).append(row)
+    output={table:[] for table in DERIVED_TABLES[1:]}
+    for key,group in sorted(groups.items()):
+        base=dict(zip(('period','dataset','metric','horizon'),key));base['id']='|'.join(key)
+        categories=[({},group)]
+        for field in AXES:
+            segments={}
+            for row in group:
+                # JSON typed keys keep numeric and textual native categories distinct.
+                category=_category(row,field);segments.setdefault(canonical(category),(category,[]))[1].append(row)
+            categories.extend((dict(field=field,category_state=category[0],category=category[1]),subset)
+                              for _,(category,subset) in sorted(segments.items()))
+        for category,subset in categories:
+            context=dict(base,**category)
+            if category:context['id']+='|'+category['field']+'|'+canonical([category['category_state'],category['category']])
+            aggregates={}
+            for cohort in COHORTS:
+                selected=subset if cohort=='total' else [r for r in subset if r['membership']==cohort]
+                a,d=_unit_summary(selected,dict(context,id=context['id']+'|'+cohort,cohort=cohort));aggregates[cohort]=a
+                if category:output['segment_coverage'].append(dict(a,distribution=d))
+                else:output['aggregates'].append(a);output['distributions'].append(d)
+            output['cohort_comparisons'].extend(_comparisons(aggregates,context))
+    return output
 
 
 def canonical(value):
@@ -188,7 +339,92 @@ def _expand_component(row,profile):
     return result
 
 
-def build(config,output,*,batch_size=32):
+def _producer_snapshot(config,stage,batch_size):
+    import platform
+    import sys
+    import duckdb
+    from datetime import datetime,timezone
+    package=Path(__file__).parent
+    # Freeze the finite responsible package upfront, including lazily imported
+    # readers. No module can evade stamping by loading after execution starts.
+    sources=sorted(package.glob('*.py'))+[PROFILE_PATH,math.PROFILE_PATH,package.parent/'scripts/analyze-ifdata.py']
+    return dict(started_utc=datetime.now(timezone.utc).isoformat(),
+        source_sha256={str(p.resolve()):math._digest_file(p) for p in sources},
+        runtime=dict(python=platform.python_version(),executable=sys.executable,duckdb=duckdb.__version__,platform=platform.platform()),
+        config_sha256=hashlib.sha256(canonical(dict(config=config,stage=stage)).encode()).hexdigest(),batch_size=batch_size,
+        source_inventory='all_responsible_bank_quality_python_modules_plus_profiles_and_cli',
+        attribution='this_build_only_not_retroactive_to_preexisting_unit_packages')
+
+
+def _check_producer(producer):
+    for filename,pin in producer['source_sha256'].items():
+        if math._digest_file(Path(filename))!=pin:raise ValueError('Producer source changed during execution: '+filename)
+
+
+def logical_payload_sha256(manifest):
+    """Operational UTC, batch size and runtime are deliberately not economics."""
+    payload={k:manifest[k] for k in ('contract','stage','config','inputs','profile_sha256','tables')}
+    payload['files']=sorted(manifest['files'],key=lambda e:e['file'])
+    return hashlib.sha256(canonical(payload).encode()).hexdigest()
+
+
+def _coverage_windows(root,manifest,population):
+    """One period/perspective of slim coverage; never retain temporal history."""
+    from itertools import groupby
+    with ExitStack() as stack:
+        streams={t:math._iter_json_array(root/(t+'.json')) for t in TABLES[:3]}
+        for stream in streams.values():stack.callback(stream.close)
+        units=iter(groupby(streams['unit_periods'],lambda r:(r['period'],r['dataset'])))
+        current=next(units,None)
+        components=iter(groupby(streams['components'],lambda r:(r['analysis_period'],r['dataset'],r['code'])))
+        results=iter(groupby(streams['results'],lambda r:(r['period'],r['dataset'],r['code'])))
+        matrices={r['period']:r for r in population['matrices']}
+        states={(r['period'],r['dataset']):r['population_state'] for r in population['periods']}
+        for period in manifest['periods']:
+            for dataset in manifest['config']['datasets']:
+                coverage=[];linked=set();key=(period,dataset)
+                copresence={}
+                for p in population['parent_copresence']:
+                    if (p['period'],p['dataset'])==key:copresence.setdefault(p['code'],[]).append(p)
+                if current is not None and current[0]==key:
+                    for unit in current[1]:
+                        cg=next(components,None);rg=next(results,None);identity=(*key,unit['code'])
+                        if cg is None or rg is None or cg[0]!=identity or rg[0]!=identity:raise ValueError('Derived native stream completeness mismatch')
+                        observations=list(cg[1]);asset=next((o for o in observations if o['component']=='AT' and o['period']==period),None)
+                        av,ast=math._native_value(asset) if asset else (None,'own_assets_unavailable')
+                        if asset and not unit.get('own_cadastro'):av,ast=None,'missing_dated_cadastro'
+                        if dataset=='capital':av,ast=None,'own_assets_unavailable'
+                        linked.update(unit['companies'])
+                        for result in rg[1]:
+                            row={k:deepcopy(result.get(k)) for k in ('period','dataset','code','metric','horizon','status','applicability','applicability_evidence','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary')}
+                            row.update(id=result['id']+'|coverage',row_kind='native_unit',result_id=result['id'],unit_id=unit['unit_id'],unit_key=result['unit_key'],
+                                membership=unit['membership'],membership_reason=unit['membership_reason'],companies=unit['companies'],
+                                asset_fraction=math._fraction_field(av) if av is not None else None,asset_status=ast or 'ok',asset_component_id=asset['id'] if asset else None,
+                                target_cadastro=dict(Data=period,**unit['classifications']) if unit['classifications'] is not None else None,
+                                parent_copresence=copresence.get(unit['code'],[]),population_state=states[key])
+                            coverage.append(row)
+                    current=next(units,None)
+                for company in matrices[period]['company_rows']:
+                    if company['company_id'] in linked:continue
+                    for metric in math.METRICS:
+                        if (metric in ('C3','C4'))!=(dataset=='capital'):continue
+                        for horizon in (('quarter','ttm') if metric in math.FLOW_METRICS else ('point',)):
+                            coverage.append(dict(id='nominal|'+period+'|'+dataset+'|'+company['company_id']+'|'+metric+'|'+horizon,
+                                row_kind='nominal_company',period=period,dataset=dataset,code=None,metric=metric,horizon=horizon,
+                                unit_id=None,unit_key=None,result_id=None,membership='sample',companies=[company['company_id']],
+                                status='missing_native_unit',applicability='unknown',numerator_fraction=None,denominator_fraction=None,value_fraction=None,
+                                asset_fraction=None,asset_status='no_native_unit',asset_component_id=None,target_cadastro=None,
+                                flags=[],company_relation=company,population_state=states[key]))
+                yield coverage
+        if current is not None or next(components,None) is not None or next(results,None) is not None:raise ValueError('Derived orphan native group')
+
+
+def _derived_windows(root,manifest,population):
+    for coverage in _coverage_windows(root,manifest,population):
+        yield dict(unit_coverage=coverage,**aggregate_unit_results(coverage))
+
+
+def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
     import duckdb
     from .ifdata_population import open_population,CONTRACT as POP_CONTRACT,_metadata
     from .ifdata_odata import CONTRACT as DATA_CONTRACT
@@ -196,9 +432,12 @@ def build(config,output,*,batch_size=32):
     from .ifdata_variable_catalog import CONTRACT as CAT_CONTRACT,query_catalog
     output=Path(output).resolve()
     if output.exists():raise FileExistsError(output)
+    if stage not in ('unit-calculations','coverage-and-aggregation'):raise ValueError('Invalid universe stage')
     required={'periods','datasets','profile_id','profile_expected_sha256','population'}
     if not isinstance(config,dict) or not required<=set(config) or set(config)-required-{'opening'}:raise ValueError('Invalid universe config')
     if type(batch_size) is not int or batch_size<1:raise ValueError('Positive batch size required')
+    config=deepcopy(config)
+    producer=_producer_snapshot(config,stage,batch_size)
     dependencies=math.dependency_periods(config['periods']);periods=sorted(config['periods']);datasets=config['datasets']
     if not isinstance(datasets,list) or not datasets or any(d not in TYPES for d in datasets) or len(set(datasets))!=len(datasets):raise ValueError('Invalid universe perspectives')
     pin=config['profile_expected_sha256']
@@ -293,10 +532,28 @@ def build(config,output,*,batch_size=32):
     math._authenticate(config['population'],POP_CONTRACT,True)
     for name in accepted:math._authenticate(config['opening'] if name=='opening' else inputs[name])
     normalized=deepcopy(config);normalized['periods']=periods;normalized['datasets']=sorted(datasets)
-    manifest=dict(contract=CONTRACT,stage='unit-calculations',config=normalized,inputs=inputs,profile_sha256=pin,
+    manifest=dict(contract=CONTRACT,stage=stage,config=normalized,inputs=inputs,profile_sha256=pin,
                   periods=periods,dependency_periods=dependencies,tables=counts,table_columns=list(math.TABLE_COLUMNS),files=files,
                   reference_contract='profile-context-and-window-component-v1',
-                  limitations=['Native unit results; no final aggregates in this stage','Prudential own assets unknown; no financial proxy','Membership does not control native applicability','No constituent or issuer-control continuity inferred'])
+                  limitations=['Technical native sums are not a certified system total','Prudential own assets unknown; no financial proxy','Membership does not control native applicability','No constituent or issuer-control continuity inferred'])
+    if stage=='coverage-and-aggregation':
+        with ExitStack() as stack,duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as con:
+            writers={t:Writer(output,t,stack) for t in DERIVED_TABLES}
+            for tables in _derived_windows(output,manifest,pop):
+                for table,rows in tables.items():
+                    for row in rows:writers[table].append(row)
+            for table,writer in writers.items():
+                manifest['files'].extend(writer.finish(con));manifest['tables'][table]=writer.count
+    # Final aggregation can be long: the last authentication and source check
+    # belong immediately before acceptance, not only before derived output.
+    math._authenticate(config['population'],POP_CONTRACT,True)
+    for name in accepted:math._authenticate(config['opening'] if name=='opening' else inputs[name])
+    _check_producer(producer)
+    from datetime import datetime,timezone
+    producer.update(finished_utc=datetime.now(timezone.utc).isoformat(),source_stability='verified_before_manifest',
+                    inputs=deepcopy(inputs),population=deepcopy(config['population']),profile_sha256=pin)
+    manifest['producer']=producer
+    manifest['logical_payload_sha256']=logical_payload_sha256(manifest)
     (output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,sort_keys=True,indent=2)+'\n',encoding='utf-8')
     return manifest
 
@@ -385,13 +642,14 @@ def _reconcile_population(root,manifest):
 def verify(output,expected_manifest_sha256):
     import duckdb
     root,m=math._authenticate(dict(root=str(output),expected_manifest_sha256=expected_manifest_sha256),CONTRACT,True)
-    if m.get('stage')!='unit-calculations' or set(m.get('tables',{}))!=set(TABLES) or m.get('table_columns')!=list(math.TABLE_COLUMNS):
+    tables=TABLES if m.get('stage')=='unit-calculations' else FINAL_TABLES if m.get('stage')=='coverage-and-aggregation' else ()
+    if not tables or set(m.get('tables',{}))!=set(tables) or m.get('table_columns')!=list(math.TABLE_COLUMNS):
         raise ValueError('Universe stage/schema mismatch')
-    if {e['file'] for e in m['files']}!={t+'.'+e for t in TABLES for e in ('json','csv','parquet')}:raise ValueError('Universe inventory mismatch')
+    if {e['file'] for e in m['files']}!={t+'.'+e for t in tables for e in ('json','csv','parquet')}:raise ValueError('Universe inventory mismatch')
     profile=load_profile(m['config']['profile_id'],m['profile_sha256'])
     known_contexts={c['context_sha256']:c for c in profile['contexts']}
     with duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as con:
-        for table in TABLES:
+        for table in tables:
             con.from_parquet(str(root/(table+'.parquet'))).create_view(table)
             math._schema(con,table,math.TABLE_COLUMNS)
             if con.execute('select count(*)-count(distinct id) from '+table).fetchone()[0]:raise ValueError('Duplicate universe identity')
@@ -450,6 +708,20 @@ def verify(output,expected_manifest_sha256):
         if con.execute("select count(*) from membership_links l left join unit_periods u on json_extract_string(l.payload,'$.unit_id')=u.id where u.id is null").fetchone()[0]:
             raise ValueError('Orphan membership reference')
     _reconcile_population(root,m)
+    if m['stage']=='coverage-and-aggregation':
+        _,population=math._authenticate(m['config']['population'])
+        with ExitStack() as stack:
+            actual={t:math._iter_json_array(root/(t+'.json')) for t in DERIVED_TABLES}
+            for stream in actual.values():stack.callback(stream.close)
+            for derived in _derived_windows(root,m,population):
+                for table,rows in derived.items():
+                    for row in rows:
+                        if next(actual[table],None)!=row:raise ValueError('Derived table/reference/reconciliation mismatch: '+table)
+            for table,stream in actual.items():
+                if next(stream,None) is not None:raise ValueError('Derived extra row: '+table)
+        if m.get('logical_payload_sha256')!=logical_payload_sha256(m):raise ValueError('Derived logical payload digest mismatch')
+        producer=m.get('producer',{})
+        if not producer.get('source_sha256') or producer.get('source_stability')!='verified_before_manifest':raise ValueError('Missing producer provenance')
     return m
 
 
@@ -582,6 +854,125 @@ def compare(output,expected_manifest_sha256,baseline,baseline_manifest_sha256):
             cause='missing_universe_result' if previous['uid'] in present_units else 'native_unit_not_reported_in_population' if captured else 'native_source_period_not_captured'
             report['missing_baseline_keys'].append(dict(key,cause=cause,baseline_status=previous['status'],baseline_value_fraction=previous['value_fraction']))
     report['status']='different' if report['differences'] or any(r['cause']=='missing_universe_result' or r['baseline_value_fraction'] is not None for r in report['missing_baseline_keys']) else 'exact_on_native_overlap'
+    if old.get('stage')=='coverage-and-aggregation':
+        report['aggregate_projection']=_compare_aggregates(root,manifest,oldroot)
+        if report['aggregate_projection']['differences']:report['status']='different'
+    else:report['aggregate_projection']={'status':'baseline_has_no_aggregate_stage'}
+    return report
+
+
+def _aggregate_signature(row,distribution=None):
+    """Normalize representation, never drop contributor identities or flags."""
+    result={k:row.get(k) for k in ('status','numerator_fraction','denominator_fraction','value_fraction')}
+    result['eligible_units']=sorted('|'.join([*unit,row['period']]) if isinstance(unit,list) else unit
+                                    for unit in row['lists']['eligible_units'])
+    result['eligible_unit_count']=row['counts']['eligible_units']
+    result['flags']=row['flags']
+    if distribution is not None:
+        result.update({k:distribution.get(k) for k in ('q1_fraction','median_fraction','q3_fraction','iqr_fraction')},distribution_n=distribution['n'])
+    return result
+
+
+def _compare_aggregates(root,manifest,oldroot):
+    """Public, bounded projection of principal127 onto identical native keys.
+
+    Old company relations select the intersection, never supply new numerical
+    values. New native reductions independently reconstruct economic sums and
+    quantiles. Stored legacy tables are also checked against their full legacy
+    coverage. Associated capital financial AT uses the dated population matrix
+    as an explicit relation, and is never called own prudential assets.
+    """
+    import sqlite3
+    import tempfile
+    from itertools import groupby
+    def groupkey(row,segment=False):
+        return canonical([row[k] for k in ('period','dataset','metric','horizon')]+([row['field'],row['category_state'],row['category']] if segment else []))
+    report=dict(status='exact_on_identical_native_intersection',aggregate_groups_compared=0,segment_groups_compared=0,
+        differences=[],excluded_nominal_relations=[],associated_financial_coverage=[],
+        scope='principal127 native intersection only; complementary observations are not adopted',
+        coverage_scope='own perspective assets and nominal company populations are separately defined; ten-metric legacy joint coverage is not universe eligibility',groups=[])
+    _,population=math._authenticate(manifest['config']['population'])
+    matrices={m['period']:{r['company_id']:r for r in m['company_rows']} for m in population['matrices']}
+    with tempfile.TemporaryDirectory(prefix='ifdata-aggregate-projection-') as temporary,closing(sqlite3.connect(str(Path(temporary)/'projection.sqlite'))) as db:
+        db.execute('create table records (table_name text,period text,dataset text,payload text)')
+        for table in ('company_coverage','aggregates','distributions','segment_coverage'):
+            with closing(math._iter_json_array(oldroot/(table+'.json'))) as stream:
+                for row in stream:
+                    if row.get('block')=='principal' and row['period'] in manifest['periods']:
+                        db.execute('insert into records values (?,?,?,?)',(table,row['period'],row['dataset'],canonical(row)))
+        db.execute('create index scope on records (period,dataset,table_name)');db.commit()
+        windows=_coverage_windows(root,manifest,population)
+        for period,batches in groupby(windows,lambda rows:rows[0]['period']):
+            native={};assets={}
+            for rows in batches:
+                dataset=rows[0]['dataset']
+                expected={ (r['code'],r['metric'],r['horizon']) for (payload,) in db.execute("select payload from records where period=? and dataset=? and table_name='company_coverage'",(period,dataset)) for r in [json.loads(payload)] }
+                native[dataset]={(r['code'],r['metric'],r['horizon']):r for r in rows if r.get('unit_id') and (r['code'],r['metric'],r['horizon']) in expected}
+                if dataset=='financial':
+                    assets={r['code']:dict(asset_fraction=r['asset_fraction'],asset_status=r['asset_status'],target_cadastro=r['target_cadastro']) for r in rows if r.get('unit_id')}
+            for dataset,newrows in sorted(native.items()):
+                oldrows=[json.loads(payload) for (payload,) in db.execute("select payload from records where period=? and dataset=? and table_name='company_coverage'",(period,dataset))]
+                if not oldrows:continue
+                full=math.aggregate_results([json.loads(payload) for (payload,) in db.execute("select payload from records where period=? and table_name='company_coverage'",(period,))])
+                # Authenticate economic consistency of the stored127 aggregates,
+                # including nominal rows outside the new native population.
+                for table in ('aggregates','distributions','segment_coverage'):
+                    rebuilt={groupkey(r,table=='segment_coverage'):r for r in full[table] if r['dataset']==dataset}
+                    stored={groupkey(r,table=='segment_coverage'):r for (payload,) in db.execute('select payload from records where period=? and dataset=? and table_name=?',(period,dataset,table)) for r in [json.loads(payload)]}
+                    for key in sorted(set(rebuilt)|set(stored)):
+                        if rebuilt.get(key)!=stored.get(key):report['differences'].append(dict(scope='stored_legacy_'+table,key=key,cause='stored_table_disagrees_with_legacy_coverage'))
+                selected=[];related={}
+                for oldrow in oldrows:
+                    key=(oldrow['code'],oldrow['metric'],oldrow['horizon']);new=newrows.get(key)
+                    if new is None or oldrow.get('result_id') is None:
+                        report['excluded_nominal_relations'].append({k:oldrow.get(k) for k in ('company','period','dataset','code','metric','horizon','status')})
+                        continue
+                    selected.append(oldrow);related.setdefault(key,[]).append(oldrow)
+                oldprojection=math.aggregate_results(selected)
+                projected=[dict(newrows[key],companies=sorted({r['company'] for r in relations})) for key,relations in sorted(related.items())]
+                newprojection=aggregate_unit_results(projected)
+                olddistributions={groupkey(r):r for r in oldprojection['distributions']}
+                newdistributions={groupkey(r):r for r in newprojection['distributions'] if r['cohort']=='total'}
+                for table in ('aggregates','segment_coverage'):
+                    segment=table=='segment_coverage'
+                    left={groupkey(r,segment):r for r in oldprojection[table]}
+                    right={groupkey(r,segment):r for r in newprojection[table] if r['cohort']=='total'}
+                    for key in sorted(set(left)|set(right)):
+                        a,b=left.get(key),right.get(key)
+                        ac=_aggregate_signature(a,a['distribution'] if segment else olddistributions[key]) if a else None
+                        bc=_aggregate_signature(b,b['distribution'] if segment else newdistributions[key]) if b else None
+                        if ac!=bc:report['differences'].append(dict(scope=table,key=key,baseline=ac,universe=bc))
+                        report['segment_groups_compared' if segment else 'aggregate_groups_compared']+=1
+                        report['groups'].append(dict(table=table,key=key,baseline_core_sha256=hashlib.sha256(canonical(ac).encode()).hexdigest(),universe_core_sha256=hashlib.sha256(canonical(bc).encode()).hexdigest()))
+                # Actual company relations only: independently source their AT
+                # from new financial units, behind the dated native matrix.
+                associated=[];unproved=[]
+                for oldrow in selected:
+                    new=newrows[(oldrow['code'],oldrow['metric'],oldrow['horizon'])]
+                    relation=matrices[period].get(oldrow['company'],{})
+                    financial=relation.get('financial_target')
+                    approved=(financial==oldrow.get('financial_unit_key',[None,None,None])[2] if oldrow.get('financial_unit_key') else False)
+                    if dataset=='capital':approved=approved and relation.get('prudential_target')==oldrow['code'] and relation.get('prudential_state')=='agreed_dated_bridge'
+                    else:approved=approved and financial==oldrow['code']
+                    asset=assets.get(financial) if approved else None
+                    if asset is None:
+                        unproved.append(dict(company=oldrow['company'],code=oldrow['code'],metric=oldrow['metric'],horizon=oldrow['horizon'],reason='associated_financial_source_or_dated_relation_unavailable'));continue
+                    relatedrow=dict(oldrow,**{k:new.get(k) for k in ('status','applicability','numerator_fraction','denominator_fraction','value_fraction','flags')},
+                        target_cadastro={k:v for k,v in (new.get('target_cadastro') or {}).items() if k in ('Data',*AXES)},
+                        asset_fraction=asset['asset_fraction'],asset_status=asset['asset_status'])
+                    associated.append(relatedrow)
+                eligible_relations={(r['company'],r['metric'],r['horizon']) for r in associated}
+                original=math.aggregate_results([r for r in selected if (r['company'],r['metric'],r['horizon']) in eligible_relations])
+                comparison=math.aggregate_results(associated)
+                for table in ('aggregates','segment_coverage'):
+                    segment=table=='segment_coverage';a={groupkey(r,segment):r for r in original[table]};b={groupkey(r,segment):r for r in comparison[table]}
+                    for key in sorted(set(a)|set(b)):
+                        ac=a[key]['asset_coverage'] if key in a else None;bc=b[key]['asset_coverage'] if key in b else None
+                        if ac!=bc:report['differences'].append(dict(scope='associated_financial_coverage_'+table,key=key,baseline=ac,universe=bc))
+                report['associated_financial_coverage'].append(dict(period=period,dataset=dataset,
+                    reference='explicit_dated_native_relation_to_financial_AT_not_own_capital_AT',
+                    compared_relations=len(associated),unproved=unproved,scope='same_proved_relation_intersection'))
+    if report['differences']:report['status']='different'
     return report
 
 

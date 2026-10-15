@@ -968,7 +968,7 @@ class UniverseTests(PackageTests):
         self.assertEqual(cj['status'],'zero_denominator')
         cp=next(r for r in rows if r['metric']=='C3')
         self.assertEqual(cp['applicability'],'applicable')
-        self.assertEqual(ma['stage'],'unit-calculations')
+        self.assertEqual(ma['stage'],'coverage-and-aggregation')
         for item in ma['files']:self.assertEqual((a/item['file']).read_bytes(),(b/item['file']).read_bytes())
         self.api.verify_universe_analysis(a,self.digest(a/'manifest.json'))
         with self.assertRaises(FileExistsError):self.api.build_universe_analysis(cfg,a)
@@ -1079,7 +1079,7 @@ class UniverseReviewFixTests(unittest.TestCase):
         from bank_quality import ifdata_universe_analysis as u
         self.u=u
         cfg=self.universe_fixture();out=self.root/'control'
-        self.manifest=u.build(cfg,out,batch_size=2)
+        self.manifest=u.build(cfg,out,batch_size=2,stage='unit-calculations')
         self.rows={t:list(self.api._iter_json_array(out/(t+'.json'))) for t in u.TABLES}
         self.assertEqual(u.verify(out,self.digest(out/'manifest.json'))['tables']['results'],38)
         return out
@@ -1175,6 +1175,199 @@ class UniverseReviewFixTests(unittest.TestCase):
                     company=unit['companies'].pop();links[:]=[r for r in links if not (r['unit_id']==unit['unit_id'] and r['company_id']==company)]
             out=self.rewritten(case,change)
             with self.subTest(case=case),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+
+from fractions import Fraction
+
+
+class UniverseAggregationTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis as api
+        self.api=api
+
+    def row(self,code,n,d,membership='sample',**extra):
+        f=self.api._fraction_field
+        return dict(id=code,unit_id=code,unit_key=['financial','2',code],code=code,dataset='financial',
+            period='202412',metric='C1',horizon='point',membership=membership,companies=['issuer-A'] if membership=='sample' else [],
+            status='ok',applicability='applicable',numerator_fraction=f(Fraction(n)),denominator_fraction=f(Fraction(d)),
+            value_fraction=f(Fraction(n,d)) if d else None,flags=[],asset_fraction=f(Fraction(d)),asset_status='ok',
+            target_cadastro={'Data':'202412',**{k:None for k in ('Tcb','Td','Tc','Sr','Atividade','SegmentoTb')}},**extra)
+
+    def reduce(self,rows):
+        self.assertTrue(callable(getattr(self.api,'aggregate_unit_results',None)),'Missing native-unit aggregate API')
+        return self.api.aggregate_unit_results(rows)
+
+    def test_ratio_of_sums_unknown_reconciliation_and_nominal_companies(self):
+        rows=[self.row('A',1,100),self.row('B',18,900,'remaining'),self.row('C',3,30,'unknown')]
+        rows[0]['companies']=['issuer-A','issuer-B']
+        missing=dict(rows[0],id='missing',unit_id=None,unit_key=None,code=None,companies=['issuer-C'],
+            status='missing_native_unit',value_fraction=None,numerator_fraction=None,denominator_fraction=None,asset_fraction=None)
+        out=self.reduce(rows+[missing]);a={r['cohort']:r for r in out['aggregates']}
+        self.assertEqual(a['total']['numerator_fraction'],self.api._fraction_field(Fraction(22)))
+        self.assertEqual(a['total']['denominator_fraction'],self.api._fraction_field(Fraction(1030)))
+        self.assertEqual(a['total']['counts']['expected_units'],3)
+        self.assertEqual(a['sample']['counts']['expected_companies'],3)
+        self.assertEqual(a['sample']['lists']['missing_companies'],['issuer-C'])
+        self.assertEqual(a['sample']['asset_coverage'].get('unknown_companies'),['issuer-C'])
+        self.assertIsNone(a['sample']['asset_coverage']['share_of_total_fraction'])
+        self.assertEqual(a['total']['asset_coverage']['known_asset_fraction'],self.api._fraction_field(Fraction(1030)))
+        two=self.reduce(rows[:2]);total=next(r for r in two['aggregates'] if r['cohort']=='total')
+        self.assertEqual(total['value_fraction'],self.api._fraction_field(Fraction(19,1000)))
+        self.assertNotEqual(total['value_fraction'],self.api._fraction_field(Fraction(15,1000)))
+        self.assertTrue(all(r['reconciliation']['status']=='exact' for r in out['cohort_comparisons']))
+
+    def test_signed_denominator_empty_and_duplicate_contributor_guard(self):
+        rows=[self.row('A',1,10),self.row('B',2,-10,'unknown')]
+        a=next(r for r in self.reduce(rows)['aggregates'] if r['cohort']=='total')
+        self.assertEqual(a['status'],'zero_denominator');self.assertIn('non_convex_denominator_weights',a['flags'])
+        empty=next(r for r in self.reduce(rows)['aggregates'] if r['cohort']=='remaining')
+        self.assertEqual(empty['status'],'no_eligible_units')
+        with self.assertRaisesRegex(ValueError,'Duplicate'):self.reduce(rows+[deepcopy(rows[0])])
+        rows[0]['value_fraction']=self.api._fraction_field(Fraction(999))
+        with self.assertRaisesRegex(ValueError,'fraction'):self.reduce(rows)
+
+    def test_nominal_unknown_and_native_limits_survive_without_proof_invention(self):
+        row=self.row('A',1,100,limits=['native_accounting_question_only'])
+        row.update(applicability='not_applicable')
+        a=next(r for r in self.reduce([row])['aggregates'] if r['cohort']=='total')
+        self.assertEqual(a['lists']['not_applicable_units'],[])
+        self.assertEqual(a['lists']['unknown_units'],['A'])
+        self.assertEqual(a['limits'],['native_accounting_question_only'])
+        row['applicability_evidence']={'source':'dated proof'}
+        a=next(r for r in self.reduce([row])['aggregates'] if r['cohort']=='total')
+        self.assertEqual(a['lists']['not_applicable_units'],['A'])
+        # Even distinct codes cannot collide under one opaque native unit ID.
+        other=self.row('B',1,100);other['unit_id']='A'
+        with self.assertRaisesRegex(ValueError,'Duplicate'):self.reduce([row,other])
+
+    def test_all_axes_typed_literal_categories_and_own_date(self):
+        rows=[self.row(str(i),i+1,100,'remaining') for i in range(6)]
+        for row,value in zip(rows,[None,'','historical',1,'1','conflict']):
+            row['target_cadastro']={'Data':'202412',**{k:value for k in ('Tcb','Td','Tc','Sr','Atividade','SegmentoTb')}}
+        rows[-1]['classification_states']={k:'conflict' for k in ('Tcb','Td','Tc','Sr','Atividade','SegmentoTb')}
+        rows.append(dict(self.row('missing',1,100,'unknown'),target_cadastro={'Data':'202409','Sr':'current'}))
+        out=self.reduce(rows)
+        for field in ('Tcb','Td','Tc','Sr','Atividade','SegmentoTb'):
+            segments=[r for r in out['segment_coverage'] if r['field']==field and r['cohort']=='total']
+            self.assertEqual(len(segments),7)
+            self.assertEqual({r['category_state'] for r in segments},{'null','empty','value','conflict','missing_dated_cadastro'})
+            self.assertFalse(any(r['category']=='current' for r in segments))
+
+    def test_distribution_type2_and_capital_does_not_borrow_assets(self):
+        rows=[self.row(str(i),i,1,'unknown') for i in range(1,5)]
+        for r in rows:r.update(dataset='capital',unit_key=['capital','1',r['code']],asset_fraction=None,asset_status='own_assets_unavailable')
+        out=self.reduce(rows);d=next(r for r in out['distributions'] if r['cohort']=='total')
+        self.assertEqual(d['median_fraction'],self.api._fraction_field(Fraction(5,2)))
+        a=next(r for r in out['aggregates'] if r['cohort']=='total')
+        self.assertIsNone(a['asset_coverage']['share_of_total_fraction'])
+        self.assertEqual(a['overlap']['status'],'prudential_overlap_unproven')
+
+    def test_aggregate_projection_compares_native_identity_not_only_equal_values(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.assertTrue(hasattr(u,'_aggregate_signature'),'Missing nominal aggregate signature')
+        old=dict(period='202412',status='ok',numerator_fraction={'numerator':'1','denominator':'1'},
+            denominator_fraction={'numerator':'100','denominator':'1'},value_fraction={'numerator':'1','denominator':'100'},
+            counts={'eligible_units':1},lists={'eligible_units':[['financial','2','A']]},flags=[])
+        new=dict(old,lists={'eligible_units':['financial|2|A|202412']})
+        self.assertEqual(u._aggregate_signature(old),u._aggregate_signature(new))
+        new['lists']={'eligible_units':['financial|2|B|202412']}
+        self.assertNotEqual(u._aggregate_signature(old),u._aggregate_signature(new))
+        new=dict(old,flags=['non_convex_denominator_weights'])
+        self.assertNotEqual(u._aggregate_signature(old),u._aggregate_signature(new))
+
+
+class UniverseFinalPackageTests(UniverseTests):
+    def test_public_legacy_projection_compares_aggregates_segments_and_nominal_exclusions(self):
+        cfg=self.universe_fixture();out=self.root/'final';self.api.build_universe_analysis(cfg,out)
+        pop=json.loads((Path(cfg['population']['root'])/'manifest.json').read_text())
+        old=dict(periods=['202412'],profile_expected_sha256=self.digest(self.api.PROFILE_PATH),
+            inputs={k:v for k,v in pop['config']['inputs'].items() if k!='individual'})
+        baseline=self.root/'legacy';self.api.build_analysis(old,baseline)
+        report=self.api.compare_universe_analysis(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        self.assertIn('aggregate_projection',report)
+        projection=report['aggregate_projection']
+        self.assertEqual(projection['status'],'exact_on_identical_native_intersection')
+        self.assertGreater(projection['aggregate_groups_compared'],0)
+        self.assertGreater(projection['segment_groups_compared'],0)
+        self.assertTrue(projection['excluded_nominal_relations'])
+        # A coherently repinned legacy aggregate is still not allowed to
+        # contradict the source company/unit projection.
+        tables={t:list(self.api._iter_json_array(baseline/(t+'.json'))) for t in self.api.ANALYSIS_TABLES}
+        next(r for r in tables['aggregates'] if r['block']=='principal')['numerator_fraction']={'numerator':'999','denominator':'1'}
+        m=json.loads((baseline/'manifest.json').read_text());m['files']=self.api._write_tables(baseline,tables)
+        (baseline/'manifest.json').write_text(json.dumps(m),encoding='utf-8')
+        report=self.api.compare_universe_analysis(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        self.assertEqual(report['status'],'different')
+        self.assertTrue(report['aggregate_projection']['differences'])
+
+    def test_final_default_has_nine_tables_nominal_matrix_and_replay_payload(self):
+        cfg=self.universe_fixture();a=self.root/'final-a';b=self.root/'final-b'
+        m=self.api.build_universe_analysis(cfg,a,batch_size=1)
+        self.assertEqual(m['stage'],'coverage-and-aggregation')
+        self.assertEqual(len(m['tables']),9)
+        n=self.api.build_universe_analysis(cfg,b,batch_size=3)
+        self.assertEqual(m['logical_payload_sha256'],n['logical_payload_sha256'])
+        self.assertNotEqual(m['producer']['started_utc'],n['producer']['started_utc'])
+        self.assertEqual(m['producer']['source_sha256'],n['producer']['source_sha256'])
+        for entry in m['files']:self.assertEqual((a/entry['file']).read_bytes(),(b/entry['file']).read_bytes())
+        rows=json.loads((a/'aggregates.json').read_text())
+        selected=[r for r in rows if r['cohort']=='sample']
+        self.assertTrue(all(r['counts']['expected_companies']==24 for r in selected))
+        self.assertTrue(any(r['counts']['missing_companies'] for r in selected))
+        self.api.verify_universe_analysis(a,self.digest(a/'manifest.json'))
+        unit=self.root/'unit';old=self.api.build_universe_analysis(cfg,unit,stage='unit-calculations')
+        self.assertEqual(len(old['tables']),4)
+        self.api.verify_universe_analysis(unit,self.digest(unit/'manifest.json'))
+
+    def test_coherently_rewritten_derived_omission_and_fraction_are_rejected(self):
+        from bank_quality.ifdata_universe_analysis import Writer
+        from contextlib import ExitStack
+        import duckdb
+        cfg=self.universe_fixture();out=self.root/'final';m=self.api.build_universe_analysis(cfg,out)
+        self.assertEqual(m['stage'],'coverage-and-aggregation')
+        originals={table:list(self.api._iter_json_array(out/(table+'.json'))) for table in ('aggregates','unit_coverage','cohort_comparisons')}
+        for table,case in [('aggregates','omission'),('aggregates','fraction'),('unit_coverage','reference'),('cohort_comparisons','reference')]:
+            rows=deepcopy(originals[table])
+            if case=='omission':rows.pop()
+            elif case=='fraction':rows[0]['numerator_fraction']={'numerator':'999','denominator':'1'}
+            elif table=='unit_coverage':rows[0]['result_id']='unproved'
+            else:rows[0]['left_aggregate_id']='unproved'
+            with ExitStack() as stack,duckdb.connect() as con:
+                writer=Writer(out,table,stack)
+                for row in rows:writer.append(row)
+                files=writer.finish(con)
+            altered=deepcopy(m);altered['tables'][table]=len(rows)
+            altered['files']=[e for e in m['files'] if not e['file'].startswith(table+'.')]+files
+            from bank_quality.ifdata_universe_analysis import logical_payload_sha256
+            altered['logical_payload_sha256']=logical_payload_sha256(altered)
+            (out/'manifest.json').write_text(json.dumps(altered),encoding='utf-8')
+            with self.subTest(table=table,case=case),self.assertRaisesRegex(ValueError,'Derived'):
+                self.api.verify_universe_analysis(out,self.digest(out/'manifest.json'))
+            with ExitStack() as stack,duckdb.connect() as con:
+                writer=Writer(out,table,stack)
+                for row in originals[table]:writer.append(row)
+                writer.finish(con)
+
+    def test_changed_producer_source_cannot_receive_manifest(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();out=self.root/'changed'
+        self.assertTrue(hasattr(u,'_check_producer'),'Missing automatic source stability guard')
+        # The real checker checks raw bytes; a temporary file proves causality
+        # without touching a shared production module during the test.
+        source=self.root/'producer.py';source.write_text('first')
+        stamp={'source_sha256':{str(source):self.digest(source)}}
+        u._check_producer(stamp);source.write_text('changed')
+        with self.assertRaisesRegex(ValueError,'Producer source'):u._check_producer(stamp)
+        with patch.object(u,'_check_producer',side_effect=ValueError('Producer source changed')):
+            with self.assertRaisesRegex(ValueError,'Producer source'):self.api.build_universe_analysis(cfg,out)
+        self.assertFalse((out/'manifest.json').exists())
+
+
+# Reuse only setup/build-fixture helpers; do not repeat the inherited suites.
+for _name in dir(UniverseTests):
+    if _name.startswith('test_') and _name not in UniverseFinalPackageTests.__dict__:
+        setattr(UniverseFinalPackageTests,_name,None)
+
 
 if __name__ == '__main__':
     unittest.main()

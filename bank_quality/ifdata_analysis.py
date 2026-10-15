@@ -1226,9 +1226,9 @@ def load_universe_profile(profile_id='universe-2010-2024',expected_sha256=None):
     from .ifdata_universe_analysis import load_profile
     return load_profile(profile_id,expected_sha256)
 
-def build_universe_analysis(config,output,*,batch_size=32):
+def build_universe_analysis(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
     from .ifdata_universe_analysis import build
-    return build(config,output,batch_size=batch_size)
+    return build(config,output,batch_size=batch_size,stage=stage)
 
 def prepare_universe_opening(raw_root,output,profile_id,profile_expected_sha256):
     from .ifdata_universe_analysis import prepare_opening
@@ -1250,3 +1250,8 @@ def compare_universe_analysis(output,expected_manifest_sha256,baseline,baseline_
 def query_universe_analysis(output,expected_manifest_sha256,sql):
     from .ifdata_universe_analysis import query
     return query(output,expected_manifest_sha256,sql)
+
+
+def aggregate_unit_results(rows):
+    from .ifdata_universe_analysis import aggregate_unit_results as aggregate
+    return aggregate(rows)
