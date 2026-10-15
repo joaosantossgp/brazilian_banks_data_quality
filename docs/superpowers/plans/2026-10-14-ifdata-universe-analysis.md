@@ -117,9 +117,9 @@ Conforme a simplificação da spec e a solicitação de João, os itens históri
 - [x] Finalizar uma vez o principal em destino novo: nove tabelas e27payloads, manifest externo `b61c30ee0ac3e1a0d4dadb4ae85ecc3a54dc9e6b23f23aeade51c3de8db6f192`. Geração não equivale a aceite semântico final.
 - [x] Implementar e revisar candidato privado de consulta somente das tabelas referenciadas e reprodução lógica12+5; nove testes pertinentes PASS. Transferência dos mesmos bytes aguarda término e guardas do principal.
 - [x] Concluir comparação pública127 com verificação integral do principal, reconciliação das representações e rederivação dos cinco derivados.16.482resultados e17.884grupos equivalentes sem diferenças;168ausências nativas explícitas, nenhum valor calculado perdido. Transferência byte-exata do candidato revisado após guards terminais concluída; sem outra verificação isolada equivalente.
-- [ ] Executar comparador público de replay dos doze arquivos unitários e cinco CSVs completos da outra origem; capturar recibo real. Prova preliminar dos CSVs não substitui recibo nem demonstra persistência dos Parquets do replay.
-- [ ] Demonstrar consulta real limitada a uma tabela aceita, com tempo medido.
-- [ ] Concluir oracle financeiro independente de agregados, quantis, cobertura e segmentações, aproveitando os87resultados unitários já conferidos.
+- [x] Executar comparador público de replay dos doze arquivos unitários e cinco CSVs completos da outra origem; recibo real `equal`,57,672s, sem comprovar persistência dos Parquets do replay.
+- [x] Demonstrar consulta real limitada a uma tabela aceita:6.240agregados em10,015s, uma chamada sem repetir conferência integral.
+- [x] Concluir oracle financeiro independente de agregados, quantis, cobertura e segmentações, aproveitando os87resultados unitários já conferidos:36grupos/144coortes/36partições,1.704resumos nas duas datas e três perspectivas, zero achados materiais. Escopo e ausências nominais no ledger; não chamar recorte de auditoria manual de toda a história.
 - [ ] Concluir documentação, revisão da composição/SHA, checks, PR, integração, CI pós-merge, ancestralidade e atualização130/mapa2.
 
 Mesmos paths e responsáveis. Sem segundo pacote físico ou novas tentativas de paralelismo por conveniência. Achado material exige correção e revalidação do recorte afetado; não repetir verificações satisfeitas sem motivo novo.
