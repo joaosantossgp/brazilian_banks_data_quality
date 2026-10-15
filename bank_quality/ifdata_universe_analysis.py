@@ -268,8 +268,10 @@ class Writer:
     def finish(self,conn):
         self.js.write('\n]\n' if self.count else ']\n');self.js.close();self.cs.close()
         columns='{'+','.join("'"+k+"':'VARCHAR'" for k in math.TABLE_COLUMNS)+'}'
+        # The parallel scanner releases buffers on large escaped CSV streams;
+        # the configured single thread and insertion-order preservation remain.
         conn.execute('copy (select * from read_csv($source,header=true,auto_detect=false,columns='+columns+
-            ",delim=',',quote='\"',escape='\"',nullstr='',allow_quoted_nulls=false,parallel=false,max_line_size=$limit)) "+
+            ",delim=',',quote='\"',escape='\"',nullstr='',allow_quoted_nulls=false,parallel=true,max_line_size=$limit)) "+
             'to $destination (format parquet,compression zstd,row_group_size 2048)',
             dict(source=str(self.output/(self.table+'.csv')),limit=str(self.max_line),destination=str(self.output/(self.table+'.parquet'))))
         return [dict(file=self.table+'.'+ext,sha256=math._digest_file(self.output/(self.table+'.'+ext)),rows=self.count) for ext in ('json','csv','parquet')]

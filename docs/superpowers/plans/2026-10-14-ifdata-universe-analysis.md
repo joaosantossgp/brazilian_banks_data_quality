@@ -107,11 +107,13 @@ Fatia2 aceita no commit `49eb70dc10d15908ca703502ae25c5db21274f8e`, após corre�
 - [x] Testar cada eixo Tcb/Td/Tc/Sr/Atividade/SegmentoTb com categoria histórica, null, sem cadastro e conflito; Situacao diagnóstico e Uf/Municipio apenas sede.
 - [x] Implementar recortes a partir do mesmo resultado unitário, sem recalcular ou duplicar unidade por companhia. Total inclui a amostra; comparar dentro de cada perspectiva e categoria compatível.
 - [x] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
-- [ ] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
+- [x] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
 
 ## Fatia 4 — execução completa e entrega
 
 **Paths:** ledger/spec/plano/metodologia/arquitetura conforme resultado, sem ampliar código sem correção causal. **Dependência:** fatias anteriores aceitas e inputs/destinos/pins confirmados.
+
+**Checkpoint15/10:** primeira execução integral sem aceite por OOM na finalização CSV→Parquet; replay interrompido e parciais preservados. Correção causal permitida somente em `Writer.finish`/teste adjacente, mantendo memória, ordem e uma thread. Antes de novo full/replay: prova dos CSVs completos de componentes/resultados, hashes reconstruídos por streaming, suíte pertinente e revisão independente. Não criar API de recuperação de checkpoints. O [ledger](../../engineering/ifdata-universe-analysis-20261014.md) registra diagnóstico, motivo e custo dessa decisão; os gates abaixo permanecem abertos.
 
 - [ ] Capturar pins pré-execução e congelar código/perfil; executar 60 trimestres por perspectiva disponível, com horizontes válidos e limites temporais próprios.
 - [ ] Publicar tabelas de contagens/nomes/motivos, cobertura/participação da amostra e reconciliação total/amostra/restante/desconhecido. Não certificar universo SFN exaustivo pelo nome do arquivo.

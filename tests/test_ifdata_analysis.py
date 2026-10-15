@@ -1035,6 +1035,45 @@ for _name in list(PackageTests.__dict__):
     if _name.startswith('test_') and _name not in UniverseTests.__dict__:
         setattr(UniverseTests,_name,None)
 
+class UniverseWriterMemoryTests(unittest.TestCase):
+    def test_large_escaped_csv_is_bounded_lossless_ordered_and_deterministic(self):
+        import io
+        import duckdb
+        from contextlib import ExitStack
+        from bank_quality import ifdata_universe_analysis as universe
+        from bank_quality import ifdata_analysis as analysis
+        parquet_pins=[]
+        with tempfile.TemporaryDirectory() as temporary:
+            for replay in range(2):
+                output=Path(temporary)/str(replay);output.mkdir()
+                with ExitStack() as stack,duckdb.connect(config={'memory_limit':'128MiB','threads':1}) as con:
+                    if replay:
+                        con.execute('create view prior_native as select * from range(100000)')
+                        con.execute('select sum(range) from prior_native').fetchone()
+                    self.assertTrue(con.execute("select current_setting('preserve_insertion_order')").fetchone()[0])
+                    writer=universe.Writer(output,'results',stack)
+                    for index in range(150000):
+                        writer.append(dict(id=str(index),period='202412',metric=None if index%3==0 else '',
+                            horizon='point',dataset='financial',code=str(index),status='ok',
+                            text='á"x\r\n'+str(index)+'z'*1200))
+                    files=writer.finish(con)
+                    self.assertTrue(all(entry['rows']==150000 for entry in files))
+                    digest=hashlib.sha256();buffer=io.StringIO(newline='')
+                    csv_writer=csv.writer(buffer,quoting=csv.QUOTE_NOTNULL)
+                    csv_writer.writerow(analysis.TABLE_COLUMNS)
+                    cursor=con.execute('select * from read_parquet(?)',[str(output/'results.parquet')])
+                    count=0
+                    for batch in iter(lambda:cursor.fetchmany(256),[]):
+                        for row in batch:
+                            self.assertEqual(row[0],str(count));count+=1
+                            csv_writer.writerow(row)
+                        digest.update(buffer.getvalue().encode('utf-8'));buffer.seek(0);buffer.truncate(0)
+                    self.assertEqual(count,150000)
+                    self.assertEqual(digest.hexdigest(),analysis._digest_file(output/'results.csv'))
+                    parquet_pins.append(analysis._digest_file(output/'results.parquet'))
+        self.assertEqual(parquet_pins[0],parquet_pins[1])
+
+
 class UniverseNormalizationTests(unittest.TestCase):
     def test_normalization_preserves_ambiguous_and_null_native_tokens(self):
         from bank_quality.ifdata_universe_analysis import _compact_component,_expand_component,load_profile
