@@ -12,6 +12,8 @@
 
 ## Estado e restrições globais
 
+**Execução autorizada em 14/10/2026:** Goal ativo e branch `codex/ifdata-universe-analysis-20261014`, base `d33d4fd762bf11dcef2b8746e99235956f3c7fb0`, após integração do planejamento PR131 e CI pós-merge bem-sucedido. A Issue130 confirma os doze paths vigentes abaixo, incluindo o ajuste técnico da fatia2. Fatias0/1 revisadas e concluídas; fatia2 em implementação. Estados iniciais de planejamento neste documento são checkpoints históricos. Priorizar regras, comparação e replay em código versionado, conforme requisito de João incorporado à spec; os scripts privados de diagnóstico não serão o mecanismo único de reprodução.
+
 Planejamento em 14/10/2026, base `3c983b0fbabd3cbe03ecbd3c5f5f98b7c4a41d9b`. Nenhum novo cálculo/código implementado por este plano. João aprovou universo completo incluindo a amostra, financeiro principal e prudencial/individual separados. Fórmulas, núcleo 2010–2024, precisão e ausência seguem a spec 127. Sem coleta financeira nova, alterações globais, índice/ranking ou pesquisa bibliográfica integral repetida.
 
 Root é executor/integrador; cada fatia tem reviewer independente somente leitura. Achado material bloqueia ampliação até correção/revalidação. Execução futura registra branch/base, pins, allowlist e destinos antes de escrever. A seleção técnica dos lotes não muda a população acadêmica. Não afirmar prontidão de bindings individuais ou abertura só pela existência do arquivo.
@@ -24,6 +26,7 @@ Allowlist proposta da execução, a reconfirmar no contrato da Issue 130 antes d
 
 - Criar `bank_quality/ifdata_population.py` e `tests/test_ifdata_population.py`: população e pertencimento temporal, responsabilidade adjacente aos leitores.
 - Modificar `bank_quality/ifdata_analysis.py`, `scripts/analyze-ifdata.py`, `tests/test_ifdata_analysis.py`: novo build explícito, processamento limitado e saídas próprias, mantendo o legado.
+- Criar `bank_quality/ifdata_universe_analysis.py`: orquestração do contrato130, autenticação/admissão/I/O/verificação/comparação; reutiliza matemática127 via wrappers lazy no módulo legado. Ajuste técnico justificado e adicionado à Issue antes da criação, sem nova camada/dependência; allowlist total de doze paths.
 - Criar `bank_quality/ifdata-analysis-universe-profile-2010-2024.json`: bindings liberados e abertura do universo, sem modificar o perfil 127.
 - Atualizar `docs/architecture.md`, spec/plano e nota metodológica; criar `docs/engineering/ifdata-universe-analysis-20261014.md` como ledger de execução.
 
@@ -35,19 +38,19 @@ Protegidos: perfil e saídas 127, fontes/manifests aceitos, leitores/piloto, ben
 
 **Owner/paths:** Root, spec/plano/ledger/arquitetura; leitura de fontes aceitas. **Dependências:** #111/#113/#125/#127 integradas, plano revisado. **Saída:** inventário autenticado, definição executável da população e matriz de admissibilidade por perspectiva.
 
-- [ ] Conferir Issue real, base atual, quatro inputs de valores/cadastro/catálogo/amostra e seus hashes; registrar arquivo/contrato, cobertura temporal e chaves distintas por perspectiva. Ler somente snapshots existentes.
-- [ ] Identificar unidades, nulos e eventuais linhas agregadas com prova nativa; registrar quais categorias podem compor cada total sem sobreposição. Não filtrar Situacao por padrão.
-- [ ] Confrontar os contextos da perspectiva individual com catálogo/fonte; liberar só os comprovados, mantendo as métricas prudenciais em capital e estados desconhecidos explícitos.
-- [ ] Conferir abertura 200912 já capturada para financeiro e individual, sem estender a lista liberada 127. Importação/replay em destino novo somente se fonte e continuidade de unidade/contexto forem comprovadas.
-- [ ] Registrar medição de headroom e orçamento inicial por lote/janela; justificar a escala antes da execução completa.
-- [ ] Revisão independente de população, bindings, abertura, arquitetura e allowlist. Ausência de dado gera lacuna nominal, não coleta implícita nem certificação de cobertura.
+- [x] Conferir Issue real, base atual, quatro inputs de valores/cadastro/catálogo/amostra e seus hashes; registrar arquivo/contrato, cobertura temporal e chaves distintas por perspectiva. Ler somente snapshots existentes.
+- [x] Identificar unidades, nulos e eventuais linhas agregadas com prova nativa; registrar limites de certificação de cada total. Não filtrar Situacao por padrão. Co-presença prudencial não libera exclusão automática de membros nem total certificado livre de sobreposição.
+- [x] Confrontar os contextos da perspectiva individual com catálogo/fonte; liberar só os comprovados, mantendo as métricas prudenciais em capital e estados desconhecidos explícitos.
+- [x] Conferir abertura 200912 já capturada para financeiro e individual, sem estender a lista liberada 127. Importação/replay em destino novo somente se fonte e continuidade técnica de unidade/contexto forem comprovadas.
+- [x] Registrar medição inicial de headroom e orçamento de512MiB/uma thread para queries de preflight; medir novamente antes de ampliar escala.
+- [x] Revisão independente focal de população, bindings, abertura, organização e allowlist; correção de pertencimento e re-review concluídos. Ausência de dado gera lacuna nominal, não coleta implícita nem certificação de cobertura. Implementação, importação e cálculos mantêm gates próprios.
 
 ## Fatia 1 — população e três recortes
 
 **Paths:** novo módulo/teste de população; ledger/arquitetura. **Consome:** pares root/hash dos inputs. **Produz:** `build_population(config, output)` e `open_population(output, expected_manifest_sha256)`, tabelas unit_periods/membership_links com schema da spec. **Dependência:** fatia 0 revisada.
 
-- [ ] Escrever RED para identidade `(dataset, TipoInstituicao, CodInst, period)`, duplicata, fonte adulterada, código nulo e agregado nativo não liberado.
-- [ ] Escrever o caso abaixo como teste de pertencimento, sem fabricar CNPJ de instituição não listada:
+- [x] Escrever RED para identidade `(dataset, TipoInstituicao, CodInst, period)`, duplicata, fonte adulterada, código nulo e agregado nativo não liberado.
+- [x] Escrever o caso abaixo como teste de pertencimento, sem fabricar CNPJ de instituição não listada:
 
 ```python
 # Fixture: duas companhias mapeiam para A; B não pertence à seleção;
@@ -71,9 +74,9 @@ assert not (sample_units & remaining_units)
 assert total_units == sample_units | remaining_units | unknown_membership_units
 ```
 
-- [ ] Testar vínculo prudencial muitos-financeiros/uma-unidade, vínculo individual comprovado versus código coincidente, ausência de um emissor da amostra no trimestre e classificação histórica null/conflitante.
-- [ ] Implementar autenticação, seleção e tabelas sem restringir universo aos códigos da amostra; manifest por último e output exclusivo. Não atribuir vínculo atual ao passado.
-- [ ] GREEN focal, replay da população e revisão independente de chaves/pertencimento/cobertura antes do motor.
+- [x] Testar vínculo prudencial muitos-financeiros/uma-unidade, vínculo individual comprovado versus código coincidente, ausência de um emissor da amostra no trimestre e classificação histórica null/conflitante.
+- [x] Implementar autenticação, seleção e tabelas sem restringir universo aos códigos da amostra; manifest por último e output exclusivo. Não atribuir vínculo atual ao passado.
+- [x] GREEN focal, replay da população e revisão independente de chaves/pertencimento/cobertura antes do motor.
 
 Run focal planejado, cwd na branch de execução, usando Python do Primary:
 
@@ -83,30 +86,51 @@ Run focal planejado, cwd na branch de execução, usando Python do Primary:
 
 ## Fatia 2 — reaproveitar matemática e limitar memória
 
-**Paths:** módulo/testes de análise, CLI, novo perfil; ledger/arquitetura. **Consome:** população autenticada, contextos liberados e dependências temporais. **Produz:** `build_universe_analysis(config, output)` e subcomando `build-universe`; antigo build/verify/query preservado. **Dependência:** fatia 1 e liberações da fatia 0 revisadas.
+**Paths:** módulo adjacente `ifdata_universe_analysis.py`, wrappers no módulo/testes de análise existentes, CLI, novo perfil; ledger/arquitetura. **Consome:** população autenticada, contextos liberados e dependências temporais. **Produz:** `build_universe_analysis(config, output)` e subcomando `build-universe`; antigo build/verify/query preservado. **Dependência:** fatia 1 e liberações da fatia 0 revisadas. A nova fronteira evita misturar orquestração130 com matemática/contrato127; revisão confere ausência de cópia de fórmulas e preservação dos consumidores legados.
 
-- [ ] RED para rejeição de hash/perfil arbitrário, perspectiva errada, abertura não liberada, escrita em destino aceito e configuração legada que deve continuar válida.
-- [ ] Testar ausência sem reduzir população esperada, zero de denominador, reversão, definição de lucro incompatível, unidade sucessora e estoque de abertura faltante.
-- [ ] Reutilizar quarter_flow/flow_12_months/mean_stock/evaluate_metric; ampliar somente despacho de inputs e seleção finita de perfil. Não duplicar fórmulas ou forçar oito métricas financeiras no prudencial.
-- [ ] Processar uma janela e lotes de unidades; persistir componentes/resultados em ordem determinística, com frações exatas. Testar que dados lidos do lote anterior não vazam para o seguinte.
+- [x] RED para rejeição de hash/perfil arbitrário, perspectiva errada, abertura não liberada, escrita em destino aceito e configuração legada que deve continuar válida.
+- [x] Testar ausência sem reduzir população esperada, zero de denominador, reversão, definição de lucro incompatível, unidade sucessora e estoque de abertura faltante.
+- [x] Reutilizar quarter_flow/flow_12_months/mean_stock/evaluate_metric; ampliar somente despacho de inputs e seleção finita de perfil. Não duplicar fórmulas ou forçar oito métricas financeiras no prudencial.
+- [x] Processar uma janela e lotes de unidades; persistir componentes/resultados em ordem determinística, com frações exatas. Testar que dados lidos do lote anterior não vazam para o seguinte.
 - [ ] Comparar todas as linhas sobrepostas à amostra 127 sob os mesmos pins/perímetros, incluindo estados e dependências, sem arredondamento para obter igualdade.
-- [ ] Rodar lote delimitado com conglomerado, instituição fora da amostra, cooperativa e não bancária quando presentes nas fontes; medir memória/tempo e verificar todas as representações.
-- [ ] GREEN focal e revisão independente econômica/contábil antes de ampliar agregação.
+- [x] Rodar lote delimitado com conglomerado, instituição fora da amostra, cooperativa e não bancária quando presentes nas fontes; medir memória/tempo e verificar todas as representações.
+- [x] GREEN focal e revisão independente econômica/contábil antes de ampliar agregação.
+
+Fatia2 aceita no commit `49eb70dc10d15908ca703502ae25c5db21274f8e`, após correção e re-review dos quatro achados do verificador/comparador; detalhes e pins no ledger. Os três recortes reais têm814resultados comuns exatamente iguais, incluindo derivações trimestrais e compatibilidade. A comparação de todas as linhas dos60trimestres continua no gate da fatia4; o item integral acima permanece aberto. Fatia3 em implementação, sem execução completa declarada.
 
 ## Fatia 3 — agregados, segmentos e comparações
 
 **Paths:** módulo/testes/CLI, ledger. **Consome:** resultados por unidade e pertencimento. **Produz:** `aggregate_unit_results(rows)` e tabelas aggregates/distributions/segment_coverage/cohort_comparisons. **Dependência:** fatia 2 revisada.
 
-- [ ] Escrever RED com A = 1/100 e B = 18/900: agregado total 19/1000, amostra A = 1/100, restante B = 18/900; média simples 0,015 não é o total 0,019.
-- [ ] Testar reconciliação por N/D com pertencimento desconhecido, métricas sem unidades elegíveis e denominadores assinados; não somar razões, medianas ou quartis.
-- [ ] Testar cada eixo Tcb/Td/Tc/Sr/Atividade/SegmentoTb com categoria histórica, null, sem cadastro e conflito; Situacao diagnóstico e Uf/Municipio apenas sede.
-- [ ] Implementar recortes a partir do mesmo resultado unitário, sem recalcular ou duplicar unidade por companhia. Total inclui a amostra; comparar dentro de cada perspectiva e categoria compatível.
-- [ ] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
-- [ ] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
+- [x] Escrever RED com A = 1/100 e B = 18/900: agregado total 19/1000, amostra A = 1/100, restante B = 18/900; média simples 0,015 não é o total 0,019.
+- [x] Testar reconciliação por N/D com pertencimento desconhecido, métricas sem unidades elegíveis e denominadores assinados; não somar razões, medianas ou quartis.
+- [x] Testar cada eixo Tcb/Td/Tc/Sr/Atividade/SegmentoTb com categoria histórica, null, sem cadastro e conflito; Situacao diagnóstico e Uf/Municipio apenas sede.
+- [x] Implementar recortes a partir do mesmo resultado unitário, sem recalcular ou duplicar unidade por companhia. Total inclui a amostra; comparar dentro de cada perspectiva e categoria compatível.
+- [x] Conferir equivalência com agregados/segmentos 127 na interseção idêntica e teste de lote: numeradores, denominadores, quantis e payloads finais iguais para tamanho de lote 1 e outro tamanho medido.
+- [x] Revisão independente com fixture própria, contraprovas de dupla contagem e conferência de cobertura econômica. Não promover S1, top-N ou percentuais a regra de exclusão.
+
+## Revisão técnica vigente da fatia4 — 15/10/2026
+
+Conforme a simplificação da spec e a solicitação de João, os itens históricos abaixo que exigiam finalizar e verificar integralmente um segundo pacote ficam substituídos pelos passos desta seção. Não se altera método acadêmico nem se declara cumprimento do critério físico anterior.
+
+- [x] Admitir separadamente as duas origens unitárias, verificar integralmente esse estágio e comparar seus doze arquivos. Preservar cálculos e checkpoints aceitos.
+- [x] Finalizar uma vez o principal em destino novo: nove tabelas e27payloads, manifest externo `b61c30ee0ac3e1a0d4dadb4ae85ecc3a54dc9e6b23f23aeade51c3de8db6f192`. Geração não equivale a aceite semântico final.
+- [x] Implementar e revisar candidato privado de consulta somente das tabelas referenciadas e reprodução lógica12+5; nove testes pertinentes PASS. Transferência dos mesmos bytes aguarda término e guardas do principal.
+- [x] Concluir comparação pública127 com verificação integral do principal, reconciliação das representações e rederivação dos cinco derivados.16.482resultados e17.884grupos equivalentes sem diferenças;168ausências nativas explícitas, nenhum valor calculado perdido. Transferência byte-exata do candidato revisado após guards terminais concluída; sem outra verificação isolada equivalente.
+- [x] Executar comparador público de replay dos doze arquivos unitários e cinco CSVs completos da outra origem; recibo real `equal`,57,672s, sem comprovar persistência dos Parquets do replay.
+- [x] Demonstrar consulta real limitada a uma tabela aceita:6.240agregados em10,015s, uma chamada sem repetir conferência integral.
+- [x] Concluir oracle financeiro independente de agregados, quantis, cobertura e segmentações, aproveitando os87resultados unitários já conferidos:36grupos/144coortes/36partições,1.704resumos nas duas datas e três perspectivas, zero achados materiais. Escopo e ausências nominais no ledger; não chamar recorte de auditoria manual de toda a história.
+- [ ] Concluir documentação, revisão da composição/SHA, checks, PR, integração, CI pós-merge, ancestralidade e atualização130/mapa2.
+
+Mesmos paths e responsáveis. Sem segundo pacote físico ou novas tentativas de paralelismo por conveniência. Achado material exige correção e revalidação do recorte afetado; não repetir verificações satisfeitas sem motivo novo.
 
 ## Fatia 4 — execução completa e entrega
 
 **Paths:** ledger/spec/plano/metodologia/arquitetura conforme resultado, sem ampliar código sem correção causal. **Dependência:** fatias anteriores aceitas e inputs/destinos/pins confirmados.
+
+**Checkpoint15/10:** primeira execução integral sem aceite por OOM na finalização CSV→Parquet; replay interrompido e parciais preservados. Correção causal permitida somente em `Writer.finish`/teste adjacente, mantendo memória, ordem e uma thread. Antes de novo full/replay: prova dos CSVs completos de componentes/resultados, hashes reconstruídos por streaming, suíte pertinente e revisão independente. Não criar API de recuperação de checkpoints. O [ledger](../../engineering/ifdata-universe-analysis-20261014.md) registra diagnóstico, motivo e custo dessa decisão; os gates abaixo permanecem abertos.
+
+**Conferência sem repetição:** o comparador público executa a verificação integral antes da regressão127; esse caminho pode atender conjuntamente aos dois gates do principal. Substituir eventual caller de verificação isolada somente depois do build comprovadamente encerrado, com manifest/estabilidade/identidade/fase autenticados e recibo operacional próprio. Replay conserva verificação integral independente. Nenhum caso interrompido conta como PASS, nenhuma validação é omitida e nenhum código/dado é alterado para essa escolha de orquestração.
 
 - [ ] Capturar pins pré-execução e congelar código/perfil; executar 60 trimestres por perspectiva disponível, com horizontes válidos e limites temporais próprios.
 - [ ] Publicar tabelas de contagens/nomes/motivos, cobertura/participação da amostra e reconciliação total/amostra/restante/desconhecido. Não certificar universo SFN exaustivo pelo nome do arquivo.
@@ -119,3 +143,24 @@ Run focal planejado, cwd na branch de execução, usando Python do Primary:
 ## Handoff do planejamento
 
 A #3 foi reconciliada com decisões já implementadas e com a ampliação agora aprovada. Permanecem sem adoção corte de representatividade essencial, faixas acadêmicas próprias, índice/econometria e reconciliação do Word. Esses itens não exigem repetir pesquisa 111 nem bloqueiam recortes nativos/indicadores já aprovados. Executar código somente sob a etapa de implementação da Issue 130, após registrar seu contrato/prontidão e revisão deste plano.
+
+## Ajuste da fatia4: finalização reproduzível após a segunda falha — 15/10/2026
+
+Substitui explicitamente a frase histórica “Não criar API de recuperação de checkpoints” acima, conforme a revisão técnica da spec. Ruling: admitir somente as quatro tabelas unitárias completas e regenerar todos os derivados em destino novo — duas origens independentes já concluíram as fórmulas com evidência de runtime/source/config antes/depois; repetir integralmente consumiria tempo e espaço sem necessidade. Custo se a avaliação estiver errada: rejeição do checkpoint ou retrabalho; mitigação por autenticação externa, verificador unitário integral, proveniência honesta, guardas de imutabilidade, revisão focal e gates finais inalterados.
+
+- [x] Diagnóstico causal finito da falha do Writer de agregados; correção restrita de recursos/persistência, sem mudança econômica, com teste significativo e revisão independente antes de nova produção. A mudança de orçamento só será adotada após medição real que preserve ordem/schema/null/precisão.
+- [x] Corrigir separadamente a comparação de linhagem de perfil entre os bytes exatos LF/CRLF, após reprodução causal; ancorar ambas as variantes no conteúdo legado revisado. Preservar pins externos brutos e rejeitar mudanças de conteúdo/âncora não revista.
+- [x] Implementar admissão de checkpoint e finalização pública, wrappers lazy e CLI fina, reutilizando validação e geração derivada existentes. Autenticar evidências originais, declarar hashes unitários capturados posteriormente e separar produtor original de admissão/finalizador. Nenhum manifest nos originais.
+- [x] Testar equivalência `unit-calculations`→finalização versus build integral, lotes diferentes, rejeições de evidência/config/inventário/conteúdo, truncamento/reordenação, integridade/população, fonte alterada, destino existente/alias/symlink/falha de hardlink e preservação de originais na falha. Writers somente nas cinco tabelas derivadas. Revisão independente antes de dados reais.
+- [ ] Admitir os dois checkpoints reais separadamente; finalizar sequencialmente com recursos medidos. Medir bytes lógicos e novos bytes escritos, sem confundir hardlinks com isolamento físico ou somar espaço lógico como uso físico adicional.
+- [ ] Executar comparação pública127 com verificação completa do principal, verificação completa independente do replay, igualdade de todos os payloads e auditoria econômica independente. Prosseguir com os gates finais da fatia4 já listados, sem considerar probes/candidatos como aceite global.
+
+Impacto na arquitetura permanece nos destinos existentes e nas mesmas doze entradas autorizadas. Hardlink solicitado exige volume compatível; não haverá fallback volumoso silencioso, mudança de ACL/atributo, sobrescrita de fonte ou reparo do parcial. Fluxo futuro explícito: build unitário público e depois finalizador. Não acrescentar opção de checkpoint intermediário ao build integral por conveniência neste recorte.
+
+## Checkpoint de execução — 15/10/2026, admissões e finalizador R1
+
+As duas admissões unitárias foram aceitas com verificação integral e guardas terminais; doze payloads, contagens e hash lógico coincidem. Evidência e pins no ledger `docs/engineering/ifdata-universe-analysis-20261014.md`, seção “Admissões unitárias aceitas e reprodução exata”. Preservar os estágios aceitos e os cálculos originais; não repetir fórmulas ou admissão pela correção exclusiva do finalizador.
+
+Antes de finalizar, a revisão focal identificou e corrigiu o intervalo de captura da identidade do código: snapshot no início da operação, mantendo a identidade inicial até a guarda final. RED causal anterior e GREEN da correção/equivalência foram revisados independentemente. Root transferiu os dois arquivos exatamente testados após ambos os processos de admissão encerrarem e conferiu o inventário inalterado. A revisão final do SHA/composição permanece separada.
+
+Finalização requer novo HEAD congelado, pins dos estágios e revisão R1, destinos exclusivos, recursos medidos depois dos imports e guarda antes/depois. Inicialmente um finalizador pesado por vez; qualquer paralelismo exige nova justificativa de capacidade, destinos temporários separados e autorização técnica registrada. Verificação completa, regressão127, replay final, auditoria financeira, PR/checks/integração/CI pós-merge/ancestralidade e atualização das Issues continuam pendentes. Nenhum PASS global é inferido da equivalência unitária.
