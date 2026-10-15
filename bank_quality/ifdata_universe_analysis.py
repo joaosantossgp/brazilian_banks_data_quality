@@ -66,7 +66,7 @@ def _unit_summary(rows,context):
     share=covered/total if total else None
     f=math._fraction_field
     assets=dict(reference='contemporaneous_own_'+context['dataset']+'_AT',
-        status='own_assets_unavailable' if context['dataset']=='capital' else 'partial_known_assets' if unknown else 'known_assets',
+        status='own_assets_unavailable' if context['dataset']=='capital' else 'partial_known_assets' if unknown or unknown_companies else 'known_assets',
         known_units=[r['unit_id'] for r in known],unknown_units=unknown,unknown_companies=unknown_companies,
         known_asset_fraction=f(total),eligible_known_asset_fraction=f(covered),
         share_of_known_fraction=f(share) if share is not None else None,

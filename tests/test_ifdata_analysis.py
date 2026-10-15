@@ -1208,6 +1208,8 @@ class UniverseAggregationTests(unittest.TestCase):
         self.assertEqual(a['sample']['counts']['expected_companies'],3)
         self.assertEqual(a['sample']['lists']['missing_companies'],['issuer-C'])
         self.assertEqual(a['sample']['asset_coverage'].get('unknown_companies'),['issuer-C'])
+        self.assertEqual(a['sample']['asset_coverage']['unknown_units'],[])
+        self.assertEqual(a['sample']['asset_coverage']['status'],'partial_known_assets')
         self.assertIsNone(a['sample']['asset_coverage']['share_of_total_fraction'])
         self.assertEqual(a['total']['asset_coverage']['known_asset_fraction'],self.api._fraction_field(Fraction(1030)))
         two=self.reduce(rows[:2]);total=next(r for r in two['aggregates'] if r['cohort']=='total')
