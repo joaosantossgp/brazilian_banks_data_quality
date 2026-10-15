@@ -314,5 +314,71 @@ class PopulationTests(unittest.TestCase):
                     [str(self.root/'output'/(table+'.parquet'))]).fetchone()[0]
                 self.assertLessEqual(maximum,2048)
 
+    def rewrite_population_table(self, out, table, rows):
+        """Create internally consistent repinned formats, not ordinary tampering."""
+        columns=self.api.TABLE_COLUMNS[table]
+        (out/(table+'.json')).write_text(json.dumps(rows,sort_keys=True)+'\n',encoding='utf-8')
+        values=[[row.get(k) for k in columns[:-1]]+
+                [json.dumps(row,ensure_ascii=False,sort_keys=True,separators=(',',':'))] for row in rows]
+        with (out/(table+'.csv')).open('w',encoding='utf-8',newline='') as stream:
+            writer=csv.writer(stream,quoting=csv.QUOTE_NOTNULL);writer.writerow(columns);writer.writerows(values)
+        with duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as conn:
+            conn.execute('create table rewritten ('+','.join('"'+c+'" VARCHAR' for c in columns)+')')
+            if values:
+                conn.executemany('insert into rewritten values ('+','.join('?' for _ in columns)+')',values)
+            parquet=out/(table+'.parquet');parquet.unlink()
+            conn.execute('copy rewritten to ? (format parquet)',[str(parquet)])
+        manifest=json.loads((out/'manifest.json').read_text(encoding='utf-8'))
+        manifest['tables'][table]=len(rows)
+        for entry in manifest['files']:
+            if entry['file'].startswith(table+'.'):
+                entry.update(rows=len(rows),sha256=digest(out/entry['file']))
+        dump(out/'manifest.json',manifest)
+        return digest(out/'manifest.json')
+
+    def test_open_requires_a_decision_link_for_every_unit(self):
+        cfg=self.fixture();out=self.root/'output';self.api.build_population(cfg,out)
+        links=json.loads((out/'membership_links.json').read_text(encoding='utf-8'))
+        for label,remaining in [('all_missing',[]),('one_missing',[r for r in links if '|N|' not in r['unit_id']])]:
+            with self.subTest(case=label):
+                pin=self.rewrite_population_table(out,'membership_links',remaining)
+                with self.assertRaisesRegex(ValueError,'Membership.*reconciliation'):
+                    with self.api.open_population(out,pin):pass
+
+    def test_open_requires_matching_link_identity_fields(self):
+        cfg=self.fixture();out=self.root/'output';self.api.build_population(cfg,out)
+        links=json.loads((out/'membership_links.json').read_text(encoding='utf-8'))
+        for field,value in [('dataset','capital'),('period','202409'),('matrix_id','prudential|202412'),
+                            ('membership','unknown'),('relation','different_reason'),('link_id','different_identity')]:
+            with self.subTest(field=field):
+                changed=copy.deepcopy(links);changed[0][field]=value
+                pin=self.rewrite_population_table(out,'membership_links',changed)
+                with self.assertRaisesRegex(ValueError,'Membership.*reconciliation'):
+                    with self.api.open_population(out,pin):pass
+
+    def test_open_requires_exact_sample_company_set(self):
+        cfg=self.fixture();out=self.root/'output';self.api.build_population(cfg,out)
+        links=json.loads((out/'membership_links.json').read_text(encoding='utf-8'))
+        sample=[r for r in links if r['membership']=='sample'];self.assertEqual(len(sample),24)
+        omitted=[r for r in links if r['link_id']!=sample[0]['link_id']]
+        extra=copy.deepcopy(sample[0]);extra['company_id']='not-declared';extra['link_id']=extra['unit_id']+'|not-declared'
+        for label,changed in [('omitted_company',omitted),('extra_company',links+[extra])]:
+            with self.subTest(case=label):
+                pin=self.rewrite_population_table(out,'membership_links',changed)
+                with self.assertRaisesRegex(ValueError,'Membership.*reconciliation'):
+                    with self.api.open_population(out,pin):pass
+
+    def test_open_requires_one_null_company_decision_for_non_sample(self):
+        cfg=self.fixture();out=self.root/'output';self.api.build_population(cfg,out)
+        links=json.loads((out/'membership_links.json').read_text(encoding='utf-8'))
+        for state in ('remaining','unknown'):
+            with self.subTest(state=state):
+                changed=copy.deepcopy(links)
+                row=next(r for r in changed if r['membership']==state)
+                row['company_id']='unproven';row['link_id']=row['unit_id']+'|unproven'
+                pin=self.rewrite_population_table(out,'membership_links',changed)
+                with self.assertRaisesRegex(ValueError,'Membership.*reconciliation'):
+                    with self.api.open_population(out,pin):pass
+
 
 if __name__=='__main__':unittest.main()

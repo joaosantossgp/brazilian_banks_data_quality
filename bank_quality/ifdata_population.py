@@ -415,14 +415,46 @@ def open_population(output: Path, expected_manifest_sha256: str):
                             raise ValueError('Population formats disagree')
                         if [obj.get(k) for k in columns[:-1]] != list(values[:-1]):
                             raise ValueError('Population projection and payload disagree')
+                        if table == 'unit_periods':
+                            companies = obj.get('companies')
+                            if (obj['membership'] not in ('sample','remaining','unknown')
+                                    or not isinstance(companies,list)
+                                    or any(not isinstance(company,str) or not company for company in companies)
+                                    or len(companies) != len(set(companies))
+                                    or (obj['membership']=='sample') != bool(companies)):
+                                raise ValueError('Membership company reconciliation mismatch')
                         count += 1
                 if count!=expected_count or stream.read(1) or next(logical,None) is not None:
                     raise ValueError('Population format counts disagree')
             key = 'unit_id' if table=='unit_periods' else 'link_id'
             if conn.execute('select count(*) from (select '+key+' from '+table+' group by all having count(*)>1)').fetchone()[0]:
                 raise ValueError('Duplicate population identity')
-        if conn.execute('select count(*) from membership_links l left join unit_periods u using(unit_id) where u.unit_id is null or l.membership is distinct from u.membership').fetchone()[0]:
+        if conn.execute('select count(*) from unit_periods u anti join membership_links l using(unit_id)').fetchone()[0]:
+            raise ValueError('Membership decision reconciliation mismatch: missing unit proof')
+        if conn.execute('''select count(*) from membership_links l
+            left join unit_periods u using(unit_id)
+            where u.unit_id is null or l.membership is distinct from u.membership
+               or l.dataset is distinct from u.dataset or l.period is distinct from u.period
+               or l.matrix_id is distinct from u.matrix_id
+               or l.relation is distinct from u.membership_reason
+               or l.link_id is distinct from l.unit_id || '|' || coalesce(l.company_id,'@decision')
+               or l.scope is distinct from ?''',[SCOPE]).fetchone()[0]:
             raise ValueError('Membership link reconciliation mismatch')
+        # Pins and matching formats authenticate bytes, not completeness of
+        # the proof relation. Require exactly the declared company decisions,
+        # including one nominal null-company proof for every non-sample unit.
+        if conn.execute('''with expected as (
+                select unit_id, unnest(json_extract(payload,'$.companies')::VARCHAR[]) as company_id
+                from unit_periods where membership='sample'
+                union all
+                select unit_id, null::VARCHAR as company_id from unit_periods
+                where membership in ('remaining','unknown')),
+            missing as (select * from expected except all
+                        select unit_id,company_id from membership_links),
+            unexpected as (select unit_id,company_id from membership_links except all
+                           select * from expected)
+            select (select count(*) from missing)+(select count(*) from unexpected)''').fetchone()[0]:
+            raise ValueError('Membership company reconciliation mismatch')
         return conn
     except Exception:
         conn.close()
