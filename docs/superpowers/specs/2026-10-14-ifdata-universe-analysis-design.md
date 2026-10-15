@@ -4,6 +4,8 @@ Desenho da [Issue 130](https://github.com/joaosantossgp/brazilian_banks_data_qua
 
 ## Objetivo e decisões preservadas
 
+**Execução autorizada em 14/10/2026:** João aprovou implementar a Issue130 e pediu priorizar tudo que puder ser executado deterministicamente por código. A PR131 de planejamento foi integrada em `d33d4fd762bf11dcef2b8746e99235956f3c7fb0`; a implementação usa branch própria. O [ledger](../../engineering/ifdata-universe-analysis-20261014.md) distingue etapas concluídas de contratos ainda em admissão. Os parágrafos de estado inicial acima preservam o checkpoint do planejamento, não o estado de execução corrente.
+
 Calcular as métricas aprovadas no universo observado do IF.data e produzir, por perspectiva e período, sistema completo, unidades vinculadas à amostra das 24 companhias e restante. O sistema completo inclui a amostra. Financeiro é principal; prudencial e individual são séries separadas. A seleção das 24 permanece fixa em 31/12/2024; o universo técnico acompanha as unidades publicadas em cada trimestre. Não chamar o restante de companhias fechadas: pode conter outras entidades e relações não incluídas na seleção.
 
 Núcleo: 60 trimestres de 2010–2024, sínteses anuais e aberturas necessárias. 2025–2026 não entra automaticamente. Reutilizar R1/R2/Q1/Q2/C1/L2/L3/E2-B na perspectiva financeira e C3/C4 na prudencial. A perspectiva individual exige admissão dos seus contextos próprios para métricas pertinentes; nunca copiar binding financeiro por nome. As dez métricas não se tornam aplicáveis a toda instituição ou perspectiva.
@@ -19,6 +21,12 @@ Financeiro, individual e prudencial não são unidos num total econômico. Cada 
 O pacote 125 fornece somente a marcação da amostra, não restringe a leitura do universo. No financeiro, o recorte corresponde às chaves contemporâneas aceitas do mapa da amostra. Muitos emissores ligados à mesma unidade geram uma contribuição econômica. Company-map e ausência de vínculo de uma das 24 permanecem visíveis.
 
 No prudencial e individual, pertencimento exige vínculo nativo/documental aceito na data e na perspectiva. Não usar igualdade numérica entre códigos como prova de identidade, nem levar todo o perímetro financeiro ao individual sem relação explícita. Se o vínculo não permite decidir pertencimento, registrar `membership_unknown`, além dos três recortes desejados. Essa categoria é reconciliação, não nova amostra adotada: entra no total técnico quando a unidade é elegível, mas não é forçada para o restante. Publicar contagens, nomes/códigos e ativos conhecidos dessa incerteza.
+
+**Precisão operacional da fonte, revisão de 14/10/2026:** na perspectiva individual, são positivas as operadoras explicitamente admitidas125 e as unidades cujo campo financeiro contemporâneo aponta para target125 com cadastro próprio. Na prudencial, a ponte operador–target financeiro deve concordar sobre o target prudencial, com cadastros próprios na data; membros explicitamente ligados a esse target conservam sua relação e identidade próprias. O alcance é a relação nativa declarada com os targets selecionados, sem certificação de todas as participações societárias das24. A presença de um membro não substitui silenciosamente um target ausente nem demonstra elegibilidade para somá-los.
+
+Para decidir pertencimento negativo nessas perspectivas, exigir completude das24 relações aplicáveis **naquele trimestre**, parent explícito com cadastro próprio e caminho terminal válido fora do conjunto selecionado, sem prova positiva ou conflito. Null, parent ausente, ciclo ou matriz incompleta conservam motivo desconhecido. Os campos financeiro/prudencial têm grafos separados. Não substituir essa investigação por marcar todas as unidades não nominadas como desconhecidas: vínculos positivos e negativos comprováveis devem ser usados. A implementação e seus testes/replay seguem revisão própria antes de ampliar os cálculos.
+
+A soma das ocorrências elegíveis pode ser exibida como agregado técnico com cobertura e estado explícito de sobreposição. A revisão das fontes não liberou excluir automaticamente descendentes prudenciais nem certificar a soma como sistema livre de dupla contagem: falta conciliação datada de PR/CP/RWA entre pais e membros co-presentes. Financeiro conserva exposições entre grupos; individual é não consolidado. Esses limites não eliminam unidades nem impedem seus indicadores individuais.
 
 ## Contratos e interfaces planejados
 
@@ -54,6 +62,14 @@ Os seis eixos principais são Tcb, Td, Tc, Sr, Atividade e SegmentoTb, cada um s
 Cada recorte traz agregado, distribuição, contagens/listas, motivos de falta, ativos conhecidos/desconhecidos e participação mensurável da amostra no universo compatível. Não adotar limiar de representatividade, top-N ou S1 como regra automática de essencialidade.
 
 ## Entradas, abertura e capacidade
+
+### Reexecução por código — requisito explícito de João
+
+Seleção da população, pertencimento, fechamento de dependências, verificação dos contratos, cálculo, agregação, comparação e diagnóstico de cobertura devem ter APIs/CLI e recibos reproduzíveis. Configuração versionada e inputs autenticados governam a execução; scripts exploratórios privados não serão a única maneira de reproduzir regras/resultados. O que exigir julgamento de domínio fica explícito no perfil finito, com evidência/localizador e revisão, não em edição manual dos dados ou escolha oculta por nome.
+
+Disponibilizar comparação automatizada contra o pacote127: mesma chave de perspectiva/unidade/período/métrica/horizonte, frações exatas, estados, flags econômicas e dependências temporais pertinentes. Comparar agregados/segmentos na mesma interseção; separar mudanças de schema/IDs de diferenças de conteúdo econômico. Emitir relatório nominal e falhar se houver diferença material não prevista por correção versionada/revisada. Não arredondar para obter igualdade.
+
+Configuração e comandos devem separar parâmetros econômicos dos operacionais de lote. Alterar tamanho de lote não altera payload lógico nem ordem final; UTC e medições operacionais têm escopo próprio. A inclusão futura de indicador usa os componentes e o caminho comum de cálculo/verificação, com sua fórmula/perfil/evidência/testes, sem duplicar o pipeline ou prometer suporte genérico a método não aprovado.
 
 Autenticar fontes já aceitas e catálogo completo. Importar abertura 200912 para as unidades adicionais somente de bytes já capturados e autenticados, com destino e perfil novos, revisão de contexto/perímetro e replay. A lista de vinte códigos da abertura 127 não libera automaticamente os demais. Se uma fonte/abertura não existir, emitir lacuna; coleta nova exige escopo próprio.
 

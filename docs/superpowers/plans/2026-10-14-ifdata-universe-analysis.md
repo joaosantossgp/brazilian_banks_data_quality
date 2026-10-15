@@ -12,6 +12,8 @@
 
 ## Estado e restrições globais
 
+**Execução autorizada em 14/10/2026:** Goal ativo e branch `codex/ifdata-universe-analysis-20261014`, base `d33d4fd762bf11dcef2b8746e99235956f3c7fb0`, após integração do planejamento PR131 e CI pós-merge bem-sucedido. A Issue130 confirma os onze paths da execução abaixo. A fatia0 passou após correção focal do pertencimento; fatia1 em implementação. Estados iniciais de planejamento neste documento são checkpoints históricos. Priorizar regras, comparação e replay em código versionado, conforme requisito de João incorporado à spec; os scripts privados de diagnóstico não serão o mecanismo único de reprodução.
+
 Planejamento em 14/10/2026, base `3c983b0fbabd3cbe03ecbd3c5f5f98b7c4a41d9b`. Nenhum novo cálculo/código implementado por este plano. João aprovou universo completo incluindo a amostra, financeiro principal e prudencial/individual separados. Fórmulas, núcleo 2010–2024, precisão e ausência seguem a spec 127. Sem coleta financeira nova, alterações globais, índice/ranking ou pesquisa bibliográfica integral repetida.
 
 Root é executor/integrador; cada fatia tem reviewer independente somente leitura. Achado material bloqueia ampliação até correção/revalidação. Execução futura registra branch/base, pins, allowlist e destinos antes de escrever. A seleção técnica dos lotes não muda a população acadêmica. Não afirmar prontidão de bindings individuais ou abertura só pela existência do arquivo.
@@ -35,12 +37,12 @@ Protegidos: perfil e saídas 127, fontes/manifests aceitos, leitores/piloto, ben
 
 **Owner/paths:** Root, spec/plano/ledger/arquitetura; leitura de fontes aceitas. **Dependências:** #111/#113/#125/#127 integradas, plano revisado. **Saída:** inventário autenticado, definição executável da população e matriz de admissibilidade por perspectiva.
 
-- [ ] Conferir Issue real, base atual, quatro inputs de valores/cadastro/catálogo/amostra e seus hashes; registrar arquivo/contrato, cobertura temporal e chaves distintas por perspectiva. Ler somente snapshots existentes.
-- [ ] Identificar unidades, nulos e eventuais linhas agregadas com prova nativa; registrar quais categorias podem compor cada total sem sobreposição. Não filtrar Situacao por padrão.
-- [ ] Confrontar os contextos da perspectiva individual com catálogo/fonte; liberar só os comprovados, mantendo as métricas prudenciais em capital e estados desconhecidos explícitos.
-- [ ] Conferir abertura 200912 já capturada para financeiro e individual, sem estender a lista liberada 127. Importação/replay em destino novo somente se fonte e continuidade de unidade/contexto forem comprovadas.
-- [ ] Registrar medição de headroom e orçamento inicial por lote/janela; justificar a escala antes da execução completa.
-- [ ] Revisão independente de população, bindings, abertura, arquitetura e allowlist. Ausência de dado gera lacuna nominal, não coleta implícita nem certificação de cobertura.
+- [x] Conferir Issue real, base atual, quatro inputs de valores/cadastro/catálogo/amostra e seus hashes; registrar arquivo/contrato, cobertura temporal e chaves distintas por perspectiva. Ler somente snapshots existentes.
+- [x] Identificar unidades, nulos e eventuais linhas agregadas com prova nativa; registrar limites de certificação de cada total. Não filtrar Situacao por padrão. Co-presença prudencial não libera exclusão automática de membros nem total certificado livre de sobreposição.
+- [x] Confrontar os contextos da perspectiva individual com catálogo/fonte; liberar só os comprovados, mantendo as métricas prudenciais em capital e estados desconhecidos explícitos.
+- [x] Conferir abertura 200912 já capturada para financeiro e individual, sem estender a lista liberada 127. Importação/replay em destino novo somente se fonte e continuidade técnica de unidade/contexto forem comprovadas.
+- [x] Registrar medição inicial de headroom e orçamento de512MiB/uma thread para queries de preflight; medir novamente antes de ampliar escala.
+- [x] Revisão independente focal de população, bindings, abertura, organização e allowlist; correção de pertencimento e re-review concluídos. Ausência de dado gera lacuna nominal, não coleta implícita nem certificação de cobertura. Implementação, importação e cálculos mantêm gates próprios.
 
 ## Fatia 1 — população e três recortes
 
