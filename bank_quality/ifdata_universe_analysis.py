@@ -301,6 +301,87 @@ def build(config,output,*,batch_size=32):
     return manifest
 
 
+def _validate_component(row,profile,contexts):
+    """Close a normalized observation over its own finite typed context."""
+    dataset=row.get('dataset');code=row.get('code');period=row.get('period')
+    if dataset not in TYPES or row.get('unit_key')!=[dataset,TYPES[dataset],code]:
+        raise ValueError('Component native identity mismatch')
+    if period not in math.dependency_periods([row.get('analysis_period')]):
+        raise ValueError('Component source period outside dependency window')
+    ref=row.get('binding_ref')
+    if ref is None:
+        # Missing/ambiguous bindings are real unavailable states, not contexts
+        # that may be reconstructed by name or borrowed from another source.
+        if row.get('status') not in ('binding_unverified','ambiguous_binding','opening_not_released') or row.get('sources') or row.get('token') is not None:
+            raise ValueError('Unbound component contains an unproved source')
+        return
+    context=contexts.get(ref)
+    if context is None:raise ValueError('Unresolved profile reference')
+    literal=context['literal_context'];component=math.COMPONENT_NAMES.get(row.get('component'),row.get('component'))
+    if (literal['dataset']!=dataset or literal['TipoInstituicao']!=TYPES[dataset]
+            or context['component']!=component or context['compatibility']!=row.get('definition_id')
+            or context['window_rule']!=row.get('window_rule')
+            or row.get('scale')!=('native_index_unverified' if 'diagnostic' in component else 'BRL')):
+        raise ValueError('Typed component profile reference mismatch')
+    expected_native={k:v for k,v in literal.items() if k!='dataset'}
+    expected_native.update(CodInst=code,AnoMes=period)
+    for source in row.get('sources',[]):
+        if any(k in source and (type(source[k]) is not type(v) or source[k]!=v) for k,v in expected_native.items()):
+            raise ValueError('Component source identity overrides its typed context')
+    if period=='200912':
+        policy=profile['opening_policy'];proof=row.get('opening_proof',{})
+        if (dataset not in policy['datasets'] or component not in policy['components']
+                or context['window_rule']!='stock' or policy['comparison_period'] not in context['periods']
+                or proof.get('policy')!=policy['id']):
+            raise ValueError('Component opening context not released')
+    elif period not in context['periods']:
+        raise ValueError('Component finite source period mismatch')
+
+
+def _validate_context_references(value,allowed):
+    if isinstance(value,list):
+        for item in value:_validate_context_references(item,allowed)
+    elif isinstance(value,dict):
+        if 'context_ref' in value:
+            if set(value)!={'context_ref'} or value['context_ref'] not in allowed:
+                raise ValueError('Compatibility context reference mismatch')
+        else:
+            for key,item in value.items():
+                if key in ('binding','bindings'):
+                    bindings=item if key=='bindings' else [item]
+                    if not isinstance(bindings,list) or any(not isinstance(binding,dict) or (binding and set(binding)!={'context_ref'}) for binding in bindings):
+                        raise ValueError('Compatibility binding must use a profile reference')
+                _validate_context_references(item,allowed)
+
+
+def _reconcile_population(root,manifest):
+    """Compare both proof directions to the authenticated population contract.
+
+    The source reader already checks exact company/decision sets and scopes.
+    Comparing the complete selected payload streams also catches coordinated
+    changes to a unit's company list and its retained links.
+    """
+    from .ifdata_population import open_population,CONTRACT as POP_CONTRACT
+    config=manifest['config'];descriptor=config['population']
+    source_root,source=math._authenticate(descriptor,POP_CONTRACT,True)
+    periods=config['periods'];datasets=config['datasets']
+    if (not set(periods)<=set(source['config']['periods']) or not set(datasets)<=set(source['config']['datasets'])
+            or manifest.get('inputs')!=source['config']['inputs']):
+        raise ValueError('Universe population source scope mismatch')
+    with open_population(source_root,descriptor['expected_manifest_sha256']) as population:
+        for table,key,order in [('unit_periods','unit_id','period,dataset,code'),('membership_links','link_id','period,dataset,link_id')]:
+            cursor=population.execute('select payload from '+table+' where period in (select unnest(?)) and dataset in (select unnest(?)) order by '+order,[periods,datasets])
+            with closing(math._iter_json_array(root/(table+'.json'))) as actual:
+                for batch in iter(lambda:cursor.fetchmany(256),[]):
+                    for (payload,) in batch:
+                        expected=json.loads(payload)
+                        expected.update(id=expected[key],status='observed' if table=='unit_periods' else expected['membership'])
+                        if next(actual,None)!=expected:
+                            raise ValueError('Population membership proof reconciliation mismatch: '+table)
+                if next(actual,None) is not None:
+                    raise ValueError('Unexpected population membership proof: '+table)
+
+
 def verify(output,expected_manifest_sha256):
     import duckdb
     root,m=math._authenticate(dict(root=str(output),expected_manifest_sha256=expected_manifest_sha256),CONTRACT,True)
@@ -308,7 +389,7 @@ def verify(output,expected_manifest_sha256):
         raise ValueError('Universe stage/schema mismatch')
     if {e['file'] for e in m['files']}!={t+'.'+e for t in TABLES for e in ('json','csv','parquet')}:raise ValueError('Universe inventory mismatch')
     profile=load_profile(m['config']['profile_id'],m['profile_sha256'])
-    known_contexts={c['context_sha256'] for c in profile['contexts']}
+    known_contexts={c['context_sha256']:c for c in profile['contexts']}
     with duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as con:
         for table in TABLES:
             con.from_parquet(str(root/(table+'.parquet'))).create_view(table)
@@ -323,7 +404,7 @@ def verify(output,expected_manifest_sha256):
                     count+=1
                     expected=tuple(row.get(k) for k in math.TABLE_COLUMNS[:-1])+(canonical(row),)
                     if cur.fetchone()!=expected:raise ValueError('Universe representations disagree')
-                    if table=='components' and row['binding_ref'] is not None and row['binding_ref'] not in known_contexts:raise ValueError('Unresolved profile reference')
+                    if table=='components':_validate_component(row,profile,known_contexts)
                     writer.writerow(expected);digest.update(buffer.getvalue().encode());buffer.seek(0);buffer.truncate(0)
             finally:iterator.close()
             if cur.fetchone() is not None or count!=m['tables'][table] or digest.hexdigest()!=math._digest_file(root/(table+'.csv')):
@@ -346,7 +427,18 @@ def verify(output,expected_manifest_sha256):
                 for result in rg[1]:
                     if result['unit_id']!=unit['unit_id'] or result['unit_key']!=[unit['dataset'],unit['TipoInstituicao'],unit['code']] or result['membership']!=unit['membership']:
                         raise ValueError('Universe result/unit identity mismatch')
-                    seen.add((result['metric'],result['horizon']))
+                    metric_key=(result['metric'],result['horizon'])
+                    if result['id']!=unit['unit_id']+'|'+result['metric']+'|'+result['horizon'] or metric_key in seen:
+                        raise ValueError('Duplicate or noncanonical native result identity')
+                    seen.add(metric_key)
+                    if set(result['components'])!=set(math.METRICS.get(result['metric'],())):
+                        raise ValueError('Result component set mismatch')
+                    for name,temporal in result['components'].items():
+                        for ref in _references(temporal):
+                            if ref not in obs:raise ValueError('Unresolved component reference')
+                            if obs[ref]['component']!=name:raise ValueError('Component reference kind mismatch')
+                        allowed={ob['binding_ref'] for ob in obs.values() if ob['component']==name and ob['binding_ref'] is not None}
+                        _validate_context_references(temporal,allowed)
                     for ref in _references(result):
                         if ref not in obs:raise ValueError('Unresolved component reference')
                         ob=obs[ref]
@@ -357,6 +449,7 @@ def verify(output,expected_manifest_sha256):
             if next(groups,None) is not None or next(results,None) is not None:raise ValueError('Orphan calculation group')
         if con.execute("select count(*) from membership_links l left join unit_periods u on json_extract_string(l.payload,'$.unit_id')=u.id where u.id is null").fetchone()[0]:
             raise ValueError('Orphan membership reference')
+    _reconcile_population(root,m)
     return m
 
 
@@ -364,7 +457,9 @@ def _references(value):
     if isinstance(value,list):
         for v in value:yield from _references(v)
     elif isinstance(value,dict):
-        if set(value)=={'component_ref'}:yield value['component_ref']
+        if 'component_ref' in value:
+            if set(value)!={'component_ref'}:raise ValueError('Invalid component reference representation')
+            yield value['component_ref']
         else:
             for v in value.values():yield from _references(v)
 
@@ -405,22 +500,24 @@ def _economic_signature(result):
         if 'token' in v and 'unit_key' in v:return observation_signature(v)
         return {k:diagnostics(x) for k,x in v.items()}
     signature['diagnostics']=diagnostics(result.get('diagnostics',{}))
-    signature['components']={}
-    for name,value in result['components'].items():
-        dates=set(component_periods(name,result['period'],result['horizon']))
-        observations={}
-        def visit(v):
-            if isinstance(v,list):
-                for x in v:visit(x)
-            elif isinstance(v,dict):
-                if 'token' in v and 'unit_key' in v and v.get('period') in dates:
-                    ob=observation_signature(v)
-                    observations[canonical(ob)]=ob
-                else:
-                    for x in v.values():visit(x)
-        visit(value)
-        temporal={k:v for k,v in value.items() if k not in ('inputs','quarter_results','compatibility')}
-        signature['components'][name]=dict(temporal=temporal,observations=[observations[k] for k in sorted(observations)])
+    def temporal_signature(value,dates):
+        if isinstance(value,list):return [temporal_signature(v,dates) for v in value]
+        if not isinstance(value,dict):return value
+        if 'token' in value and 'unit_key' in value:return observation_signature(value)
+        # Full legacy bindings and their installed-profile references denote
+        # the same context. Every surrounding compatibility conclusion and
+        # temporal derivation field remains in the recursive signature.
+        if set(value)=={'context_ref'}:return {'context_sha256':value['context_ref']}
+        if 'context_sha256' in value and 'literal_context' in value:
+            return {'context_sha256':value['context_sha256']}
+        normalized={}
+        for key,item in value.items():
+            if key=='inputs' and isinstance(item,list):
+                item=[v for v in item if not (isinstance(v,dict) and 'token' in v and 'unit_key' in v and v.get('period') not in dates)]
+            normalized[key]=temporal_signature(item,dates)
+        return normalized
+    signature['components']={name:temporal_signature(value,set(component_periods(name,result['period'],result['horizon'])))
+                             for name,value in result['components'].items()}
     return signature
 
 

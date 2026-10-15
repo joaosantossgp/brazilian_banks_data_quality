@@ -1067,5 +1067,114 @@ class UniverseSignatureTests(unittest.TestCase):
         self.assertNotEqual(_economic_signature(row),_economic_signature(altered))
 
 
+
+class UniverseReviewFixTests(unittest.TestCase):
+    setUp=PackageTests.setUp
+    digest=PackageTests.digest
+    native_package=PackageTests.native_package
+    fixtures=PackageTests.fixtures
+    universe_fixture=UniverseTests.universe_fixture
+
+    def control(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.u=u
+        cfg=self.universe_fixture();out=self.root/'control'
+        self.manifest=u.build(cfg,out,batch_size=2)
+        self.rows={t:list(self.api._iter_json_array(out/(t+'.json'))) for t in u.TABLES}
+        self.assertEqual(u.verify(out,self.digest(out/'manifest.json'))['tables']['results'],38)
+        return out
+
+    def rewritten(self,name,change):
+        from contextlib import ExitStack
+        import duckdb
+        target=self.root/('mutation-'+name);target.mkdir();rows=deepcopy(self.rows);change(rows)
+        with ExitStack() as stack,duckdb.connect() as con:
+            writers={t:self.u.Writer(target,t,stack) for t in self.u.TABLES}
+            for table in writers:
+                for row in rows[table]:writers[table].append(row)
+            files=[entry for writer in writers.values() for entry in writer.finish(con)]
+        m=deepcopy(self.manifest);m['files']=files;m['tables']={t:len(rows[t]) for t in rows}
+        (target/'manifest.json').write_text(json.dumps(m,ensure_ascii=False),encoding='utf-8')
+        return target
+
+    def test_review_quarter_and_compatibility_semantics_survive_signature(self):
+        out=self.control()
+        row=next(r for r in self.rows['results'] if r['metric']=='R1' and r['horizon']=='ttm' and r['code']=='I')
+        row=self.u.resolve_result(out,self.digest(out/'manifest.json'),row['id'])
+        for change in ('status','fraction','start','flags','compatible','predicate','mismatches'):
+            altered=deepcopy(row);flow=altered['components']['LL'];q=flow['quarter_results'][0]
+            if change=='status':q['status']='incompatible_definition'
+            elif change=='fraction':q['value_fraction']['numerator']='999999'
+            elif change=='start':q['start']='2023-01-01'
+            elif change=='flags':q['flags'].append('changed_sign')
+            elif change=='compatible':flow['compatibility'][0]['compatible']=False
+            elif change=='predicate':flow['compatibility'][0]['predicate']='different'
+            else:flow['compatibility'][0]['mismatches']=['definition_id']
+            with self.subTest(change=change):self.assertFalse(self.u._economic_signature(row)==self.u._economic_signature(altered),'Semantic mutation was discarded')
+
+    def test_review_binding_reference_requires_typed_component_period_and_identity(self):
+        self.control();profile=self.u.load_profile()
+        financial_at=next(c['context_sha256'] for c in profile['contexts'] if c['component']=='AT' and c['literal_context']['dataset']=='financial')
+        individual_pl=next(c['context_sha256'] for c in profile['contexts'] if c['component']=='PL' and c['literal_context']['dataset']=='individual')
+        cases={'perspective':('binding_ref',financial_at),'component':('binding_ref',individual_pl),
+               'period':('period','200812'),'definition':('definition_id','other'),'window':('window_rule','other'),
+               'unit_type':('unit_key',['individual','2','I'])}
+        for name,(key,value) in cases.items():
+            def change(rows,key=key,value=value):
+                row=next(r for r in rows['components'] if r['dataset']=='individual' and r['code']=='I' and r['component']=='AT');row[key]=value
+            out=self.rewritten(name,change)
+            with self.subTest(name=name),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+        def compatibility(rows):
+            r=next(r for r in rows['results'] if r['metric']=='R1' and r['horizon']=='ttm' and r['code']=='I')
+            r['components']['AT']['compatibility'][0]['left']['bindings'][0]={'context_ref':financial_at}
+        out=self.rewritten('compatibility_ref',compatibility)
+        with self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+        def full_binding(rows):
+            r=next(r for r in rows['results'] if r['metric']=='R1' and r['horizon']=='ttm' and r['code']=='I')
+            r['components']['AT']['compatibility'][0]['left']['bindings'][0]=deepcopy(next(c for c in profile['contexts'] if c['context_sha256']==financial_at))
+        out=self.rewritten('compatibility_full_binding',full_binding)
+        with self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+
+    def test_review_source_overrides_and_component_reference_kinds_are_closed(self):
+        self.control()
+        def source_override(rows):
+            row=next(r for r in rows['components'] if r['dataset']=='individual' and r['component']=='AT' and r['sources'])
+            row['sources'][0]['TipoInstituicao']='2'
+        out=self.rewritten('source_type_override',source_override)
+        with self.subTest(case='source_type'),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+        def wrong_component(rows):
+            r=next(r for r in rows['results'] if r['metric']=='C1' and r['code']=='I')
+            pl=next(o for o in rows['components'] if o['code']=='I' and o['component']=='PL' and o['period']=='202412')
+            r['components']['AT']['inputs'][0]={'component_ref':pl['id']}
+        out=self.rewritten('component_kind',wrong_component)
+        with self.subTest(case='component_kind'),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+
+    def test_review_duplicate_canonical_result_is_rejected_with_any_id(self):
+        self.control()
+        for different in (False,True):
+            def change(rows):
+                r=deepcopy(rows['results'][0])
+                if different:r['id']+='|duplicate'
+                rows['results'].insert(1,r)
+            out=self.rewritten('duplicate'+str(different),change)
+            with self.subTest(different_id=different),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+
+    def test_review_membership_requires_exact_source_proofs_in_both_directions(self):
+        self.control()
+        for case in ('all','sample','nominal','scope','membership','company','unit_and_links'):
+            def change(rows):
+                links=rows['membership_links']
+                if case=='all':links.clear()
+                elif case in ('sample','nominal'):
+                    links.remove(next(r for r in links if (r['membership']=='sample')==(case=='sample')))
+                elif case=='scope':links[0]['scope']='unproved'
+                elif case=='membership':links[0]['membership']='unknown'
+                elif case=='company':links[0]['company_id']='unproved'
+                else:
+                    unit=next(r for r in rows['unit_periods'] if r['membership']=='sample')
+                    company=unit['companies'].pop();links[:]=[r for r in links if not (r['unit_id']==unit['unit_id'] and r['company_id']==company)]
+            out=self.rewritten(case,change)
+            with self.subTest(case=case),self.assertRaises(ValueError):self.u.verify(out,self.digest(out/'manifest.json'))
+
 if __name__ == '__main__':
     unittest.main()
