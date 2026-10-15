@@ -426,6 +426,18 @@ def _derived_windows(root,manifest,population):
         yield dict(unit_coverage=coverage,**aggregate_unit_results(coverage))
 
 
+def _finish_derived(output,manifest,population):
+    """Persist wide derived rows with their measured COPY budget."""
+    import duckdb
+    with ExitStack() as stack,duckdb.connect(config={'memory_limit':'1GiB','threads':1}) as con:
+        writers={t:Writer(output,t,stack) for t in DERIVED_TABLES}
+        for tables in _derived_windows(output,manifest,population):
+            for table,rows in tables.items():
+                for row in rows:writers[table].append(row)
+        for table,writer in writers.items():
+            manifest['files'].extend(writer.finish(con));manifest['tables'][table]=writer.count
+
+
 def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
     import duckdb
     from .ifdata_population import open_population,CONTRACT as POP_CONTRACT,_metadata
@@ -539,13 +551,7 @@ def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
                   reference_contract='profile-context-and-window-component-v1',
                   limitations=['Technical native sums are not a certified system total','Prudential own assets unknown; no financial proxy','Membership does not control native applicability','No constituent or issuer-control continuity inferred'])
     if stage=='coverage-and-aggregation':
-        with ExitStack() as stack,duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as con:
-            writers={t:Writer(output,t,stack) for t in DERIVED_TABLES}
-            for tables in _derived_windows(output,manifest,pop):
-                for table,rows in tables.items():
-                    for row in rows:writers[table].append(row)
-            for table,writer in writers.items():
-                manifest['files'].extend(writer.finish(con));manifest['tables'][table]=writer.count
+        _finish_derived(output,manifest,pop)
     # Final aggregation can be long: the last authentication and source check
     # belong immediately before acceptance, not only before derived output.
     math._authenticate(config['population'],POP_CONTRACT,True)
@@ -810,7 +816,14 @@ def compare(output,expected_manifest_sha256,baseline,baseline_manifest_sha256):
         if ds in manifest['inputs'] and old['inputs'][ds]['expected_manifest_sha256']!=manifest['inputs'][ds]['expected_manifest_sha256']:
             raise ValueError('Baseline native source pins differ')
     profile=load_profile(manifest['config']['profile_id'],manifest['profile_sha256'])
-    if old['profile_sha256']!=profile['legacy_profile_sha256']:raise ValueError('Baseline profile is outside reviewed lineage')
+    raw=math.PROFILE_PATH.read_bytes();lf=raw.replace(b'\r\n',b'\n');crlf=lf.replace(b'\n',b'\r\n')
+    # Only the two exact line-ending spellings of reviewed installed content.
+    # The embedded anchor must authenticate that content before an alias can
+    # authenticate a baseline; edited content cannot authorize its own hashes.
+    lineage={hashlib.sha256(content).hexdigest() for content in (lf,crlf)}
+    if (b'\r' in lf or raw not in (lf,crlf) or profile['legacy_profile_sha256'] not in lineage
+            or old['profile_sha256'] not in lineage):
+        raise ValueError('Baseline profile is outside reviewed lineage')
     report=dict(matched=0,differences=[],missing_baseline_keys=[],outside_selected_scope=0,universe_only_count=0,
                 baseline_manifest_sha256=baseline_manifest_sha256,universe_manifest_sha256=expected_manifest_sha256,
                 comparison='exact economic fields and relevant temporal observations; no rounding')

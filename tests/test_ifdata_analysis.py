@@ -1410,5 +1410,92 @@ for _name in dir(UniverseTests):
         setattr(UniverseFinalPackageTests,_name,None)
 
 
+class UniversePersistenceLineageTests(unittest.TestCase):
+    setUp=PackageTests.setUp
+    digest=PackageTests.digest
+    native_package=PackageTests.native_package
+    fixtures=PackageTests.fixtures
+    universe_fixture=UniverseTests.universe_fixture
+
+    def test_derived_build_persists_wide_rows_losslessly_with_reader_budget(self):
+        """Synthetic writer resource fixture; no financial population expansion."""
+        import io
+        import duckdb
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();out=self.root/'wide-derived'
+        def row(index):
+            return dict(id=str(index),period='202412',metric=None if index%3==0 else '',
+                horizon='point',dataset='financial',code=str(index),status='ok',
+                text='á"x\r\n'+str(index)+'z'*(280000 if index%3==0 else 20000))
+        def windows(*args):
+            yield {'aggregates':(row(index) for index in range(6240))}
+        with patch.object(u,'_derived_windows',windows):
+            manifest=u.build(cfg,out)
+        self.assertEqual(manifest['tables']['aggregates'],6240)
+        digest=hashlib.sha256();buffer=io.StringIO(newline='')
+        csv_writer=csv.writer(buffer,quoting=csv.QUOTE_NOTNULL)
+        csv_writer.writerow(self.api.TABLE_COLUMNS)
+        with duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as con:
+            cursor=con.execute('select * from read_parquet(?)',[str(out/'aggregates.parquet')])
+            count=0
+            for batch in iter(lambda:cursor.fetchmany(16),[]):
+                for actual in batch:
+                    expected=row(count)
+                    self.assertEqual(actual,tuple(expected.get(k) for k in self.api.TABLE_COLUMNS[:-1])+(u.canonical(expected),))
+                    csv_writer.writerow(actual);count+=1
+                digest.update(buffer.getvalue().encode('utf-8'));buffer.seek(0);buffer.truncate(0)
+            self.assertEqual(count,6240)
+            self.assertEqual(con.execute('select count(distinct id) from read_parquet(?)',[str(out/'aggregates.parquet')]).fetchone()[0],6240)
+        self.assertEqual(digest.hexdigest(),self.digest(out/'aggregates.csv'))
+        iterator=self.api._iter_json_array(out/'aggregates.json')
+        try:self.assertEqual(next(iterator),row(0))
+        finally:iterator.close()
+
+    def test_comparator_accepts_only_anchored_exact_line_endings_and_raw_pins_stay_strict(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();out=self.root/'universe';u.build(cfg,out)
+        pop=json.loads((Path(cfg['population']['root'])/'manifest.json').read_text())
+        old=dict(periods=['202412'],inputs={k:v for k,v in pop['config']['inputs'].items() if k!='individual'})
+        raw=self.api.PROFILE_PATH.read_bytes();lf=raw.replace(b'\r\n',b'\n');crlf=lf.replace(b'\n',b'\r\n')
+        installed=self.root/'legacy-profile.json'
+        for name,content in [('lf',lf),('crlf',crlf)]:
+            with self.subTest(ending=name),patch.object(self.api,'PROFILE_PATH',installed):
+                installed.write_bytes(content);pin=self.digest(installed)
+                self.api.load_profile(pin)
+                with self.assertRaisesRegex(ValueError,'Profile hash mismatch'):
+                    self.api.load_profile(hashlib.sha256(crlf if name=='lf' else lf).hexdigest())
+                old['profile_expected_sha256']=pin;baseline=self.root/name
+                self.api.build_analysis(old,baseline)
+                report=u.compare(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+                self.assertEqual(report['matched'],14);self.assertEqual(report['differences'],[])
+        baseline=self.root/'lf';bm=json.loads((baseline/'manifest.json').read_text())
+        unreviewed=deepcopy(u.load_profile());unreviewed['legacy_profile_sha256']='0'*64
+        with patch.object(u,'load_profile',return_value=unreviewed):
+            with self.assertRaisesRegex(ValueError,'reviewed lineage'):
+                u.compare(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        with patch.object(self.api,'PROFILE_PATH',installed):
+            installed.write_bytes(lf+b' ')
+            with self.assertRaisesRegex(ValueError,'reviewed lineage'):
+                u.compare(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        bad=deepcopy(bm);bad['inputs']['financial']['expected_manifest_sha256']='0'*64
+        (baseline/'manifest.json').write_text(json.dumps(bad),encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'Baseline native source pins differ'):
+            u.compare(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        for rejected in ('0'*64,hashlib.sha256(lf+b' ').hexdigest()):
+            bm['profile_sha256']=rejected
+            (baseline/'manifest.json').write_text(json.dumps(bm),encoding='utf-8')
+            with self.subTest(baseline_pin=rejected),self.assertRaisesRegex(ValueError,'reviewed lineage'):
+                u.compare(out,self.digest(out/'manifest.json'),baseline,self.digest(baseline/'manifest.json'))
+        universe_raw=u.PROFILE_PATH.read_bytes();universe_lf=universe_raw.replace(b'\r\n',b'\n')
+        universe_crlf=universe_lf.replace(b'\n',b'\r\n');installed=self.root/'universe-profile.json'
+        with patch.object(u,'PROFILE_PATH',installed):
+            for content,other in ((universe_lf,universe_crlf),(universe_crlf,universe_lf)):
+                installed.write_bytes(content);u.load_profile(expected_sha256=self.digest(installed))
+                with self.assertRaisesRegex(ValueError,'Universe profile hash mismatch'):
+                    u.load_profile(expected_sha256=hashlib.sha256(other).hexdigest())
+
+
 if __name__ == '__main__':
     unittest.main()
