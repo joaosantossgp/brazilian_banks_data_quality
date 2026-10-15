@@ -1499,3 +1499,180 @@ class UniversePersistenceLineageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class UniverseCheckpointTests(unittest.TestCase):
+    setUp=PackageTests.setUp
+    digest=PackageTests.digest
+    native_package=PackageTests.native_package
+    fixtures=PackageTests.fixtures
+    universe_fixture=UniverseTests.universe_fixture
+
+    def test_stage_finalization_matches_full_payloads_and_preserves_units(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.assertTrue(hasattr(self.api,'finalize_universe_analysis'),'Missing public checkpoint finalizer')
+        cfg=self.universe_fixture();unit=self.root/'unit';full=self.root/'full';final=self.root/'final'
+        original=u.build(cfg,unit,batch_size=1,stage='unit-calculations')
+        before={p.name:self.digest(p) for p in unit.iterdir()}
+        expected=u.build(cfg,full,batch_size=3)
+        actual=self.api.finalize_universe_analysis(unit,self.digest(unit/'manifest.json'),final)
+        self.assertEqual(actual['logical_payload_sha256'],expected['logical_payload_sha256'])
+        self.assertEqual(len(list(final.iterdir())),28)
+        self.assertEqual(actual['calculation_producer'],original['producer'])
+        self.assertEqual(actual['producer']['operation'],'finalize_universe_analysis')
+        for entry in expected['files']:self.assertEqual(self.digest(full/entry['file']),self.digest(final/entry['file']))
+        self.assertEqual(before,{p.name:self.digest(p) for p in unit.iterdir()})
+        for entry in original['files']:self.assertTrue((unit/entry['file']).samefile(final/entry['file']))
+        u.verify(final,self.digest(final/'manifest.json'))
+
+    def receipt_fixture(self,cfg,source):
+        import platform,sys,duckdb
+        from bank_quality import ifdata_universe_analysis as u
+        caller=self.root/'original-caller.py';caller.write_bytes(b'# original public build caller\n')
+        config=self.root/'original-config.json';config.write_text(json.dumps(cfg,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        _,pop=self.api._authenticate(cfg['population'])
+        inputpins={str(Path(e['root'])/'manifest.json'):e['expected_manifest_sha256'] for e in dict(pop['config']['inputs'],population=cfg['population'],**({'opening':cfg['opening']} if 'opening' in cfg else {})).values()}
+        snapshots=u._producer_snapshot(cfg,'coverage-and-aggregation',2)['source_sha256']
+        snapshots[str(Path(__file__).resolve())]=self.digest(Path(__file__))
+        pre=dict(status='running',mode='buildverify',output=str(source),pid=123,head='a'*40,started_utc='2026-10-15T12:00:00+00:00',batch_size=2,
+            source_before=snapshots,input_manifest_before=inputpins,config=str(config),config_sha256=self.digest(config),wrapper_sha256=self.digest(caller),
+            process_created_utc='2026-10-15T11:59:59+00:00',actual_executable=sys.executable,
+            process_command_line=f'"{sys.executable}" "{caller}" buildverify run3 2 --expected-head '+ 'a'*40,
+            runtime=dict(python=platform.python_version(),executable=sys.executable,duckdb=duckdb.__version__,platform=platform.platform()))
+        terminal=dict(pre,status='failed',error='in build\nwriter.finish(con)\nin finish\n_duckdb.OutOfMemoryException: Out of Memory Error',
+            finished_utc='2026-10-15T12:01:00+00:00',source_after=snapshots,input_manifest_after=inputpins,
+            config_sha256_after=self.digest(config),head_after=pre['head'],primary_status_after='',source_stable=True,input_manifests_stable=True)
+        paths=dict(config=config,caller=caller)
+        for name,value in [('preflight',pre),('terminal',terminal)]:
+            paths[name]=self.root/(name+'.json');paths[name].write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8')
+        descriptor=self.root/'evidence.json'
+        def save():
+            descriptor.write_text(json.dumps(dict(contract='ifdata-unit-checkpoint-evidence-v1',**{n:dict(path=str(p),sha256=self.digest(p)) for n,p in paths.items()})),encoding='utf-8')
+            return descriptor,self.digest(descriptor)
+        save()
+        return paths,pre,terminal,save
+
+    def test_admission_authenticates_original_receipts_and_captures_current_hashes(self):
+        from bank_quality import ifdata_universe_analysis as u
+        self.assertTrue(hasattr(u,'admit_universe_unit_checkpoint'),'Missing public checkpoint admission')
+        cfg=self.universe_fixture();source=self.root/'failed';old=u.build(cfg,source,stage='unit-calculations')
+        (source/'manifest.json').unlink()
+        (source/'aggregates.json').write_text('[incomplete',encoding='utf-8')
+        before={p.name:self.digest(p) for p in source.iterdir()}
+        paths,pre,terminal,save=self.receipt_fixture(cfg,source);evidence,pin=save()
+        output=self.root/'admitted'
+        admitted=self.api.admit_universe_unit_checkpoint(cfg,source,output,evidence=evidence,expected_evidence_sha256=pin)
+        self.assertEqual(admitted['files'],old['files'])
+        self.assertEqual(len(list(output.iterdir())),13)
+        self.assertEqual(admitted['calculation_producer']['evidence_kind'],'caller_preflight_and_failed_terminal_receipt')
+        self.assertEqual(admitted['unit_checkpoint']['capture_timing'],'captured_at_checkpoint_admission')
+        self.assertEqual(admitted['producer']['operation'],'admit_universe_unit_checkpoint')
+        self.assertEqual(admitted['unit_checkpoint']['evidence']['config']['raw_utf8'],paths['config'].read_bytes().decode('utf-8'))
+        self.assertNotEqual(admitted['producer']['config_sha256'],self.digest(paths['config']))
+        u.verify(output,self.digest(output/'manifest.json'))
+        final=u.finalize_universe_analysis(output,self.digest(output/'manifest.json'),self.root/'final')
+        self.assertEqual(final['calculation_producer'],admitted['calculation_producer'])
+        self.assertEqual(before,{p.name:self.digest(p) for p in source.iterdir()})
+
+    def test_admission_rejects_receipt_pin_and_identity_disagreements(self):
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'failed';u.build(cfg,source,stage='unit-calculations');(source/'manifest.json').unlink()
+        paths,pre,end,save=self.receipt_fixture(cfg,source)
+        mutations=[('status','pass'),('pid',999),('config_sha256_after','0'*64),('wrapper_sha256','0'*64),
+            ('head_after','b'*40),('source_stable',False),('source_after',{}),('input_manifest_after',{}),
+            ('runtime',dict(pre['runtime'],duckdb='unknown')),('output',str(self.root/'other')),('error','early source failure')]
+        for index,(field,value) in enumerate(mutations):
+            with self.subTest(field=field):
+                bad=dict(end,**{field:value});paths['terminal'].write_text(json.dumps(bad),encoding='utf-8');evidence,pin=save()
+                output=self.root/('bad-'+str(index))
+                with self.assertRaises(ValueError):u.admit_universe_unit_checkpoint(cfg,source,output,evidence=evidence,expected_evidence_sha256=pin)
+                self.assertFalse((output/'manifest.json').exists())
+        paths['terminal'].write_text(json.dumps(end),encoding='utf-8');evidence,pin=save()
+        for field in ('source_before','input_manifest_before','runtime'):
+            bad=deepcopy(pre);terminal=deepcopy(end)
+            if field=='source_before':
+                key=next(k for k in bad[field] if k.endswith(u.PROFILE_PATH.name));bad[field][key]='0'*64;terminal['source_after']=bad[field]
+            elif field=='input_manifest_before':
+                key=next(iter(bad[field]));bad[field][key]='0'*64;terminal['input_manifest_after']=bad[field]
+            else:bad[field]['duckdb']='unknown'
+            terminal[field]=bad[field]
+            paths['preflight'].write_text(json.dumps(bad),encoding='utf-8');paths['terminal'].write_text(json.dumps(terminal),encoding='utf-8');evidence,pin=save()
+            with self.subTest(coherent=field),self.assertRaises(ValueError):u.admit_universe_unit_checkpoint(cfg,source,self.root/('coherent-'+field),evidence=evidence,expected_evidence_sha256=pin)
+        with self.assertRaises(ValueError):u.admit_universe_unit_checkpoint(cfg,source,self.root/'badpin',evidence=evidence,expected_evidence_sha256='0'*64)
+
+    def test_finalization_failures_leave_sources_unchanged_without_acceptance(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'unit';u.build(cfg,source,stage='unit-calculations')
+        pin=self.digest(source/'manifest.json');before={p.name:self.digest(p) for p in source.iterdir()}
+        for label,context in [('link',patch('os.link',side_effect=OSError('cross device'))),('writer',patch.object(u,'_finish_derived',side_effect=RuntimeError('injected writer failure')))]:
+            output=self.root/label
+            with context,self.assertRaises((OSError,RuntimeError)):u.finalize_universe_analysis(source,pin,output)
+            self.assertFalse((output/'manifest.json').exists())
+            self.assertEqual(before,{p.name:self.digest(p) for p in source.iterdir()})
+        for output in (source,source/'nested',self.root):
+            with self.assertRaises((ValueError,FileExistsError)):u.finalize_universe_analysis(source,pin,output)
+        existing=self.root/'existing';existing.mkdir()
+        with self.assertRaises(FileExistsError):u.finalize_universe_analysis(source,pin,existing)
+        output=self.root/'mutated';original=u._finish_derived
+        def mutate(*args):
+            original(*args)
+            with (source/'components.json').open('ab') as f:f.write(b' ')
+        with patch.object(u,'_finish_derived',side_effect=mutate),self.assertRaises(ValueError):u.finalize_universe_analysis(source,pin,output)
+        self.assertFalse((output/'manifest.json').exists())
+
+    def test_admission_uses_complete_existing_verifier_and_never_repairs_prefixes(self):
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'failed';u.build(cfg,source,stage='unit-calculations');(source/'manifest.json').unlink()
+        paths,pre,end,save=self.receipt_fixture(cfg,source);evidence,pin=save()
+        original=(source/'results.json').read_bytes()
+        for index,content in enumerate((original[:-10],b'[]',original.replace(b'component_ref',b'nonexistent_ref'))):
+            (source/'results.json').write_bytes(content);output=self.root/('invalid-'+str(index))
+            with self.assertRaises((ValueError,json.JSONDecodeError)):u.admit_universe_unit_checkpoint(cfg,source,output,evidence=evidence,expected_evidence_sha256=pin)
+            self.assertFalse((output/'manifest.json').exists())
+        (source/'results.json').write_bytes(original)
+        (source/'unexpected.json').write_bytes(b'[]')
+        with self.assertRaises(ValueError):u.admit_universe_unit_checkpoint(cfg,source,self.root/'extra',evidence=evidence,expected_evidence_sha256=pin)
+
+    def test_finalizer_rejects_unit_without_original_producer_or_logical_pin(self):
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'unit';m=u.build(cfg,source,stage='unit-calculations')
+        for index,key in enumerate(('producer','logical_payload_sha256')):
+            bad=deepcopy(m);bad.pop(key)
+            (source/'manifest.json').write_text(json.dumps(bad),encoding='utf-8')
+            output=self.root/('missing-'+str(index))
+            with self.assertRaisesRegex(ValueError,'Checkpoint producer/logical'):
+                u.finalize_universe_analysis(source,self.digest(source/'manifest.json'),output)
+            self.assertFalse((output/'manifest.json').exists())
+
+    def test_writer_owns_only_derived_files_and_source_changes_block_acceptance(self):
+        from unittest.mock import patch
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'unit';u.build(cfg,source,stage='unit-calculations');pin=self.digest(source/'manifest.json')
+        before={p.name:self.digest(p) for p in source.iterdir()};written=[];writer=u.Writer
+        class ObservedWriter(writer):
+            def __init__(self,output,table,stack):
+                written.append(table);super().__init__(output,table,stack)
+        with patch.object(u,'Writer',ObservedWriter):u.finalize_universe_analysis(source,pin,self.root/'good')
+        self.assertEqual(written,['unit_coverage','aggregates','distributions','segment_coverage','cohort_comparisons'])
+        state={'changed':False};digest=u.math._digest_file;finish=u._finish_derived
+        def changed(path):
+            if state['changed'] and Path(path).resolve()==Path(u.__file__).resolve():return '0'*64
+            return digest(path)
+        def complete(*args):finish(*args);state['changed']=True
+        output=self.root/'source-changed'
+        with patch.object(u.math,'_digest_file',side_effect=changed),patch.object(u,'_finish_derived',side_effect=complete),self.assertRaisesRegex(ValueError,'Producer source changed'):
+            u.finalize_universe_analysis(source,pin,output)
+        self.assertFalse((output/'manifest.json').exists())
+        self.assertEqual(before,{p.name:self.digest(p) for p in source.iterdir()})
+
+    def test_checkpoint_symlink_roots_or_unit_entries_are_rejected(self):
+        import os
+        from bank_quality import ifdata_universe_analysis as u
+        cfg=self.universe_fixture();source=self.root/'unit';u.build(cfg,source,stage='unit-calculations');pin=self.digest(source/'manifest.json')
+        alias=self.root/'alias'
+        try:os.symlink(source,alias,target_is_directory=True)
+        except OSError as error:self.skipTest('Native symlink privilege unavailable: '+str(error))
+        with self.assertRaisesRegex(ValueError,'redirects'):u.finalize_universe_analysis(alias,pin,self.root/'final')
+        redirected=self.root/'external-components.json';(source/'components.json').rename(redirected);os.symlink(redirected,source/'components.json')
+        with self.assertRaises(ValueError):u.finalize_universe_analysis(source,pin,self.root/'final2')
+        self.assertFalse((self.root/'final2/manifest.json').exists())

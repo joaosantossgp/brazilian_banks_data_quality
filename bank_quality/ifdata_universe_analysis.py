@@ -438,20 +438,15 @@ def _finish_derived(output,manifest,population):
             manifest['files'].extend(writer.finish(con));manifest['tables'][table]=writer.count
 
 
-def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
-    import duckdb
-    from .ifdata_population import open_population,CONTRACT as POP_CONTRACT,_metadata
+def _prepare_inputs(config,batch_size=32):
+    from .ifdata_population import CONTRACT as POP_CONTRACT,_metadata
     from .ifdata_odata import CONTRACT as DATA_CONTRACT
     from .ifdata_cadastro import CONTRACT as CAD_CONTRACT
     from .ifdata_variable_catalog import CONTRACT as CAT_CONTRACT,query_catalog
-    output=Path(output).resolve()
-    if output.exists():raise FileExistsError(output)
-    if stage not in ('unit-calculations','coverage-and-aggregation'):raise ValueError('Invalid universe stage')
     required={'periods','datasets','profile_id','profile_expected_sha256','population'}
     if not isinstance(config,dict) or not required<=set(config) or set(config)-required-{'opening'}:raise ValueError('Invalid universe config')
     if type(batch_size) is not int or batch_size<1:raise ValueError('Positive batch size required')
     config=deepcopy(config)
-    producer=_producer_snapshot(config,stage,batch_size)
     dependencies=math.dependency_periods(config['periods']);periods=sorted(config['periods']);datasets=config['datasets']
     if not isinstance(datasets,list) or not datasets or any(d not in TYPES for d in datasets) or len(set(datasets))!=len(datasets):raise ValueError('Invalid universe perspectives')
     pin=config['profile_expected_sha256']
@@ -478,6 +473,30 @@ def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
         allowed={p['sha256'] for p in policy['pages']}
         if any(e.get('source_sha256') not in allowed for e in opening[1]['files']):raise ValueError('Unreviewed opening pages')
         accepted['opening']=opening
+    return config,periods,datasets,dependencies,pin,profile,poproot,pop,inputs,accepted,catalogue
+
+
+def _unit_manifest(config,files,counts,stage='unit-calculations'):
+    periods=sorted(config['periods']);datasets=config['datasets'];pin=config['profile_expected_sha256']
+    dependencies=math.dependency_periods(periods)
+    _,pop=math._authenticate(config['population'])
+    inputs=pop['config']['inputs']
+    normalized=deepcopy(config);normalized['periods']=periods;normalized['datasets']=sorted(datasets)
+    manifest=dict(contract=CONTRACT,stage=stage,config=normalized,inputs=inputs,profile_sha256=pin,
+                  periods=periods,dependency_periods=dependencies,tables=counts,table_columns=list(math.TABLE_COLUMNS),files=files,
+                  reference_contract='profile-context-and-window-component-v1',
+                  limitations=['Technical native sums are not a certified system total','Prudential own assets unknown; no financial proxy','Membership does not control native applicability','No constituent or issuer-control continuity inferred'])
+    return manifest
+
+
+def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
+    import duckdb
+    from .ifdata_population import open_population,CONTRACT as POP_CONTRACT
+    output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    if stage not in ('unit-calculations','coverage-and-aggregation'):raise ValueError('Invalid universe stage')
+    producer=_producer_snapshot(config,stage,batch_size)
+    config,periods,datasets,dependencies,pin,profile,poproot,pop,inputs,accepted,catalogue=_prepare_inputs(config,batch_size)
     with ExitStack() as stack:
         population=stack.enter_context(open_population(poproot,config['population']['expected_manifest_sha256']))
         conn=stack.enter_context(duckdb.connect(config={'memory_limit':'512MiB','threads':1}))
@@ -545,11 +564,7 @@ def build(config,output,*,batch_size=32,stage='coverage-and-aggregation'):
     # Persistent source mutation cannot receive an accepted output manifest.
     math._authenticate(config['population'],POP_CONTRACT,True)
     for name in accepted:math._authenticate(config['opening'] if name=='opening' else inputs[name])
-    normalized=deepcopy(config);normalized['periods']=periods;normalized['datasets']=sorted(datasets)
-    manifest=dict(contract=CONTRACT,stage=stage,config=normalized,inputs=inputs,profile_sha256=pin,
-                  periods=periods,dependency_periods=dependencies,tables=counts,table_columns=list(math.TABLE_COLUMNS),files=files,
-                  reference_contract='profile-context-and-window-component-v1',
-                  limitations=['Technical native sums are not a certified system total','Prudential own assets unknown; no financial proxy','Membership does not control native applicability','No constituent or issuer-control continuity inferred'])
+    manifest=_unit_manifest(config,files,counts,stage)
     if stage=='coverage-and-aggregation':
         _finish_derived(output,manifest,pop)
     # Final aggregation can be long: the last authentication and source check
@@ -648,8 +663,12 @@ def _reconcile_population(root,manifest):
 
 
 def verify(output,expected_manifest_sha256):
-    import duckdb
     root,m=math._authenticate(dict(root=str(output),expected_manifest_sha256=expected_manifest_sha256),CONTRACT,True)
+    return _verify_contents(root,m)
+
+
+def _verify_contents(root,m):
+    import duckdb
     tables=TABLES if m.get('stage')=='unit-calculations' else FINAL_TABLES if m.get('stage')=='coverage-and-aggregation' else ()
     if not tables or set(m.get('tables',{}))!=set(tables) or m.get('table_columns')!=list(math.TABLE_COLUMNS):
         raise ValueError('Universe stage/schema mismatch')
@@ -1004,3 +1023,222 @@ def query(output,expected_manifest_sha256,sql):
         cur=con.execute(sql);fields=[c[0] for c in cur.description];rows=cur.fetchmany(10001)
         if len(rows)>10000:raise ValueError('Query row limit exceeded; select an explicit smaller scope')
         return [dict(zip(fields,row)) for row in rows]
+
+def _ordinary(path):
+    """Reject redirects before resolving, including Windows junctions."""
+    import stat
+    path=Path(path).absolute()
+    for item in (path,*path.parents):
+        if item.is_symlink() or (item.exists() and getattr(item.lstat(),'st_file_attributes',0)&getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',0x400)):
+            raise ValueError('Checkpoint path redirects are forbidden')
+    return path
+
+
+def _checkpoint_paths(source,output):
+    source=_ordinary(source).resolve();output=_ordinary(output).resolve()
+    if source==output or source in output.parents or output in source.parents:
+        raise ValueError('Checkpoint source/output overlap')
+    if output.exists():raise FileExistsError(output)
+    return source,output
+
+
+def _unit_inventory(root):
+    inventory=[]
+    for table in TABLES:
+        count=0
+        for ext in ('json','csv','parquet'):
+            name=table+'.'+ext;path=_ordinary(root/name)
+            if not path.is_file():raise ValueError('Missing ordinary unit file: '+name)
+            inventory.append(dict(file=name,sha256=math._digest_file(path),bytes=path.stat().st_size))
+        with closing(math._iter_json_array(root/(table+'.json'))) as stream:
+            for _ in stream:count+=1
+        for item in inventory[-3:]:item['rows']=count
+    return inventory
+
+
+def _guard_units(source,output,inventory):
+    for entry in inventory:
+        a=_ordinary(source/entry['file']);b=_ordinary(output/entry['file']) if output else a
+        if (not a.is_file() or not b.is_file() or not a.samefile(b)
+                or a.stat().st_size!=entry['bytes'] or math._digest_file(a)!=entry['sha256']):
+            raise ValueError('Checkpoint unit bytes/identity changed: '+entry['file'])
+
+
+def _link_units(source,output,inventory):
+    import os
+    output.mkdir(parents=True,exist_ok=False)
+    for entry in inventory:
+        # os.link fails on occupied paths or incompatible filesystems. No copy fallback.
+        os.link(source/entry['file'],output/entry['file'])
+    _guard_units(source,output,inventory)
+
+
+def _operation_producer(config,operation,external_pin):
+    producer=_producer_snapshot(config,'unit-calculations',None)
+    producer.update(operation=operation,external_pin=external_pin,
+        attribution='this_operation_only_not_original_unit_calculation',
+        config_sha256=hashlib.sha256(canonical(dict(config=config,operation=operation,external_pin=external_pin)).encode()).hexdigest())
+    return producer
+
+
+def _accept_checkpoint(output,manifest,producer,guard):
+    from datetime import datetime,timezone
+    _prepare_inputs(manifest['config'])
+    guard();_check_producer(producer)
+    producer.update(finished_utc=datetime.now(timezone.utc).isoformat(),source_stability='verified_before_manifest',
+        inputs=deepcopy(manifest['inputs']),population=deepcopy(manifest['config']['population']),profile_sha256=manifest['profile_sha256'])
+    manifest['producer']=producer
+    manifest['logical_payload_sha256']=logical_payload_sha256(manifest)
+    # All guards precede the sole acceptance marker. Never overwrite one.
+    with (output/'manifest.json').open('x',encoding='utf-8') as f:
+        f.write(json.dumps(manifest,ensure_ascii=False,sort_keys=True,indent=2)+'\n')
+    return manifest
+
+
+def finalize_universe_analysis(checkpoint,expected_manifest_sha256,output):
+    """Hardlink a verified unit stage and regenerate only five derived tables."""
+    source,output=_checkpoint_paths(checkpoint,output)
+    _ordinary(source/'manifest.json')
+    manifest=verify(source,expected_manifest_sha256)
+    original=manifest.get('producer',{})
+    if (manifest.get('logical_payload_sha256')!=logical_payload_sha256(manifest)
+            or not isinstance(original,dict) or not original.get('source_sha256')
+            or original.get('source_stability')!='verified_before_manifest'):
+        raise ValueError('Checkpoint producer/logical payload provenance missing or invalid')
+    if manifest['stage']!='unit-calculations':raise ValueError('Finalization requires unit-calculations')
+    producer=_operation_producer(manifest['config'],'finalize_universe_analysis',expected_manifest_sha256)
+    prepared=_prepare_inputs(manifest['config']);population=prepared[7]
+    template=_unit_manifest(manifest['config'],manifest['files'],manifest['tables'])
+    for key in template:
+        if manifest.get(key)!=template[key]:raise ValueError('Checkpoint normalized configuration mismatch: '+key)
+    inventory=_unit_inventory(source)
+    _guard_units(source,None,inventory)
+    _link_units(source,output,inventory)
+    result=deepcopy(manifest);result['stage']='coverage-and-aggregation'
+    result['calculation_producer']=deepcopy(manifest.get('calculation_producer',manifest.get('producer')))
+    result['unit_checkpoint']=dict(contract=CONTRACT,stage='unit-calculations',manifest_sha256=expected_manifest_sha256,
+        logical_payload_sha256=logical_payload_sha256(manifest),inventory=inventory,
+        provenance=deepcopy(manifest.get('unit_checkpoint',{})),checkpoint_producer=deepcopy(manifest.get('producer')))
+    _finish_derived(output,result,population)
+    def guard():
+        math._authenticate(dict(root=str(source),expected_manifest_sha256=expected_manifest_sha256),CONTRACT,True)
+        _guard_units(source,output,inventory)
+        expected={e['file'] for e in result['files']}
+        if {p.name for p in output.iterdir()}!=expected:raise ValueError('Finalizer output inventory changed')
+        for entry in result['files']:
+            if math._digest_file(_ordinary(output/entry['file']))!=entry['sha256']:raise ValueError('Finalizer payload changed')
+    return _accept_checkpoint(output,result,producer,guard)
+
+def _checkpoint_evidence(config,source,evidence,expected_sha256,inputs):
+    """Authenticate exact caller blobs and their original reciprocal records."""
+    from datetime import datetime
+    path=_ordinary(evidence)
+    raw=path.read_bytes()
+    if not isinstance(expected_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_sha256) or hashlib.sha256(raw).hexdigest()!=expected_sha256:
+        raise ValueError('External checkpoint evidence pin mismatch')
+    descriptor=math._json_unique(raw)
+    if set(descriptor)!={'contract','config','caller','preflight','terminal'} or descriptor['contract']!='ifdata-unit-checkpoint-evidence-v1':
+        raise ValueError('Invalid checkpoint evidence descriptor')
+    blobs={};pins={str(path):expected_sha256};records={}
+    for name in ('config','caller','preflight','terminal'):
+        entry=descriptor[name]
+        if not isinstance(entry,dict) or set(entry)!={'path','sha256'}:raise ValueError('Invalid evidence blob pin')
+        if not isinstance(entry['path'],str) or not Path(entry['path']).is_absolute():raise ValueError('Evidence requires ordinary absolute blob path')
+        blobpath=_ordinary(entry['path'])
+        if not blobpath.is_absolute() or not blobpath.is_file():raise ValueError('Evidence requires ordinary absolute blob path')
+        content=blobpath.read_bytes()
+        if not isinstance(entry['sha256'],str) or not re.fullmatch('[0-9a-f]{64}',entry['sha256']) or hashlib.sha256(content).hexdigest()!=entry['sha256']:
+            raise ValueError('Checkpoint evidence blob hash mismatch: '+name)
+        blobs[name]=dict(path=str(blobpath),sha256=entry['sha256'],raw_utf8=content.decode('utf-8'))
+        pins[str(blobpath)]=entry['sha256']
+        if name!='caller':records[name]=math._json_unique(content)
+    if records['config']!=config:raise ValueError('Original raw config differs from requested config')
+    pre=records['preflight'];end=records['terminal']
+    if pre.get('status')!='running' or end.get('status')!='failed' or pre.get('mode')!='buildverify':
+        raise ValueError('Expected original failed build receipt')
+    if any(end.get(k)!=v for k,v in pre.items() if k!='status'):
+        raise ValueError('Original preflight/terminal reciprocity mismatch')
+    if Path(pre.get('output','')).resolve()!=source or Path(pre.get('config','')).resolve()!=Path(blobs['config']['path']).resolve():
+        raise ValueError('Original output/config path mismatch')
+    if (type(pre.get('pid')) is not int or pre['pid']<=0 or type(pre.get('batch_size')) is not int or pre['batch_size']<1
+            or not re.fullmatch('[0-9a-f]{40}',pre.get('head','')) or end.get('head_after')!=pre['head']
+            or end.get('primary_status_after')!='' or pre.get('config_sha256')!=blobs['config']['sha256']
+            or end.get('config_sha256_after')!=pre['config_sha256'] or pre.get('wrapper_sha256')!=blobs['caller']['sha256']):
+        raise ValueError('Original PID/head/config/wrapper mismatch')
+    for before,after,flag in [('source_before','source_after','source_stable'),('input_manifest_before','input_manifest_after','input_manifests_stable')]:
+        values=pre.get(before)
+        if (not isinstance(values,dict) or not values or end.get(after)!=values or end.get(flag) is not True
+                or any(not isinstance(p,str) or not Path(p).is_absolute() or not isinstance(h,str) or not re.fullmatch('[0-9a-f]{64}',h) for p,h in values.items())):
+            raise ValueError('Original source/input before-after mismatch')
+    expected_inputs={str((Path(e['root'])/'manifest.json').resolve()):e['expected_manifest_sha256']
+        for e in dict(inputs,population=config['population'],**({'opening':config['opening']} if 'opening' in config else {})).values()}
+    if {str(Path(p).resolve()):h for p,h in pre['input_manifest_before'].items()}!=expected_inputs:
+        raise ValueError('Original input manifest correspondence mismatch')
+    sources={Path(p).name:h for p,h in pre['source_before'].items()}
+    required={Path(p).name for p in _producer_snapshot(config,'unit-calculations',None)['source_sha256']}|{'test_ifdata_analysis.py'}
+    if len(sources)!=len(pre['source_before']) or set(sources)!=required or sources[PROFILE_PATH.name]!=config['profile_expected_sha256']:
+        raise ValueError('Original responsible source/profile inventory mismatch')
+    runtime=pre.get('runtime',{})
+    if (set(runtime)!={'python','duckdb','executable','platform'} or any(not isinstance(v,str) or not v for v in runtime.values())
+            or not re.fullmatch(r'\d+\.\d+\.\d+',runtime['python']) or not re.fullmatch(r'\d+\.\d+\.\d+',runtime['duckdb'])
+            or not Path(runtime['executable']).is_absolute() or not Path(pre.get('actual_executable','')).is_absolute()):
+        raise ValueError('Original runtime identity mismatch')
+    command=pre.get('process_command_line','')
+    if not isinstance(command,str) or any(v not in command for v in (blobs['caller']['path'],pre['actual_executable'],'buildverify',str(pre['batch_size']),pre['head'])):
+        raise ValueError('Original process command identity mismatch')
+    try:
+        times=[datetime.fromisoformat(v) for v in (pre['process_created_utc'],pre['started_utc'],end['finished_utc'])]
+        if any(t.utcoffset() is None for t in times) or not times[0]<=times[1]<times[2]:raise ValueError()
+    except (KeyError,TypeError,ValueError):raise ValueError('Original process chronology mismatch') from None
+    error=end.get('error','')
+    if not isinstance(error,str) or not all(v in error for v in ('in build','writer.finish','in finish','OutOfMemoryException')) or any(k in end for k in ('producer','manifest_sha256','verification','logical_payload_sha256')):
+        raise ValueError('Expected derived persistence OOM before build returned')
+    provenance=dict(evidence_kind='caller_preflight_and_failed_terminal_receipt',runtime=deepcopy(runtime),
+        source_sha256=deepcopy(pre['source_before']),source_before=deepcopy(pre['source_before']),source_after=deepcopy(end['source_after']),
+        input_manifest_before=deepcopy(pre['input_manifest_before']),input_manifest_after=deepcopy(end['input_manifest_after']),
+        batch_size=pre['batch_size'],config_raw_sha256=blobs['config']['sha256'],wrapper_sha256=blobs['caller']['sha256'],
+        head=pre['head'],pid=pre['pid'],started_utc=pre['started_utc'],finished_utc=end['finished_utc'],outcome='failed_derived_persistence',
+        file_hashes_captured_later=True,attribution_limit='Receipt endpoints only; unit files were first hashed at admission, not at original failure')
+    embedded=dict(descriptor_raw_utf8=raw.decode('utf-8'),descriptor_sha256=expected_sha256,**blobs)
+    def guard():
+        for filename,pin in pins.items():
+            if math._digest_file(_ordinary(filename))!=pin:raise ValueError('Checkpoint evidence changed during admission')
+    return provenance,embedded,guard
+
+
+def admit_universe_unit_checkpoint(config,source_root,output,*,evidence,expected_evidence_sha256):
+    """Admit complete unit files after a receipt-authenticated persistence OOM.
+
+    Evidence descriptor contract ifdata-unit-checkpoint-evidence-v1 has exactly
+    config/caller/preflight/terminal entries {path: absolute path, sha256: raw pin}.
+    The descriptor itself requires an external raw pin. No source file is written.
+    """
+    from datetime import datetime,timezone
+    source,output=_checkpoint_paths(source_root,output)
+    producer=_operation_producer(config,'admit_universe_unit_checkpoint',expected_evidence_sha256)
+    config,periods,datasets,dependencies,pin,profile,poproot,pop,inputs,accepted,catalogue=_prepare_inputs(config)
+    provenance,embedded,evidence_guard=_checkpoint_evidence(config,source,evidence,expected_evidence_sha256,inputs)
+    # Failed derived prefixes may exist but are never consumed or admitted.
+    allowed={t+'.'+e for t in FINAL_TABLES for e in ('json','csv','parquet')}
+    original_names={p.name for p in source.iterdir()} if source.is_dir() else set()
+    if not source.is_dir() or any(p.name not in allowed or not _ordinary(p).is_file() for p in source.iterdir()):
+        raise ValueError('Unmanifested failed root inventory mismatch')
+    capture=datetime.now(timezone.utc).isoformat()
+    inventory=_unit_inventory(source)
+    files=[{k:v for k,v in e.items() if k!='bytes'} for e in inventory]
+    counts={t:next(e['rows'] for e in files if e['file']==t+'.json') for t in TABLES}
+    candidate=_unit_manifest(config,files,counts)
+    _verify_contents(source,candidate)
+    _guard_units(source,None,inventory);evidence_guard()
+    _link_units(source,output,inventory)
+    candidate['calculation_producer']=provenance
+    candidate['unit_checkpoint']=dict(contract=CONTRACT,stage='unit-calculations',source_root=str(source),
+        logical_payload_sha256=logical_payload_sha256(candidate),inventory=inventory,capture_utc=capture,
+        capture_timing='captured_at_checkpoint_admission',file_hashes_captured_later=True,evidence=embedded,
+        limitation='No failure-time unit hashes exist; integrity is established for this admission interval only')
+    def guard():
+        evidence_guard();_guard_units(source,output,inventory)
+        if {p.name for p in source.iterdir()}!=original_names or any(not _ordinary(p).is_file() for p in source.iterdir()):
+            raise ValueError('Original failed root inventory changed during admission')
+        if {p.name for p in output.iterdir()}!={e['file'] for e in inventory}:raise ValueError('Checkpoint output inventory changed')
+    return _accept_checkpoint(output,candidate,producer,guard)

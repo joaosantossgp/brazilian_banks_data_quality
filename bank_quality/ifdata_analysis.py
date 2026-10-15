@@ -1255,3 +1255,13 @@ def query_universe_analysis(output,expected_manifest_sha256,sql):
 def aggregate_unit_results(rows):
     from .ifdata_universe_analysis import aggregate_unit_results as aggregate
     return aggregate(rows)
+
+
+def finalize_universe_analysis(checkpoint,expected_manifest_sha256,output):
+    from .ifdata_universe_analysis import finalize_universe_analysis as finalize
+    return finalize(checkpoint,expected_manifest_sha256,output)
+
+
+def admit_universe_unit_checkpoint(config,source_root,output,*,evidence,expected_evidence_sha256):
+    from .ifdata_universe_analysis import admit_universe_unit_checkpoint as admit
+    return admit(config,source_root,output,evidence=evidence,expected_evidence_sha256=expected_evidence_sha256)

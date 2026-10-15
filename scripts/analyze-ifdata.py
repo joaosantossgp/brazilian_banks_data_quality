@@ -7,7 +7,8 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from bank_quality.ifdata_analysis import (build_analysis,verify_analysis,query_analysis,
     build_universe_analysis,prepare_universe_opening,verify_universe_analysis,
-    query_universe_analysis,compare_universe_analysis,resolve_universe_result)
+    query_universe_analysis,compare_universe_analysis,resolve_universe_result,
+    admit_universe_unit_checkpoint,finalize_universe_analysis)
 
 
 def main():
@@ -18,6 +19,10 @@ def main():
         if name=='build-universe':
             sub.add_argument('--batch-size',type=int,default=32)
             sub.add_argument('--stage',choices=('unit-calculations','coverage-and-aggregation'),default='coverage-and-aggregation')
+    admit=commands.add_parser('admit-universe-checkpoint')
+    for option in ('config','source-root','output','evidence','expected-evidence-sha256'):admit.add_argument('--'+option,required=True)
+    finalize=commands.add_parser('finalize-universe')
+    for option in ('checkpoint','expected-manifest-sha256','output'):finalize.add_argument('--'+option,required=True)
     opening=commands.add_parser('prepare-universe-opening')
     for option in ('raw-root','output','profile-id','profile-expected-sha256'):opening.add_argument('--'+option,required=True)
     for name in ('verify','query','verify-universe','query-universe','compare-universe','resolve-universe'):
@@ -29,6 +34,10 @@ def main():
     if args.command in ('build','build-universe'):
         cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
         result=build_analysis(cfg,args.output) if args.command=='build' else build_universe_analysis(cfg,args.output,batch_size=args.batch_size,stage=args.stage)
+    elif args.command=='admit-universe-checkpoint':
+        cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
+        result=admit_universe_unit_checkpoint(cfg,args.source_root,args.output,evidence=args.evidence,expected_evidence_sha256=args.expected_evidence_sha256)
+    elif args.command=='finalize-universe':result=finalize_universe_analysis(args.checkpoint,args.expected_manifest_sha256,args.output)
     elif args.command=='prepare-universe-opening':result=prepare_universe_opening(args.raw_root,args.output,args.profile_id,args.profile_expected_sha256)
     elif args.command in ('verify','verify-universe'):
         result=(verify_analysis if args.command=='verify' else verify_universe_analysis)(args.output,args.expected_manifest_sha256)

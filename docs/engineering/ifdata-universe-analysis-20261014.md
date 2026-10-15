@@ -146,3 +146,24 @@ Somente aumentar o orçamento da conexão de gravação para1GiB permitiu conver
 A correção focal recebe teste que reproduz o OOM anterior com registros sintéticos largos e confere a representação integral depois do ajuste, além de revisão independente. Outro recorte causal corrige a comparação da linhagem de perfil para as duas variantes exatas LF/CRLF do conteúdo legado revisado, sem normalizar os pins externos brutos nem modificar perfis/fontes. O diagnóstico isolou a mudança de bytes no Windows com UTF8; ainda não houve novo CI Linux. Esses testes continuam separados da aceitação dos dois pacotes completos.
 
 **Revisão focal concluída:** correção de persistência/linhagem teve RED causal dos dois testes em22,326s, GREEN em37,096s e cinco regressões pertinentes PASS em45,746s. Revisão independente de conformidade/qualidade PASS, sem achados materiais, fonte congelada: módulo `176cfc28354c5cf027585b0b6e552d88c0fc6e8ee825a833f44fcd7f23935422` e testes `1bffbbaf51f4685b65b0fd79d8961ad0a36fd9a7624f8388cb573fcbd0772c25`. Os dois perfis, nove manifests de entrada, benchmark e Primary foram conferidos intactos. Esse aceite focal libera a implementação separada da finalização; não aceita os pacotes completos ou confirma CI Linux.
+
+### APIs de estágio persistente — implementação revisada, dados reais pendentes
+
+Foram implementadas `admit_universe_unit_checkpoint` e `finalize_universe_analysis`, com wrappers lazy e CLI no script existente. A admissão recebe configuração, origem falha, destino novo e descriptor externamente pinado. O descriptor tem exatamente `contract`, `config`, `caller`, `preflight` e `terminal`; contrato `ifdata-unit-checkpoint-evidence-v1`, cada blob com `path` absoluto e `sha256` dos bytes originais. A API autentica/correlaciona os recibos, captura agora o inventário das doze partes unitárias e reutiliza a verificação integral desse estágio. Não declara hashes retroativos à falha. O finalizador também aceita um estágio unitário produzido normalmente, sem exigir recibos de falha.
+
+O conjunto pertinente executou17testes em92,593s:16passaram e um teste nativo de symlink foi ignorado por falta de privilégio no Windows. Casos simulados de falha de link/crossdevice, Writer e alteração de fonte foram exercitados. Revisão independente de conformidade/qualidade PASS, sem achados materiais, sobre os quatro paths autorizados congelados. Esses resultados são de software/fixtures; nenhum checkpoint real foi aceito por eles.
+
+Fluxo público durável para próximas execuções, com destinos novos e pin externo do manifest retornado pelo primeiro comando:
+
+```powershell
+python scripts/analyze-ifdata.py build-universe --config CONFIG.json --output NOVO_ESTAGIO_UNITARIO --stage unit-calculations --batch-size 32
+python scripts/analyze-ifdata.py finalize-universe --checkpoint NOVO_ESTAGIO_UNITARIO --expected-manifest-sha256 PIN_EXTERNO_DO_ESTAGIO --output NOVO_PACOTE_FINAL
+```
+
+Admissão específica dos cálculos originais sem manifest, preservando seus diretórios:
+
+```powershell
+python scripts/analyze-ifdata.py admit-universe-checkpoint --config CONFIG_ORIGINAL.json --source-root ORIGEM_FALHA --output NOVO_CHECKPOINT --evidence DESCRIPTOR.json --expected-evidence-sha256 PIN_EXTERNO_DO_DESCRIPTOR
+```
+
+Os nomes em maiúsculas são parâmetros, não destinos existentes. A execução real usa Python3.12.13/DuckDB1.5.6 do Primary, código congelado e caminhos/pins explícitos. Cada saída mantém configuração/entradas/perfil, inventário e proveniência própria no manifest; a comparação pública com127 continua executando a verificação completa antes da regressão. O próximo gate é admitir os dois conjuntos independentemente e finalizar em sequência com RAM/espaço medidos. O aceite econômico dos60trimestres permanece pendente.
