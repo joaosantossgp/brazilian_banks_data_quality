@@ -2,7 +2,9 @@
 
 [Issue125](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/125) · [decisão humana3](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/3) · [plano](../superpowers/plans/2026-10-14-fixed-financial-sample-2024.md).
 
-**Resultado: lista principal fechada, com inventário complementar e exceções explícitas.** Este documento reúne seleção, fontes, unidades, exclusões e cobertura; não cria um segundo tracker. Estado de revisão/publicação/integração tem autoridade na Issue125 e PR vinculada.
+**Atualização aprovada em 16/10/2026:** o universo descritivo vigente é de **55 companhias abertas brasileiras CVM A/B**, das quais **32 têm associação IF.data comprovada no corte**, representadas por **24 unidades financeiras distintas**. A [pesquisa e lista nominal aprovada](cvm-open-financial-universe-2024-20261016.md), na [Issue 142](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/142), documenta as 55 identidades, as 23 sem correspondência principal admitida, as fontes e as pendências. A ampliação é documental: **nenhum cálculo ou dataset desta entrega anterior foi alterado**.
+
+**Resultado histórico da Issue 125, preservado abaixo: 24 companhias/20 unidades.** Este documento conserva seleção, fontes, inventário complementar, exceções e cobertura calculada para a lista de 14/10. Não reapresentar seus percentuais, mapas temporais ou manifestos como resultados de 32 companhias/24 unidades ou do universo de 55. O requisito anterior de ações/Units negociáveis foi substituído por registro CVM A/B no corte; suspensão, controle, disponibilidade e comparabilidade continuam distintos. Estado de publicação/integração de cada entrega tem autoridade em sua própria Issue e PR, quando houver.
 
 ## Decisão e pergunta
 
