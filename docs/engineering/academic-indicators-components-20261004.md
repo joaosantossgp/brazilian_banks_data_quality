@@ -1,5 +1,7 @@
 # Indicadores acadêmicos: fontes, componentes e lacunas
 
+**Nota histórica, não carteira vigente — atualização documental de17/10/2026:** esta proposta registra o estágio anterior à seleção/implementação. Fundamentos e decisões posteriores estão na [pesquisa111](financial-dimensions-literature-20261014.md); o conjunto atual foi implementado nas [entregas127](ifdata-monograph-analysis-20261014.md) e [130](ifdata-universe-analysis-20261014.md). Para ampliação por negócio no sistema inteiro, usar a [pesquisa143](financial-indicators-activity-review-20261016.md) e o [atlas de fórmulas](financial-indicators-formulas-20261017.md). Pendências e fórmulas propostas no corpo abaixo conservam seu alcance histórico; não anulam decisões posteriores.
+
 ## Proposta vigente — 2026-10-11
 
 A [Issue 14] foi reformulada com aprovação de João: organizar componentes por rentabilidade, crédito/risco e patrimônio/capital, propondo indicadores com fórmula, unidade, janela e disponibilidade. A proposta é **prospectiva**; substitui a obrigação de recuperar a lista antiga, sem reconstruí-la. A janela principal continua **2010–2024**, com **2025–2026 complementar**. Adoção de indicadores, cálculo, amostra e método permanecem decisões de João/orientador na [Issue 3].
