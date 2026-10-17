@@ -21,6 +21,24 @@ As famílias são hipóteses interpretativas para avaliar adequação, não clas
 
 C3/C4 são uma leitura **Prudencial separada**, somente nas unidades/regimes pertinentes a cada família. `Tc` estratifica controle; `Td`, consolidação; `Sr`, regime prudencial. `Td=I` não prova independência societária; `Sr` não é simples tamanho. `SrAnalitico` é derivação separada do original, com origem e conflitos preservados. `Atividade` não volta aos filtros nem funciona como classificação oculta.
 
+## Recortes cadastrais abertos: Tcb, Tc, Td e regime
+
+Estes três mapas complementam as árvores de fórmula. A contagem é uma consulta determinística da matriz já revisada: `dataset=financial`, `period=202412`, `candidate=LAcore`, `cohort=system_observed`. Nenhuma razão foi recalculada. O corte é ilustrativo; não fixa os atributos de 2024 no histórico. Cada eixo recompõe as mesmas 1422 unidades, sem somar eixos entre si.
+
+![Oito categorias Tcb observadas no sistema financeiro em 202412, com famílias e perguntas para selecionar indicadores.](../agents/assets/financial-indicators-formulas-09-tcb-20261017.svg)
+
+[PNG Tcb](../agents/assets/financial-indicators-formulas-09-tcb-20261017.png). Alternativa textual: B1, 97 unidades; B2, 31; B3S, 753; B3C, 29; B4, 4; N1, 226; N2, 136; N4, 146. São as oito categorias nas unidades financeiras com valores, distintas dos dez tokens do cadastro geral histórico. B1 inclui múltiplos com carteira comercial/comerciais/caixas; B2 reúne múltiplos sem carteira comercial, investimento e câmbio. B3 e N3 do cadastro geral permanecem sem de-para confirmado, não são forçados a uma família. C1/R1/R2 são leituras contábeis comuns condicionais; o negócio e o perímetro determinam a seleção de complementos e os limites de E2-B, Q1/Q2 e L2/L3.
+
+`SegmentoTb` fornece outra abertura: bancos de desenvolvimento e BNDES (B4) não esgotam a família desenvolvimento/fomento, que também examina Agência de Fomento; bancos cooperativos e cooperativas singulares não são equivalentes. Corretoras/distribuidoras e IPs têm obrigações/serviços próprios. A tabela de famílias acima e a tabela literal dos 25 segmentos financeiros na pesquisa mantêm essas distinções; não há de-para automático Tcb→SegmentoTb nem fórmula única para todas as unidades de um token.
+
+![Tc1 público, Tc2 privado nacional e Tc3 controle estrangeiro; TdC conglomerado e TdI instituição. Mesma fórmula, estratificação e perímetro próprios.](../agents/assets/financial-indicators-formulas-10-control-consolidation-20261017.svg)
+
+[PNG controle e consolidação](../agents/assets/financial-indicators-formulas-10-control-consolidation-20261017.png). Alternativa textual: Tc=1 tem 31 unidades/31 com componentes LA finitos; Tc=2, 1233/1226; Tc=3, 158/158. Td=C tem 69/69; Td=I, 1353/1346. As cinco contagens não formam uma partição conjunta: cada eixo separadamente soma 1422/1415. As mesmas contas de LA são usadas em cada recorte; controle não altera fórmula e consolidação exige coerência da unidade. Não comparar público/privado como efeito causal sem separar composição de negócios; não somar conglomerado e seus membros. I não comprova ausência de vínculo societário.
+
+![Sr original e SrAnalitico separados, categorias S1 a S5 e nulos, sem converter regime prudencial em tamanho.](../agents/assets/financial-indicators-formulas-11-prudential-cuts-20261017.svg)
+
+[PNG regime prudencial](../agents/assets/financial-indicators-formulas-11-prudential-cuts-20261017.png). Alternativa textual: no Sr original financeiro de 202412, S1/S2/S3/S4/S5 têm 9/6/34/290/710 unidades e há 373 nulos; SrAnalitico tem 12/9/48/300/710 e 343 nulos. A diferença não recupera um Sr oficial nem prova licença ou opção regulatória. Proveniência de derivação e conflitos são preservados. Os números são cadastro financeiro, não população do relatório Capital; a disponibilidade dos componentes C3/C4 tem prova própria. `Atividade` segue excluído dos filtros.
+
 ## 1. Rentabilidade e estrutura patrimonial
 
 ![Árvores de R1: LL/AT médio; R2: LL/PL médio; C1: PL/AT. Todas multiplicadas por 100.](../agents/assets/financial-indicators-formulas-01-common-20261017.svg)
@@ -87,4 +105,4 @@ As figuras traduzem fichas já pesquisadas, sem nova leitura bibliográfica: Ass
 
 Fontes de implementação: `metric_definitions`, `evaluate_metric`, preparação de fluxos e `mean_stock` em [ifdata_analysis.py](../../bank_quality/ifdata_analysis.py). A documentação distingue a matemática atual das sete propostas, sem modificar o módulo ou regenerar a base. A disponibilidade e a classificação por família continuam condicionadas às evidências da pesquisa.
 
-Produção com a skill `diagram-design`, padrão claro escolhido no projeto, árvores de expressão com até nove nós por painel, SVG 1280 × 720 e PNG 2560 × 1440. HTML e scripts de geração/renderização são fontes temporárias privadas. Tipografia local Arial/Georgia/Consolas, substituições explícitas das famílias sugeridas pela skill. Exportação por Playwright Node e Chromium já disponíveis; não houve instalação de runtime/dependência. O atlas e seus assets são documentação sob responsabilidade da Issue143; revisão por fatias e conferência final registradas na Issue.
+Produção com a skill `diagram-design`, padrão claro escolhido no projeto, oito árvores/contratos e três mapas cadastrais, com até nove nós por painel, SVG 1280 × 720 e PNG 2560 × 1440. HTML e scripts de geração/renderização são fontes temporárias privadas. Tipografia local Arial/Georgia/Consolas, substituições explícitas das famílias sugeridas pela skill. Exportação por Playwright Node e Chromium já disponíveis; não houve instalação de runtime/dependência. O atlas e seus assets são documentação sob responsabilidade da Issue143; revisão por fatias e conferência final registradas na Issue. O complemento cadastral foi solicitado após a primeira publicação do PR147, sem inferir nova adoção metodológica.
