@@ -94,6 +94,16 @@ Os perfis descrevem responsabilidade, sem criar filas de área: `role:research` 
 
 ## Paralelismo e handoff
 
+### CI proporcional ao diff — Issue148, 17/10/2026
+
+A CI executa em `pull_request` e em `push` somente para `main`: o push da branch de trabalho não duplica o PR. A execução em `main` verifica a integração. Atualizações do mesmo PR cancelam a execução anterior ainda em andamento.
+
+O job **Documentation and change selection** sempre compara o diff completo: merge-base→head no PR e before→after no push. Mudanças exclusivamente em Markdown ou imagens SVG/PNG/JPEG/GIF/WebP na raiz ou em `docs/`, com modos de arquivo regular não executável, recebem checks offline de UTF-8, destinos locais de links inline, XML SVG, integridade de contêiner de imagens e whitespace. Âncoras, links por referência, conteúdo econômico e qualidade visual exigem conferência/revisão própria; esse check não os certifica.
+
+Qualquer outro path/formato, código, configuração, alteração mista, executável ou remoção de código mantém os testes de software Linux e os vinte testes nativos Windows. Renames são examinados como remoção e adição, evitando esconder uma exclusão de código em destino documental; remoções documentais também conferem referências nos Markdown rastreados. Diff vazio não seleciona a via documental; histórico indisponível seleciona software e registra que checks documentais ficaram indisponíveis. Erros documentais reais reprovam o check. O helper operacional é [check-ci.py](../../scripts/check-ci.py), com regressões adjacentes. Não há coleta nem dependência adicional na via documental.
+
+A revisão independente por fatia e a conferência final do SHA permanecem exigidas. A seleção de jobs não constitui revisão de domínio ou aprovação humana, nem modifica proteções. Eventos/condicionais seguem a [documentação oficial do GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
 Issues com `status:ready` confirmado podem avançar simultaneamente, **inclusive na mesma área**. Por exemplo, duas pesquisas `area:research` com entradas disponíveis e destinos distintos podem ser executadas em paralelo. Uma terceira pesquisa que dependa de fonte ausente fica bloqueada somente por essa dependência; a área comum não bloqueia as outras.
 
 **Comunicação permanente solicitada por João em 2026-10-04:** cada entrega, handoff ou mudança de blocker confere o estado real das Issues e atualiza a fronteira no mapa existente da [Issue 2](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/2). A atualização ao usuário informa títulos/links das tarefas que podem avançar juntas, recorte autorizado, dependências satisfeitas e ownership compatível; identifica as bloqueadas com requisito/condição de desbloqueio e a próxima fatia. No encerramento, distinguir execução concluída, revisão pendente e trabalho que ainda pode começar; não anunciar como pronta uma pesquisa só possível após triagem ou autorização. Não criar tracker concorrente nem operar o Project, que segue com Zec.
