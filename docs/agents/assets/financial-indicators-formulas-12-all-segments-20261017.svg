@@ -1,0 +1,1012 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3600" height="4136" viewBox="0 0 3600 4136" role="img" aria-labelledby="all-title all-desc"><title id="all-title">Indicadores, fórmulas, variáveis, interpretação e segmentos IF.data</title><desc id="all-desc">Dezessete indicadores com fórmulasLaTeX em escala uniforme, nomes das variáveis IF.data, explicação e matriz de oito famílias. Foco e avaliar expressam orientação econômica condicionada, não whitelist implementada. Legenda nominal de25categorias e regras no rodapé.</desc><style>text{font-family:Arial,sans-serif;fill:#2d3142}.serif{font-family:Georgia,serif}.mono{font-family:Consolas,monospace;fill:#4f5d75}.muted{fill:#4f5d75}</style><rect width="3600" height="4136" fill="#f5f5f5"></rect><text x="40" y="38" font-size="17" class="mono">IF.DATA  /  UM QUADRO PARA SELECIONAR E INTERPRETAR  /  2010–2024</text><text x="40" y="98" font-size="48" class="serif">Indicadores, fórmulas e segmentos</text><text x="40" y="144" font-size="25" class="">10 atuais + 7 propostas prioritárias · nomes das variáveis, interpretação e foco de uso condicionado</text><text x="40" y="182" font-size="23" class="muted">Famílias interpretativas de SegmentoTb, sem excluir automaticamente outras categorias. Legenda única dos25rótulos abaixo.</text><rect x="40" y="208" width="1120" height="240" rx="8" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="246" font-size="28" class="serif">Tcb · família institucional</text><text x="60" y="284" font-size="21" class="">B1 / B2: grupos bancários · B3S / B3C: cooperativas</text><text x="60" y="314" font-size="21" class="">B4: desenvolvimento · N1: crédito não bancário</text><text x="60" y="344" font-size="21" class="">N2: mercado de capitais/câmbio · N4: pagamentos</text><text x="60" y="374" font-size="21" class="">Cruzar com SegmentoTb; não são campos equivalentes.</text><text x="60" y="404" font-size="21" class="">B3/N3 do cadastro geral: de-para não confirmado.</text><rect x="1184" y="208" width="640" height="240" rx="8" fill="#fff" stroke="#c4c8cf"></rect><text x="1204" y="246" font-size="28" class="serif">Tc · controle</text><text x="1204" y="284" font-size="21" class="">1: público</text><text x="1204" y="314" font-size="21" class="">2: privado nacional</text><text x="1204" y="344" font-size="21" class="">3: privado com controle estrangeiro</text><text x="1204" y="374" font-size="21" class="">Estratifica; não muda a fórmula.</text><text x="1204" y="404" font-size="21" class="">Não identifica sozinho controlador final.</text><rect x="1848" y="208" width="640" height="240" rx="8" fill="#fff" stroke="#c4c8cf"></rect><text x="1868" y="246" font-size="28" class="serif">Td · consolidação</text><text x="1868" y="284" font-size="21" class="">C: conglomerado</text><text x="1868" y="314" font-size="21" class="">I: instituição</text><text x="1868" y="344" font-size="21" class="">I não prova independência societária.</text><text x="1868" y="374" font-size="21" class="">Manter unidade, perspectiva e data.</text><text x="1868" y="404" font-size="21" class="">Não somar conglomerado e seus membros.</text><rect x="2512" y="208" width="1048" height="240" rx="8" fill="#fff" stroke="#c4c8cf"></rect><text x="2532" y="246" font-size="28" class="serif">Sr · regime prudencial</text><text x="2532" y="284" font-size="21" class="">Sr original: S1, S2, S3, S4, S5 e nulo.</text><text x="2532" y="314" font-size="21" class="">Não é simples faixa de tamanho; explica regime/cobertura.</text><text x="2532" y="344" font-size="21" class="">SrAnalitico: derivado separado, com origem e conflitos.</text><text x="2532" y="374" font-size="21" class="">Não fundir com Sr oficial nem retroagir categorias.</text><text x="2532" y="404" font-size="21" class="">C3/C4 exigem regime e unidade prudencial próprios.</text><text x="60" y="506" font-size="18" class="mono">INDICADOR</text><text x="320" y="506" font-size="18" class="mono">FÓRMULA EM %</text><text x="940" y="506" font-size="18" class="mono">VARIÁVEIS IF.DATA · CONTA / RELATÓRIO</text><text x="1660" y="506" font-size="18" class="mono">O QUE MEDE / LIMITE</text><text x="2300" y="498" text-anchor="middle" font-size="19">Bancos</text><text x="2300" y="525" text-anchor="middle" font-size="19">depositários</text><text x="2468" y="498" text-anchor="middle" font-size="19">Cooperativas</text><text x="2468" y="525" text-anchor="middle" font-size="19">e bancos coop.</text><text x="2636" y="498" text-anchor="middle" font-size="19">Confederação</text><text x="2636" y="525" text-anchor="middle" font-size="19">de serviços</text><text x="2804" y="498" text-anchor="middle" font-size="19">Desenvolvimento</text><text x="2804" y="525" text-anchor="middle" font-size="19">e fomento</text><text x="2972" y="498" text-anchor="middle" font-size="19">Crédito</text><text x="2972" y="525" text-anchor="middle" font-size="19">não bancário</text><text x="3140" y="498" text-anchor="middle" font-size="19">Mercado de</text><text x="3140" y="525" text-anchor="middle" font-size="19">capitais / câmbio</text><text x="3308" y="498" text-anchor="middle" font-size="19">Arrendamento</text><text x="3308" y="525" text-anchor="middle" font-size="19">mercantil</text><text x="3476" y="498" text-anchor="middle" font-size="19">Pagamentos</text><text x="3476" y="525" text-anchor="middle" font-size="19"></text><rect x="40" y="560" width="3520" height="44" fill="#e8eaed"></rect><text x="60" y="590" font-size="25" class="serif">Rentabilidade</text><rect x="40" y="604" width="3520" height="136" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="631" font-size="14" class="mono">R1 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="109.0" height="40.0" viewBox="0 0 109 40" version="1.1" x="320" y="652.0" role="img" aria-label="\frac{LL_w}{\overline{AT}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.530094</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q0-figure_1">
+  <g id="q0-patch_1">
+   <path d="M 0 40  L 109 40  L 109 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q0-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q0-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q0-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q0-DejaVuSans-Oblique-2f" transform="translate(10.25 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q0-DejaVuSans-Oblique-2f" transform="translate(49.249023 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q0-DejaVuSans-Oblique-5a" transform="translate(88.248047 34.465659) scale(0.49)"></use>
+    <use xlink:href="#q0-DejaVuSans-Oblique-24" transform="translate(6.25 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q0-DejaVuSans-Oblique-37" transform="translate(49.235742 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q0-DejaVuSans-Oblique-5a" transform="translate(92.664453 -63.143682) scale(0.49)"></use>
+    <use xlink:href="#q0-DejaVuSans-99" transform="translate(160.386621 0.090659)"></use>
+    <use xlink:href="#q0-DejaVuSans-14" transform="translate(263.658105 0.090659)"></use>
+    <use xlink:href="#q0-DejaVuSans-13" transform="translate(327.281152 0.090659)"></use>
+    <use xlink:href="#q0-DejaVuSans-13" transform="translate(390.904199 0.090659)"></use>
+    <path d="M 6.25 21.965659  L 6.25 28.215659  L 134.654199 28.215659  L 134.654199 21.965659  L 6.25 21.965659  z "></path>
+    <path d="M 6.25 11.340659  L 6.25 15.715659  L 91.994531 15.715659  L 91.994531 11.340659  L 6.25 11.340659  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="664" font-size="22" class="">Retorno sobre o ativo</text><text x="60" y="689" font-size="22" class="">(ROA)</text><text x="940" y="636" font-size="20" class="">LL: Lucro Líquido [78187; rel.1]</text><text x="940" y="661" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="636" font-size="20" class="">Lucro líquido gerado por R$ 100 de ativo</text><text x="1660" y="661" font-size="20" class="">médio. Em cooperativas e desenvolvimento,</text><text x="1660" y="686" font-size="20" class="">mede sustentabilidade, não benefício social</text><text x="1660" y="711" font-size="20" class="">ou mandato.</text><line x1="2216" y1="604" x2="2216" y2="740" stroke="#e8eaed"></line><text x="2300" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="604" x2="2384" y2="740" stroke="#e8eaed"></line><text x="2468" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="604" x2="2552" y2="740" stroke="#e8eaed"></line><text x="2636" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2720" y1="604" x2="2720" y2="740" stroke="#e8eaed"></line><text x="2804" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="604" x2="2888" y2="740" stroke="#e8eaed"></line><text x="2972" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="604" x2="3056" y2="740" stroke="#e8eaed"></line><text x="3140" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3224" y1="604" x2="3224" y2="740" stroke="#e8eaed"></line><text x="3308" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3392" y1="604" x2="3392" y2="740" stroke="#e8eaed"></line><text x="3476" y="679.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><rect x="40" y="740" width="3520" height="132" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="767" font-size="14" class="mono">R2 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="108.0" height="40.0" viewBox="0 0 108 40" version="1.1" x="320" y="786.0" role="img" aria-label="\frac{LL_w}{\overline{PL}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.540155</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q1-figure_1">
+  <g id="q1-patch_1">
+   <path d="M 0 40  L 108 40  L 108 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q1-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q1-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)"></path>
+     <path id="q1-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q1-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q1-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q1-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q1-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q1-DejaVuSans-Oblique-2f" transform="translate(8.25 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q1-DejaVuSans-Oblique-2f" transform="translate(47.249023 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q1-DejaVuSans-Oblique-5a" transform="translate(86.248047 34.465659) scale(0.49)"></use>
+    <use xlink:href="#q1-DejaVuSans-Oblique-33" transform="translate(6.25 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q1-DejaVuSans-Oblique-2f" transform="translate(48.461914 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q1-DejaVuSans-Oblique-5a" transform="translate(88.130859 -63.143682) scale(0.49)"></use>
+    <use xlink:href="#q1-DejaVuSans-99" transform="translate(155.853027 0.090659)"></use>
+    <use xlink:href="#q1-DejaVuSans-14" transform="translate(259.124512 0.090659)"></use>
+    <use xlink:href="#q1-DejaVuSans-13" transform="translate(322.747559 0.090659)"></use>
+    <use xlink:href="#q1-DejaVuSans-13" transform="translate(386.370605 0.090659)"></use>
+    <path d="M 6.25 21.965659  L 6.25 28.215659  L 130.120605 28.215659  L 130.120605 21.965659  L 6.25 21.965659  z "></path>
+    <path d="M 6.25 11.340659  L 6.25 15.715659  L 87.460938 15.715659  L 87.460938 11.340659  L 6.25 11.340659  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="800" font-size="22" class="">Retorno sobre o</text><text x="60" y="825" font-size="22" class="">patrimônio líquido</text><text x="60" y="850" font-size="22" class="">(ROE)</text><text x="940" y="772" font-size="20" class="">LL: Lucro Líquido [78187; rel.1]</text><text x="940" y="797" font-size="20" class="">PL: Patrimônio Líquido [78186; rel.1]</text><text x="1660" y="772" font-size="20" class="">Lucro líquido por R$ 100 de patrimônio médio.</text><text x="1660" y="797" font-size="20" class="">PL negativo limita a leitura de retorno e a</text><text x="1660" y="822" font-size="20" class="">comparação entre unidades.</text><line x1="2216" y1="740" x2="2216" y2="872" stroke="#e8eaed"></line><text x="2300" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="740" x2="2384" y2="872" stroke="#e8eaed"></line><text x="2468" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="740" x2="2552" y2="872" stroke="#e8eaed"></line><text x="2636" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2720" y1="740" x2="2720" y2="872" stroke="#e8eaed"></line><text x="2804" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="740" x2="2888" y2="872" stroke="#e8eaed"></line><text x="2972" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="740" x2="3056" y2="872" stroke="#e8eaed"></line><text x="3140" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3224" y1="740" x2="3224" y2="872" stroke="#e8eaed"></line><text x="3308" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3392" y1="740" x2="3392" y2="872" stroke="#e8eaed"></line><text x="3476" y="813.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><rect x="40" y="872" width="3520" height="132" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="899" font-size="14" class="mono">R4 · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="127.0" height="40.0" viewBox="0 0 127 40" version="1.1" x="320" y="918.0" role="img" aria-label="\frac{RBIF_w}{\overline{AT}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.549143</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q2-figure_1">
+  <g id="q2-patch_1">
+   <path d="M 0 40  L 127 40  L 127 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q2-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q2-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-25" d="M 1081 4666  L 2694 4666  Q 3350 4666 3675 4422  Q 4000 4178 4000 3688  Q 4000 3238 3720 2911  Q 3441 2584 2988 2516  Q 3375 2428 3569 2181  Q 3763 1934 3763 1522  Q 3763 819 3242 409  Q 2722 0 1819 0  L 172 0  L 1081 4666  z M 1234 2228  L 903 519  L 1919 519  Q 2491 519 2800 781  Q 3109 1044 3109 1522  Q 3109 1891 2904 2059  Q 2700 2228 2247 2228  L 1234 2228  z M 1606 4147  L 1331 2741  L 2272 2741  Q 2775 2741 3058 2959  Q 3341 3178 3341 3566  Q 3341 3869 3150 4008  Q 2959 4147 2541 4147  L 1606 4147  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-29" d="M 1081 4666  L 3756 4666  L 3653 4134  L 1606 4134  L 1338 2759  L 3188 2759  L 3084 2228  L 1234 2228  L 800 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q2-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q2-DejaVuSans-Oblique-35" transform="translate(6.25 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-25" transform="translate(54.887695 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-2c" transform="translate(102.910156 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-29" transform="translate(123.554687 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-5a" transform="translate(163.818359 34.465659) scale(0.49)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-24" transform="translate(42.25 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-37" transform="translate(85.235742 -52.693716) scale(0.7)"></use>
+    <use xlink:href="#q2-DejaVuSans-Oblique-5a" transform="translate(128.664453 -63.143682) scale(0.49)"></use>
+    <use xlink:href="#q2-DejaVuSans-99" transform="translate(231.540527 0.090659)"></use>
+    <use xlink:href="#q2-DejaVuSans-14" transform="translate(334.812012 0.090659)"></use>
+    <use xlink:href="#q2-DejaVuSans-13" transform="translate(398.435059 0.090659)"></use>
+    <use xlink:href="#q2-DejaVuSans-13" transform="translate(462.058105 0.090659)"></use>
+    <path d="M 6.25 21.965659  L 6.25 28.215659  L 205.808105 28.215659  L 205.808105 21.965659  L 6.25 21.965659  z "></path>
+    <path d="M 42.25 11.340659  L 42.25 15.715659  L 127.994531 15.715659  L 127.994531 11.340659  L 42.25 11.340659  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="932" font-size="22" class="">Resultado de</text><text x="60" y="957" font-size="22" class="">intermediação sobre o</text><text x="60" y="982" font-size="22" class="">ativo médio</text><text x="940" y="904" font-size="20" class="">RBIF: Resultado de Intermediação Financeira [78215; rel.4]</text><text x="940" y="929" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="904" font-size="20" class="">Resultado contábil de intermediação por R$</text><text x="1660" y="929" font-size="20" class="">100 de ativo médio. Inclui provisão; não é</text><text x="1660" y="954" font-size="20" class="">margem líquida de juros.</text><line x1="2216" y1="872" x2="2216" y2="1004" stroke="#e8eaed"></line><text x="2300" y="945.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="872" x2="2384" y2="1004" stroke="#e8eaed"></line><text x="2468" y="945.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="872" x2="2552" y2="1004" stroke="#e8eaed"></line><text x="2636" y="945.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="872" x2="2720" y2="1004" stroke="#e8eaed"></line><text x="2804" y="945.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="872" x2="2888" y2="1004" stroke="#e8eaed"></line><text x="2972" y="945.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="872" x2="3056" y2="1004" stroke="#e8eaed"></line><text x="3140" y="945.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="872" x2="3224" y2="1004" stroke="#e8eaed"></line><text x="3308" y="945.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="872" x2="3392" y2="1004" stroke="#e8eaed"></line><text x="3476" y="945.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="1004" width="3520" height="136" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1031" font-size="14" class="mono">R5 · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="158.0" height="40.0" viewBox="0 0 158 40" version="1.1" x="320" y="1052.0" role="img" aria-label="\frac{RECRED_w}{\overline{CR}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.557359</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q3-figure_1">
+  <g id="q3-patch_1">
+   <path d="M 0 40  L 158 40  L 158 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q3-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q3-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q3-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q3-DejaVuSans-Oblique-35" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-28" transform="translate(54.887695 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-26" transform="translate(99.116211 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-35" transform="translate(147.993164 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-28" transform="translate(196.630859 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-27" transform="translate(240.859375 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-5a" transform="translate(294.760742 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-26" transform="translate(101.25 -53.531216) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-35" transform="translate(150.126953 -53.531216) scale(0.7)"></use>
+    <use xlink:href="#q3-DejaVuSans-Oblique-5a" transform="translate(199.43457 -63.981182) scale(0.49)"></use>
+    <use xlink:href="#q3-DejaVuSans-99" transform="translate(362.48291 0.171909)"></use>
+    <use xlink:href="#q3-DejaVuSans-14" transform="translate(465.754395 0.171909)"></use>
+    <use xlink:href="#q3-DejaVuSans-13" transform="translate(529.377441 0.171909)"></use>
+    <use xlink:href="#q3-DejaVuSans-13" transform="translate(593.000488 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 336.750488 28.296909  L 336.750488 22.046909  L 6.25 22.046909  z "></path>
+    <path d="M 101.25 11.421909  L 101.25 15.796909  L 198.764648 15.796909  L 198.764648 11.421909  L 101.25 11.421909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1064" font-size="22" class="">Rendimento contábil da</text><text x="60" y="1089" font-size="22" class="">carteira de crédito</text><text x="940" y="1036" font-size="20" class="">RECRED: Rendas de Operações de Crédito [78203; rel.4]</text><text x="940" y="1061" font-size="20" class="">CR: Operações de Crédito [78191; rel.2]</text><text x="1660" y="1036" font-size="20" class="">Rendimento contábil da carteira: receita de</text><text x="1660" y="1061" font-size="20" class="">crédito em relação ao crédito médio. Não</text><text x="1660" y="1086" font-size="20" class="">desconta todo custo de financiamento; não é</text><text x="1660" y="1111" font-size="20" class="">spread líquido.</text><line x1="2216" y1="1004" x2="2216" y2="1140" stroke="#e8eaed"></line><text x="2300" y="1079.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1004" x2="2384" y2="1140" stroke="#e8eaed"></line><text x="2468" y="1079.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1004" x2="2552" y2="1140" stroke="#e8eaed"></line><text x="2636" y="1079.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="1004" x2="2720" y2="1140" stroke="#e8eaed"></line><text x="2804" y="1079.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="1004" x2="2888" y2="1140" stroke="#e8eaed"></line><text x="2972" y="1079.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="1004" x2="3056" y2="1140" stroke="#e8eaed"></line><text x="3140" y="1079.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="1004" x2="3224" y2="1140" stroke="#e8eaed"></line><text x="3308" y="1079.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="1004" x2="3392" y2="1140" stroke="#e8eaed"></line><text x="3476" y="1079.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="1140" width="3520" height="44" fill="#e8eaed"></rect><text x="60" y="1170" font-size="25" class="serif">Qualidade do crédito</text><rect x="40" y="1184" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1211" font-size="14" class="mono">Q1 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="144.0" height="36.0" viewBox="0 0 144 36" version="1.1" x="320" y="1222.0" role="img" aria-label="\frac{-PROV_t}{CR_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.565446</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q4-figure_1">
+  <g id="q4-patch_1">
+   <path d="M 0 36  L 144 36  L 144 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q4-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q4-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-32" d="M 2919 4238  Q 2400 4238 2003 3986  Q 1606 3734 1313 3219  Q 1125 2891 1026 2522  Q 928 2153 928 1778  Q 928 1128 1239 775  Q 1550 422 2119 422  Q 2631 422 3032 676  Q 3434 931 3719 1434  Q 3909 1772 4009 2142  Q 4109 2513 4109 2881  Q 4109 3528 3796 3883  Q 3484 4238 2919 4238  z M 2100 -91  Q 1241 -91 748 418  Q 256 928 256 1813  Q 256 2319 448 2847  Q 641 3375 978 3788  Q 1375 4272 1862 4511  Q 2350 4750 2938 4750  Q 3794 4750 4287 4245  Q 4781 3741 4781 2869  Q 4781 2331 4593 1812  Q 4406 1294 4056 872  Q 3656 384 3173 146  Q 2691 -91 2100 -91  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q4-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q4-DejaVuSans-c9c" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-33" transform="translate(64.902344 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-35" transform="translate(107.114258 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-32" transform="translate(155.751953 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-39" transform="translate(210.849609 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-57" transform="translate(258.735352 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-26" transform="translate(83.25 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-35" transform="translate(132.126953 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q4-DejaVuSans-Oblique-57" transform="translate(180.764648 -46.656182) scale(0.49)"></use>
+    <use xlink:href="#q4-DejaVuSans-99" transform="translate(305.594238 0.171909)"></use>
+    <use xlink:href="#q4-DejaVuSans-14" transform="translate(408.865723 0.171909)"></use>
+    <use xlink:href="#q4-DejaVuSans-13" transform="translate(472.48877 0.171909)"></use>
+    <use xlink:href="#q4-DejaVuSans-13" transform="translate(536.111816 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 279.861816 28.296909  L 279.861816 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1244" font-size="22" class="">Provisão sobre a</text><text x="60" y="1269" font-size="22" class="">carteira de crédito</text><text x="940" y="1216" font-size="20" class="">PROV: Provisão sobre Operações de Crédito [78192; rel.2]</text><text x="940" y="1241" font-size="20" class="">CR: Operações de Crédito [78191; rel.2]</text><text x="1660" y="1216" font-size="20" class="">Provisão contábil em relação à carteira de</text><text x="1660" y="1241" font-size="20" class="">crédito. Não mede diretamente atraso ou</text><text x="1660" y="1266" font-size="20" class="">inadimplência. Leasing tem conceito próprio.</text><line x1="2216" y1="1184" x2="2216" y2="1296" stroke="#e8eaed"></line><text x="2300" y="1247.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1184" x2="2384" y2="1296" stroke="#e8eaed"></line><text x="2468" y="1247.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1184" x2="2552" y2="1296" stroke="#e8eaed"></line><text x="2636" y="1247.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="1184" x2="2720" y2="1296" stroke="#e8eaed"></line><text x="2804" y="1247.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="1184" x2="2888" y2="1296" stroke="#e8eaed"></line><text x="2972" y="1247.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="1184" x2="3056" y2="1296" stroke="#e8eaed"></line><text x="3140" y="1247.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="1184" x2="3224" y2="1296" stroke="#e8eaed"></line><text x="3308" y="1247.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="1184" x2="3392" y2="1296" stroke="#e8eaed"></line><text x="3476" y="1247.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="1296" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1323" font-size="14" class="mono">Q2 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="162.0" height="40.0" viewBox="0 0 162 40" version="1.1" x="320" y="1332.0" role="img" aria-label="\frac{-DPROV_w}{\overline{CR}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.573854</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q5-figure_1">
+  <g id="q5-patch_1">
+   <path d="M 0 40  L 162 40  L 162 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q5-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q5-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-32" d="M 2919 4238  Q 2400 4238 2003 3986  Q 1606 3734 1313 3219  Q 1125 2891 1026 2522  Q 928 2153 928 1778  Q 928 1128 1239 775  Q 1550 422 2119 422  Q 2631 422 3032 676  Q 3434 931 3719 1434  Q 3909 1772 4009 2142  Q 4109 2513 4109 2881  Q 4109 3528 3796 3883  Q 3484 4238 2919 4238  z M 2100 -91  Q 1241 -91 748 418  Q 256 928 256 1813  Q 256 2319 448 2847  Q 641 3375 978 3788  Q 1375 4272 1862 4511  Q 2350 4750 2938 4750  Q 3794 4750 4287 4245  Q 4781 3741 4781 2869  Q 4781 2331 4593 1812  Q 4406 1294 4056 872  Q 3656 384 3173 146  Q 2691 -91 2100 -91  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q5-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q5-DejaVuSans-c9c" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-27" transform="translate(64.902344 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-33" transform="translate(118.803711 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-35" transform="translate(161.015625 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-32" transform="translate(209.65332 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-39" transform="translate(264.750977 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-5a" transform="translate(312.636719 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-26" transform="translate(110.25 -53.531216) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-35" transform="translate(159.126953 -53.531216) scale(0.7)"></use>
+    <use xlink:href="#q5-DejaVuSans-Oblique-5a" transform="translate(208.43457 -63.981182) scale(0.49)"></use>
+    <use xlink:href="#q5-DejaVuSans-99" transform="translate(380.358887 0.171909)"></use>
+    <use xlink:href="#q5-DejaVuSans-14" transform="translate(483.630371 0.171909)"></use>
+    <use xlink:href="#q5-DejaVuSans-13" transform="translate(547.253418 0.171909)"></use>
+    <use xlink:href="#q5-DejaVuSans-13" transform="translate(610.876465 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 354.626465 28.296909  L 354.626465 22.046909  L 6.25 22.046909  z "></path>
+    <path d="M 110.25 11.421909  L 110.25 15.796909  L 207.764648 15.796909  L 207.764648 11.421909  L 110.25 11.421909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1356" font-size="22" class="">Custo de provisão</text><text x="60" y="1381" font-size="22" class="">sobre o crédito médio</text><text x="940" y="1328" font-size="20" class="">DPROV: Resultado de Provisão para Créditos de Difícil</text><text x="940" y="1353" font-size="20" class="">Liquidação [78213; rel.4]</text><text x="940" y="1378" font-size="20" class="">CR: Operações de Crédito [78191; rel.2]</text><text x="1660" y="1328" font-size="20" class="">Fluxo de provisão em relação à carteira</text><text x="1660" y="1353" font-size="20" class="">média. Reversões mantêm sinal negativo. Fluxo</text><text x="1660" y="1378" font-size="20" class="">não certificado exclusivo ao crédito.</text><line x1="2216" y1="1296" x2="2216" y2="1408" stroke="#e8eaed"></line><text x="2300" y="1359.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1296" x2="2384" y2="1408" stroke="#e8eaed"></line><text x="2468" y="1359.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1296" x2="2552" y2="1408" stroke="#e8eaed"></line><text x="2636" y="1359.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="1296" x2="2720" y2="1408" stroke="#e8eaed"></line><text x="2804" y="1359.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="1296" x2="2888" y2="1408" stroke="#e8eaed"></line><text x="2972" y="1359.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="1296" x2="3056" y2="1408" stroke="#e8eaed"></line><text x="3140" y="1359.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="1296" x2="3224" y2="1408" stroke="#e8eaed"></line><text x="3308" y="1359.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="1296" x2="3392" y2="1408" stroke="#e8eaed"></line><text x="3476" y="1359.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="1408" width="3520" height="44" fill="#e8eaed"></rect><text x="60" y="1438" font-size="25" class="serif">Capital / alavancagem</text><rect x="40" y="1452" width="3520" height="132" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1479" font-size="14" class="mono">C1 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="106.0" height="36.0" viewBox="0 0 106 36" version="1.1" x="320" y="1500.0" role="img" aria-label="\frac{PL_t}{AT_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.581729</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q6-figure_1">
+  <g id="q6-patch_1">
+   <path d="M 0 36  L 106 36  L 106 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q6-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q6-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q6-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q6-DejaVuSans-Oblique-33" transform="translate(11.25 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q6-DejaVuSans-Oblique-2f" transform="translate(53.461914 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q6-DejaVuSans-Oblique-57" transform="translate(92.460938 34.465659) scale(0.49)"></use>
+    <use xlink:href="#q6-DejaVuSans-Oblique-24" transform="translate(6.25 -35.318716) scale(0.7)"></use>
+    <use xlink:href="#q6-DejaVuSans-Oblique-37" transform="translate(54.135742 -35.318716) scale(0.7)"></use>
+    <use xlink:href="#q6-DejaVuSans-Oblique-57" transform="translate(96.894531 -45.818682) scale(0.49)"></use>
+    <use xlink:href="#q6-DejaVuSans-99" transform="translate(143.753418 0.090659)"></use>
+    <use xlink:href="#q6-DejaVuSans-14" transform="translate(247.024902 0.090659)"></use>
+    <use xlink:href="#q6-DejaVuSans-13" transform="translate(310.647949 0.090659)"></use>
+    <use xlink:href="#q6-DejaVuSans-13" transform="translate(374.270996 0.090659)"></use>
+    <path d="M 6.25 21.965659  L 6.25 28.215659  L 118.020996 28.215659  L 118.020996 21.965659  L 6.25 21.965659  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1512" font-size="22" class="">Participação do</text><text x="60" y="1537" font-size="22" class="">patrimônio líquido no</text><text x="60" y="1562" font-size="22" class="">ativo</text><text x="940" y="1484" font-size="20" class="">PL: Patrimônio Líquido [78186; rel.1]</text><text x="940" y="1509" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="1484" font-size="20" class="">Parcela do ativo suportada pelo patrimônio</text><text x="1660" y="1509" font-size="20" class="">líquido contábil. Não substitui capital</text><text x="1660" y="1534" font-size="20" class="">prudencial elegível.</text><line x1="2216" y1="1452" x2="2216" y2="1584" stroke="#e8eaed"></line><text x="2300" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1452" x2="2384" y2="1584" stroke="#e8eaed"></line><text x="2468" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1452" x2="2552" y2="1584" stroke="#e8eaed"></line><text x="2636" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2720" y1="1452" x2="2720" y2="1584" stroke="#e8eaed"></line><text x="2804" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="1452" x2="2888" y2="1584" stroke="#e8eaed"></line><text x="2972" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="1452" x2="3056" y2="1584" stroke="#e8eaed"></line><text x="3140" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3224" y1="1452" x2="3224" y2="1584" stroke="#e8eaed"></line><text x="3308" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3392" y1="1452" x2="3392" y2="1584" stroke="#e8eaed"></line><text x="3476" y="1525.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><rect x="40" y="1584" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1611" font-size="14" class="mono">C3 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="124.0" height="36.0" viewBox="0 0 124 36" version="1.1" x="320" y="1622.0" role="img" aria-label="\frac{PR_t}{RWA_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.588772</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q7-figure_1">
+  <g id="q7-patch_1">
+   <path d="M 0 36  L 124 36  L 124 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q7-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q7-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-Oblique-3a" d="M 616 4666  L 1228 4666  L 1453 697  L 3213 4666  L 3916 4666  L 4147 697  L 5888 4666  L 6528 4666  L 4453 0  L 3659 0  L 3444 3891  L 1697 0  L 903 0  L 616 4666  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q7-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q7-DejaVuSans-Oblique-33" transform="translate(43.25 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-35" transform="translate(85.461914 44.965625) scale(0.7)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-57" transform="translate(134.099609 34.465659) scale(0.49)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-35" transform="translate(6.25 -35.318716) scale(0.7)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-3a" transform="translate(54.887695 -35.318716) scale(0.7)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-24" transform="translate(124.101562 -35.318716) scale(0.7)"></use>
+    <use xlink:href="#q7-DejaVuSans-Oblique-57" transform="translate(171.987305 -45.818682) scale(0.49)"></use>
+    <use xlink:href="#q7-DejaVuSans-99" transform="translate(218.846191 0.090659)"></use>
+    <use xlink:href="#q7-DejaVuSans-14" transform="translate(322.117676 0.090659)"></use>
+    <use xlink:href="#q7-DejaVuSans-13" transform="translate(385.740723 0.090659)"></use>
+    <use xlink:href="#q7-DejaVuSans-13" transform="translate(449.36377 0.090659)"></use>
+    <path d="M 6.25 21.965659  L 6.25 28.215659  L 193.11377 28.215659  L 193.11377 21.965659  L 6.25 21.965659  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1644" font-size="22" class="">Índice de capital</text><text x="60" y="1669" font-size="22" class="">total (PR/RWA)</text><text x="940" y="1616" font-size="20" class="">PR: Patrimônio de Referência para Comparação com o RWA</text><text x="940" y="1641" font-size="20" class="">[79649; rel.5]</text><text x="940" y="1666" font-size="20" class="">RWA: Ativos Ponderados pelo Risco (RWA) [79665; rel.5]</text><text x="1660" y="1616" font-size="20" class="">Capital regulatório total em relação aos</text><text x="1660" y="1641" font-size="20" class="">riscos ponderados. Exige unidade e regime</text><text x="1660" y="1666" font-size="20" class="">prudenciais; PR não é capital principal.</text><line x1="2216" y1="1584" x2="2216" y2="1696" stroke="#e8eaed"></line><text x="2300" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2384" y1="1584" x2="2384" y2="1696" stroke="#e8eaed"></line><text x="2468" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2552" y1="1584" x2="2552" y2="1696" stroke="#e8eaed"></line><text x="2636" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2720" y1="1584" x2="2720" y2="1696" stroke="#e8eaed"></line><text x="2804" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2888" y1="1584" x2="2888" y2="1696" stroke="#e8eaed"></line><text x="2972" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3056" y1="1584" x2="3056" y2="1696" stroke="#e8eaed"></line><text x="3140" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3224" y1="1584" x2="3224" y2="1696" stroke="#e8eaed"></line><text x="3308" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3392" y1="1584" x2="3392" y2="1696" stroke="#e8eaed"></line><text x="3476" y="1647.0" text-anchor="middle" font-size="19" class="muted">Regime</text><rect x="40" y="1696" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1723" font-size="14" class="mono">C4 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="124.0" height="36.0" viewBox="0 0 124 36" version="1.1" x="320" y="1734.0" role="img" aria-label="\frac{CP_t}{RWA_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.595572</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q8-figure_1">
+  <g id="q8-patch_1">
+   <path d="M 0 36  L 124 36  L 124 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q8-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q8-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-Oblique-3a" d="M 616 4666  L 1228 4666  L 1453 697  L 3213 4666  L 3916 4666  L 4147 697  L 5888 4666  L 6528 4666  L 4453 0  L 3659 0  L 3444 3891  L 1697 0  L 903 0  L 616 4666  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q8-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q8-DejaVuSans-Oblique-26" transform="translate(43.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-33" transform="translate(92.126953 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-57" transform="translate(134.338867 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-35" transform="translate(6.25 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-3a" transform="translate(54.887695 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-24" transform="translate(124.101562 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q8-DejaVuSans-Oblique-57" transform="translate(171.987305 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q8-DejaVuSans-99" transform="translate(218.846191 0.171909)"></use>
+    <use xlink:href="#q8-DejaVuSans-14" transform="translate(322.117676 0.171909)"></use>
+    <use xlink:href="#q8-DejaVuSans-13" transform="translate(385.740723 0.171909)"></use>
+    <use xlink:href="#q8-DejaVuSans-13" transform="translate(449.36377 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 193.11377 28.296909  L 193.11377 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1756" font-size="22" class="">Índice de capital</text><text x="60" y="1781" font-size="22" class="">principal</text><text x="940" y="1728" font-size="20" class="">CP: Capital Principal para Comparação com RWA [79645;</text><text x="940" y="1753" font-size="20" class="">rel.5]</text><text x="940" y="1778" font-size="20" class="">RWA: Ativos Ponderados pelo Risco (RWA) [79665; rel.5]</text><text x="1660" y="1728" font-size="20" class="">Capital principal em relação aos riscos</text><text x="1660" y="1753" font-size="20" class="">ponderados. Conceito mais restrito que PR;</text><text x="1660" y="1778" font-size="20" class="">não preencher CP ausente com PR.</text><line x1="2216" y1="1696" x2="2216" y2="1808" stroke="#e8eaed"></line><text x="2300" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2384" y1="1696" x2="2384" y2="1808" stroke="#e8eaed"></line><text x="2468" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2552" y1="1696" x2="2552" y2="1808" stroke="#e8eaed"></line><text x="2636" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2720" y1="1696" x2="2720" y2="1808" stroke="#e8eaed"></line><text x="2804" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="2888" y1="1696" x2="2888" y2="1808" stroke="#e8eaed"></line><text x="2972" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3056" y1="1696" x2="3056" y2="1808" stroke="#e8eaed"></line><text x="3140" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3224" y1="1696" x2="3224" y2="1808" stroke="#e8eaed"></line><text x="3308" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><line x1="3392" y1="1696" x2="3392" y2="1808" stroke="#e8eaed"></line><text x="3476" y="1759.0" text-anchor="middle" font-size="19" class="muted">Regime</text><rect x="40" y="1808" width="3520" height="44" fill="#e8eaed"></rect><text x="60" y="1838" font-size="25" class="serif">Liquidez / financiamento</text><rect x="40" y="1852" width="3520" height="136" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="1879" font-size="14" class="mono">L2 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="174.0" height="36.0" viewBox="0 0 174 36" version="1.1" x="320" y="1902.0" role="img" aria-label="\frac{DISP_t+AIL_t}{DV_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.604530</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q9-figure_1">
+  <g id="q9-patch_1">
+   <path d="M 0 36  L 174 36  L 174 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q9-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q9-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q9-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q9-DejaVuSans-Oblique-27" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-2c" transform="translate(60.151367 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-36" transform="translate(80.795898 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-33" transform="translate(125.229492 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-57" transform="translate(167.441406 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q9-DejaVuSans-e" transform="translate(202.205566 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-24" transform="translate(274.495605 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-2c" transform="translate(322.381348 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-2f" transform="translate(343.025879 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-57" transform="translate(382.024902 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-27" transform="translate(143.25 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-39" transform="translate(197.151367 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q9-DejaVuSans-Oblique-57" transform="translate(245.037109 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q9-DejaVuSans-99" transform="translate(428.883789 0.171909)"></use>
+    <use xlink:href="#q9-DejaVuSans-14" transform="translate(532.155273 0.171909)"></use>
+    <use xlink:href="#q9-DejaVuSans-13" transform="translate(595.77832 0.171909)"></use>
+    <use xlink:href="#q9-DejaVuSans-13" transform="translate(659.401367 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 403.151367 28.296909  L 403.151367 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="1912" font-size="22" class="">Liquidez imediata</text><text x="940" y="1884" font-size="20" class="">DISP: Disponibilidades [78188; rel.2]</text><text x="940" y="1909" font-size="20" class="">AIL: Aplicações Interfinanceiras de Liquidez [78189;</text><text x="940" y="1934" font-size="20" class="">rel.2]</text><text x="940" y="1959" font-size="20" class="">DV: Depósitos à Vista [78282; rel.3]</text><text x="1660" y="1884" font-size="20" class="">Disponibilidades e aplicações</text><text x="1660" y="1909" font-size="20" class="">interfinanceiras comparadas aos depósitos à</text><text x="1660" y="1934" font-size="20" class="">vista. DV zero torna a razão indefinida. Não</text><text x="1660" y="1959" font-size="20" class="">é LCR.</text><line x1="2216" y1="1852" x2="2216" y2="1988" stroke="#e8eaed"></line><text x="2300" y="1927.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1852" x2="2384" y2="1988" stroke="#e8eaed"></line><text x="2468" y="1927.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1852" x2="2552" y2="1988" stroke="#e8eaed"></line><text x="2636" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="1852" x2="2720" y2="1988" stroke="#e8eaed"></line><text x="2804" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2888" y1="1852" x2="2888" y2="1988" stroke="#e8eaed"></line><text x="2972" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3056" y1="1852" x2="3056" y2="1988" stroke="#e8eaed"></line><text x="3140" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="1852" x2="3224" y2="1988" stroke="#e8eaed"></line><text x="3308" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="1852" x2="3392" y2="1988" stroke="#e8eaed"></line><text x="3476" y="1927.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="1988" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2015" font-size="14" class="mono">L3 · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="118.0" height="36.0" viewBox="0 0 118 36" version="1.1" x="320" y="2026.0" role="img" aria-label="\frac{CR_t}{DEP_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.612441</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q10-figure_1">
+  <g id="q10-patch_1">
+   <path d="M 0 36  L 118 36  L 118 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q10-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q10-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q10-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q10-DejaVuSans-Oblique-26" transform="translate(27.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-35" transform="translate(76.126953 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-57" transform="translate(124.764648 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-27" transform="translate(6.25 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-28" transform="translate(60.151367 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-33" transform="translate(104.379883 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q10-DejaVuSans-Oblique-57" transform="translate(146.591797 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q10-DejaVuSans-99" transform="translate(193.450684 0.171909)"></use>
+    <use xlink:href="#q10-DejaVuSans-14" transform="translate(296.722168 0.171909)"></use>
+    <use xlink:href="#q10-DejaVuSans-13" transform="translate(360.345215 0.171909)"></use>
+    <use xlink:href="#q10-DejaVuSans-13" transform="translate(423.968262 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 167.718262 28.296909  L 167.718262 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2048" font-size="22" class="">Relação</text><text x="60" y="2073" font-size="22" class="">crédito–depósitos</text><text x="940" y="2020" font-size="20" class="">CR: Operações de Crédito [78191; rel.2]</text><text x="940" y="2045" font-size="20" class="">DEP: Depósito Total [78287; rel.3]</text><text x="1660" y="2020" font-size="20" class="">Volume de crédito relativo aos depósitos</text><text x="1660" y="2045" font-size="20" class="">totais. Descreve estrutura de financiamento;</text><text x="1660" y="2070" font-size="20" class="">não mede descasamento de vencimentos.</text><line x1="2216" y1="1988" x2="2216" y2="2100" stroke="#e8eaed"></line><text x="2300" y="2051.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="1988" x2="2384" y2="2100" stroke="#e8eaed"></line><text x="2468" y="2051.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="1988" x2="2552" y2="2100" stroke="#e8eaed"></line><text x="2636" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="1988" x2="2720" y2="2100" stroke="#e8eaed"></line><text x="2804" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2888" y1="1988" x2="2888" y2="2100" stroke="#e8eaed"></line><text x="2972" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3056" y1="1988" x2="3056" y2="2100" stroke="#e8eaed"></line><text x="3140" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="1988" x2="3224" y2="2100" stroke="#e8eaed"></line><text x="3308" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="1988" x2="3392" y2="2100" stroke="#e8eaed"></line><text x="3476" y="2051.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="2100" width="3520" height="156" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2127" font-size="14" class="mono">LA · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="174.0" height="36.0" viewBox="0 0 174 36" version="1.1" x="320" y="2160.0" role="img" aria-label="\frac{DISP_t+AIL_t}{AT_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.620477</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q11-figure_1">
+  <g id="q11-patch_1">
+   <path d="M 0 36  L 174 36  L 174 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q11-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q11-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q11-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q11-DejaVuSans-Oblique-27" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-2c" transform="translate(60.151367 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-36" transform="translate(80.795898 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-33" transform="translate(125.229492 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-57" transform="translate(167.441406 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q11-DejaVuSans-e" transform="translate(202.205566 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-24" transform="translate(274.495605 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-2c" transform="translate(322.381348 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-2f" transform="translate(343.025879 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-57" transform="translate(382.024902 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-24" transform="translate(149.25 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-37" transform="translate(197.135742 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q11-DejaVuSans-Oblique-57" transform="translate(239.894531 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q11-DejaVuSans-99" transform="translate(428.883789 0.171909)"></use>
+    <use xlink:href="#q11-DejaVuSans-14" transform="translate(532.155273 0.171909)"></use>
+    <use xlink:href="#q11-DejaVuSans-13" transform="translate(595.77832 0.171909)"></use>
+    <use xlink:href="#q11-DejaVuSans-13" transform="translate(659.401367 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 403.151367 28.296909  L 403.151367 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2160" font-size="22" class="">Disponibilidades e</text><text x="60" y="2185" font-size="22" class="">aplicações</text><text x="60" y="2210" font-size="22" class="">interfinanceiras sobre</text><text x="60" y="2235" font-size="22" class="">o ativo</text><text x="940" y="2132" font-size="20" class="">DISP: Disponibilidades [78188; rel.2]</text><text x="940" y="2157" font-size="20" class="">AIL: Aplicações Interfinanceiras de Liquidez [78189;</text><text x="940" y="2182" font-size="20" class="">rel.2]</text><text x="940" y="2207" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="2132" font-size="20" class="">Peso de disponibilidades e aplicações</text><text x="1660" y="2157" font-size="20" class="">interfinanceiras no ativo. Descrição</text><text x="1660" y="2182" font-size="20" class="">contábil, sem certificar realização ou</text><text x="1660" y="2207" font-size="20" class="">liquidez regulatória.</text><line x1="2216" y1="2100" x2="2216" y2="2256" stroke="#e8eaed"></line><text x="2300" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="2100" x2="2384" y2="2256" stroke="#e8eaed"></line><text x="2468" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="2100" x2="2552" y2="2256" stroke="#e8eaed"></line><text x="2636" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2720" y1="2100" x2="2720" y2="2256" stroke="#e8eaed"></line><text x="2804" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="2100" x2="2888" y2="2256" stroke="#e8eaed"></line><text x="2972" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="2100" x2="3056" y2="2256" stroke="#e8eaed"></line><text x="3140" y="2185.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="2100" x2="3224" y2="2256" stroke="#e8eaed"></line><text x="3308" y="2185.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3392" y1="2100" x2="3392" y2="2256" stroke="#e8eaed"></line><text x="3476" y="2185.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="2256" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2283" font-size="14" class="mono">LC · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="107.0" height="36.0" viewBox="0 0 107 36" version="1.1" x="320" y="2294.0" role="img" aria-label="\frac{CR_t}{AT_t}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.628438</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q12-figure_1">
+  <g id="q12-patch_1">
+   <path d="M 0 36  L 107 36  L 107 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q12-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q12-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q12-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q12-DejaVuSans-Oblique-26" transform="translate(6.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q12-DejaVuSans-Oblique-35" transform="translate(55.126953 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q12-DejaVuSans-Oblique-57" transform="translate(103.764648 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q12-DejaVuSans-Oblique-24" transform="translate(9.25 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q12-DejaVuSans-Oblique-37" transform="translate(57.135742 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q12-DejaVuSans-Oblique-57" transform="translate(99.894531 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q12-DejaVuSans-99" transform="translate(150.623535 0.171909)"></use>
+    <use xlink:href="#q12-DejaVuSans-14" transform="translate(253.89502 0.171909)"></use>
+    <use xlink:href="#q12-DejaVuSans-13" transform="translate(317.518066 0.171909)"></use>
+    <use xlink:href="#q12-DejaVuSans-13" transform="translate(381.141113 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 124.891113 28.296909  L 124.891113 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2316" font-size="22" class="">Participação do</text><text x="60" y="2341" font-size="22" class="">crédito no ativo</text><text x="940" y="2288" font-size="20" class="">CR: Operações de Crédito [78191; rel.2]</text><text x="940" y="2313" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="2288" font-size="20" class="">Parcela do ativo aplicada em crédito. Não</text><text x="1660" y="2313" font-size="20" class="">mede qualidade ou prazo; arrendamento não é</text><text x="1660" y="2338" font-size="20" class="">somado automaticamente à carteira.</text><line x1="2216" y1="2256" x2="2216" y2="2368" stroke="#e8eaed"></line><text x="2300" y="2319.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="2256" x2="2384" y2="2368" stroke="#e8eaed"></line><text x="2468" y="2319.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="2256" x2="2552" y2="2368" stroke="#e8eaed"></line><text x="2636" y="2319.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="2256" x2="2720" y2="2368" stroke="#e8eaed"></line><text x="2804" y="2319.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="2256" x2="2888" y2="2368" stroke="#e8eaed"></line><text x="2972" y="2319.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="2256" x2="3056" y2="2368" stroke="#e8eaed"></line><text x="3140" y="2319.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="2256" x2="3224" y2="2368" stroke="#e8eaed"></line><text x="3308" y="2319.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="2256" x2="3392" y2="2368" stroke="#e8eaed"></line><text x="3476" y="2319.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="2368" width="3520" height="188" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2395" font-size="14" class="mono">LF · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="288.0" height="36.0" viewBox="0 0 288 36" version="1.1" x="320" y="2444.0" role="img" aria-label="\left\{\frac{DEP_t}{F_t},\frac{OC_t}{F_t},\frac{EM_t}{F_t},\frac{REP_t}{F_t}\right\}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.639335</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q13-figure_1">
+  <g id="q13-patch_1">
+   <path d="M 0 36  L 288 36  L 288 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q13-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q13-STIXSizeTwoSym-Regular-b" d="M 3398 -1530  L 3398 -1786  Q 2630 -1670 2201 -1017  Q 1773 -365 1773 870  L 1773 2458  Q 1773 2771 1673 3091  Q 1574 3411 1344 3683  Q 1114 3955 794 4013  L 794 4218  Q 1114 4275 1344 4550  Q 1574 4826 1673 5146  Q 1773 5466 1773 5779  L 1773 7366  Q 1773 8608 2214 9283  Q 2656 9958 3398 10022  L 3398 9766  Q 3008 9747 2678 9299  Q 2349 8851 2349 8365  Q 2349 8256 2365 7667  Q 2381 7078 2381 7059  L 2381 6227  Q 2381 4691 1178 4115  Q 2381 3533 2381 2010  L 2381 1171  Q 2381 1152 2365 566  Q 2349 -19 2349 -128  Q 2349 -1190 3398 -1530  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-29" d="M 1081 4666  L 3756 4666  L 3653 4134  L 1606 4134  L 1338 2759  L 3188 2759  L 3084 2228  L 1234 2228  L 800 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-f" d="M 750 794  L 1409 794  L 1409 256  L 897 -744  L 494 -744  L 750 256  L 750 794  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-32" d="M 2919 4238  Q 2400 4238 2003 3986  Q 1606 3734 1313 3219  Q 1125 2891 1026 2522  Q 928 2153 928 1778  Q 928 1128 1239 775  Q 1550 422 2119 422  Q 2631 422 3032 676  Q 3434 931 3719 1434  Q 3909 1772 4009 2142  Q 4109 2513 4109 2881  Q 4109 3528 3796 3883  Q 3484 4238 2919 4238  z M 2100 -91  Q 1241 -91 748 418  Q 256 928 256 1813  Q 256 2319 448 2847  Q 641 3375 978 3788  Q 1375 4272 1862 4511  Q 2350 4750 2938 4750  Q 3794 4750 4287 4245  Q 4781 3741 4781 2869  Q 4781 2331 4593 1812  Q 4406 1294 4056 872  Q 3656 384 3173 146  Q 2691 -91 2100 -91  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-30" d="M 1081 4666  L 2028 4666  L 2572 1522  L 4378 4666  L 5350 4666  L 4441 0  L 3828 0  L 4622 4091  L 2791 897  L 2175 897  L 1581 4103  L 788 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q13-STIXSizeTwoSym-Regular-c" d="M 3795 4224  L 3795 4019  Q 3475 3962 3244 3686  Q 3014 3411 2915 3091  Q 2816 2771 2816 2458  L 2816 870  Q 2816 -371 2374 -1046  Q 1933 -1722 1190 -1786  L 1190 -1530  Q 1581 -1510 1910 -1062  Q 2240 -614 2240 -128  Q 2240 -19 2224 569  Q 2208 1158 2208 1178  L 2208 2010  Q 2208 3539 3411 4115  Q 2208 4698 2208 6227  L 2208 7066  Q 2208 7085 2224 7670  Q 2240 8256 2240 8365  Q 2240 9427 1190 9766  L 1190 10022  Q 1958 9907 2387 9254  Q 2816 8602 2816 7366  L 2816 5779  Q 2816 5466 2915 5146  Q 3014 4826 3244 4554  Q 3475 4282 3795 4224  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q13-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q13-STIXSizeTwoSym-Regular-b" transform="translate(0 -24.159307) scale(0.773645)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-27" transform="translate(61.716721 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-28" transform="translate(115.618088 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-33" transform="translate(159.846603 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(202.058517 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-29" transform="translate(111.716721 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(151.980392 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-f" transform="translate(229.434982 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-32" transform="translate(286.954514 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-26" transform="translate(342.05217 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(390.929123 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-29" transform="translate(318.954514 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(359.218185 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-f" transform="translate(418.305588 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-28" transform="translate(475.825119 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-30" transform="translate(520.053635 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(580.449142 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-29" transform="translate(507.825119 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(548.088791 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-f" transform="translate(607.825607 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-35" transform="translate(665.345139 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-28" transform="translate(713.982834 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-33" transform="translate(758.211349 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(800.423264 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-29" transform="translate(712.345139 -35.237466) scale(0.7)"></use>
+    <use xlink:href="#q13-DejaVuSans-Oblique-57" transform="translate(752.60881 -45.737432) scale(0.49)"></use>
+    <use xlink:href="#q13-STIXSizeTwoSym-Regular-c" transform="translate(827.799728 -24.159307) scale(0.773645)"></use>
+    <use xlink:href="#q13-DejaVuSans-99" transform="translate(902.748871 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-14" transform="translate(1006.020355 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-13" transform="translate(1069.643402 0.171909)"></use>
+    <use xlink:href="#q13-DejaVuSans-13" transform="translate(1133.266449 0.171909)"></use>
+    <path d="M 61.716721 22.046909  L 61.716721 28.296909  L 223.184982 28.296909  L 223.184982 22.046909  L 61.716721 22.046909  z "></path>
+    <path d="M 286.954514 22.046909  L 286.954514 28.296909  L 412.055588 28.296909  L 412.055588 22.046909  L 286.954514 22.046909  z "></path>
+    <path d="M 475.825119 22.046909  L 475.825119 28.296909  L 601.575607 28.296909  L 601.575607 22.046909  L 475.825119 22.046909  z "></path>
+    <path d="M 665.345139 22.046909  L 665.345139 28.296909  L 821.549728 28.296909  L 821.549728 22.046909  L 665.345139 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2428" font-size="22" class="">Composição das</text><text x="60" y="2453" font-size="22" class="">captações por fonte</text><text x="940" y="2400" font-size="20" class="">DEP: Depósito Total [78287; rel.3]</text><text x="940" y="2425" font-size="20" class="">OC: Obrigações por Operações Compromissadas [78288; rel.3]</text><text x="940" y="2450" font-size="20" class="">EM: Recursos de Aceites e Emissão de Títulos [78294;</text><text x="940" y="2475" font-size="20" class="">rel.3]</text><text x="940" y="2500" font-size="20" class="">REP: Obrigações por Empréstimos e Repasses [78295; rel.3]</text><text x="940" y="2525" font-size="20" class="">F: Captações [78185; rel.3]</text><text x="1660" y="2400" font-size="20" class="">Quatro participações nas captações:</text><text x="1660" y="2425" font-size="20" class="">depósitos, compromissadas, emissões e</text><text x="1660" y="2450" font-size="20" class="">empréstimos/repasses. Não cobre toda</text><text x="1660" y="2475" font-size="20" class="">obrigação nem estabilidade por prazo.</text><line x1="2216" y1="2368" x2="2216" y2="2556" stroke="#e8eaed"></line><text x="2300" y="2469.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="2368" x2="2384" y2="2556" stroke="#e8eaed"></line><text x="2468" y="2469.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="2368" x2="2552" y2="2556" stroke="#e8eaed"></line><text x="2636" y="2469.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="2368" x2="2720" y2="2556" stroke="#e8eaed"></line><text x="2804" y="2469.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2888" y1="2368" x2="2888" y2="2556" stroke="#e8eaed"></line><text x="2972" y="2469.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="2368" x2="3056" y2="2556" stroke="#e8eaed"></line><text x="3140" y="2469.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="2368" x2="3224" y2="2556" stroke="#e8eaed"></line><text x="3308" y="2469.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="2368" x2="3392" y2="2556" stroke="#e8eaed"></line><text x="3476" y="2469.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="2556" width="3520" height="44" fill="#e8eaed"></rect><text x="60" y="2586" font-size="25" class="serif">Eficiência / composição</text><rect x="40" y="2600" width="3520" height="212" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2627" font-size="14" class="mono">E2-B · ATUAL</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="355.0" height="36.0" viewBox="0 0 355 36" version="1.1" x="320" y="2688.0" role="img" aria-label="\frac{-(PESS_w+ADM_w)}{RBIF_w-DPROV_w+SERV_w+TAR_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.666251</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q14-figure_1">
+  <g id="q14-patch_1">
+   <path d="M 0 36  L 355 36  L 355 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q14-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q14-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-b" d="M 1984 4856  Q 1566 4138 1362 3434  Q 1159 2731 1159 2009  Q 1159 1288 1364 580  Q 1569 -128 1984 -844  L 1484 -844  Q 1016 -109 783 600  Q 550 1309 550 2009  Q 550 2706 781 3412  Q 1013 4119 1484 4856  L 1984 4856  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-30" d="M 1081 4666  L 2028 4666  L 2572 1522  L 4378 4666  L 5350 4666  L 4441 0  L 3828 0  L 4622 4091  L 2791 897  L 2175 897  L 1581 4103  L 788 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-c" d="M 513 4856  L 1013 4856  Q 1481 4119 1714 3412  Q 1947 2706 1947 2009  Q 1947 1309 1714 600  Q 1481 -109 1013 -844  L 513 -844  Q 928 -128 1133 580  Q 1338 1288 1338 2009  Q 1338 2731 1133 3434  Q 928 4138 513 4856  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-25" d="M 1081 4666  L 2694 4666  Q 3350 4666 3675 4422  Q 4000 4178 4000 3688  Q 4000 3238 3720 2911  Q 3441 2584 2988 2516  Q 3375 2428 3569 2181  Q 3763 1934 3763 1522  Q 3763 819 3242 409  Q 2722 0 1819 0  L 172 0  L 1081 4666  z M 1234 2228  L 903 519  L 1919 519  Q 2491 519 2800 781  Q 3109 1044 3109 1522  Q 3109 1891 2904 2059  Q 2700 2228 2247 2228  L 1234 2228  z M 1606 4147  L 1331 2741  L 2272 2741  Q 2775 2741 3058 2959  Q 3341 3178 3341 3566  Q 3341 3869 3150 4008  Q 2959 4147 2541 4147  L 1606 4147  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-29" d="M 1081 4666  L 3756 4666  L 3653 4134  L 1606 4134  L 1338 2759  L 3188 2759  L 3084 2228  L 1234 2228  L 800 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-32" d="M 2919 4238  Q 2400 4238 2003 3986  Q 1606 3734 1313 3219  Q 1125 2891 1026 2522  Q 928 2153 928 1778  Q 928 1128 1239 775  Q 1550 422 2119 422  Q 2631 422 3032 676  Q 3434 931 3719 1434  Q 3909 1772 4009 2142  Q 4109 2513 4109 2881  Q 4109 3528 3796 3883  Q 3484 4238 2919 4238  z M 2100 -91  Q 1241 -91 748 418  Q 256 928 256 1813  Q 256 2319 448 2847  Q 641 3375 978 3788  Q 1375 4272 1862 4511  Q 2350 4750 2938 4750  Q 3794 4750 4287 4245  Q 4781 3741 4781 2869  Q 4781 2331 4593 1812  Q 4406 1294 4056 872  Q 3656 384 3173 146  Q 2691 -91 2100 -91  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q14-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q14-DejaVuSans-c9c" transform="translate(270.25 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-b" transform="translate(328.902344 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-33" transform="translate(356.211914 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-28" transform="translate(398.423828 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-36" transform="translate(442.652344 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-36" transform="translate(487.085938 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(531.519531 34.387534) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-e" transform="translate(587.146973 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-24" transform="translate(659.437012 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-27" transform="translate(707.322754 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-30" transform="translate(761.224121 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(821.619629 34.387534) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-c" transform="translate(863.609375 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-35" transform="translate(6.25 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-25" transform="translate(54.887695 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-2c" transform="translate(102.910156 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-29" transform="translate(123.554687 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(163.818359 -46.815557) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-c9c" transform="translate(219.445801 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-27" transform="translate(291.73584 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-33" transform="translate(345.637207 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-35" transform="translate(387.849121 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-32" transform="translate(436.486816 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-39" transform="translate(491.584473 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(539.470215 -46.815557) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-e" transform="translate(595.097656 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-36" transform="translate(667.387695 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-28" transform="translate(711.821289 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-35" transform="translate(756.049805 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-39" transform="translate(804.6875 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(852.573242 -46.815557) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-e" transform="translate(908.200684 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-37" transform="translate(980.490723 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-24" transform="translate(1016.949512 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-35" transform="translate(1064.835254 -36.315591) scale(0.7)"></use>
+    <use xlink:href="#q14-DejaVuSans-Oblique-5a" transform="translate(1113.472949 -46.815557) scale(0.49)"></use>
+    <use xlink:href="#q14-DejaVuSans-99" transform="translate(1181.195117 0.012534)"></use>
+    <use xlink:href="#q14-DejaVuSans-14" transform="translate(1284.466602 0.012534)"></use>
+    <use xlink:href="#q14-DejaVuSans-13" transform="translate(1348.089648 0.012534)"></use>
+    <use xlink:href="#q14-DejaVuSans-13" transform="translate(1411.712695 0.012534)"></use>
+    <path d="M 6.25 21.887534  L 6.25 28.137534  L 1155.462695 28.137534  L 1155.462695 21.887534  L 6.25 21.887534  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2660" font-size="22" class="">Índice de custos sobre</text><text x="60" y="2685" font-size="22" class="">a renda selecionada</text><text x="940" y="2632" font-size="20" class="">PESS: Despesas de Pessoal [78218; rel.4]</text><text x="940" y="2657" font-size="20" class="">ADM: Despesas Administrativas [78219; rel.4]</text><text x="940" y="2682" font-size="20" class="">RBIF: Resultado de Intermediação Financeira [78215; rel.4]</text><text x="940" y="2707" font-size="20" class="">DPROV: Resultado de Provisão para Créditos de Difícil</text><text x="940" y="2732" font-size="20" class="">Liquidação [78213; rel.4]</text><text x="940" y="2757" font-size="20" class="">SERV: Rendas de Prestação de Serviços [78216; rel.4]</text><text x="940" y="2782" font-size="20" class="">TAR: Rendas de Tarifas Bancárias [78217; rel.4]</text><text x="1660" y="2632" font-size="20" class="">Custos de pessoal e administração em relação</text><text x="1660" y="2657" font-size="20" class="">à renda selecionada. Comparar negócios e</text><text x="1660" y="2682" font-size="20" class="">composição semelhantes; não é eficiência</text><text x="1660" y="2707" font-size="20" class="">técnica.</text><line x1="2216" y1="2600" x2="2216" y2="2812" stroke="#e8eaed"></line><text x="2300" y="2713.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2384" y1="2600" x2="2384" y2="2812" stroke="#e8eaed"></line><text x="2468" y="2713.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2552" y1="2600" x2="2552" y2="2812" stroke="#e8eaed"></line><text x="2636" y="2713.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="2600" x2="2720" y2="2812" stroke="#e8eaed"></line><text x="2804" y="2713.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2888" y1="2600" x2="2888" y2="2812" stroke="#e8eaed"></line><text x="2972" y="2713.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3056" y1="2600" x2="3056" y2="2812" stroke="#e8eaed"></line><text x="3140" y="2713.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="2600" x2="3224" y2="2812" stroke="#e8eaed"></line><text x="3308" y="2713.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="2600" x2="3392" y2="2812" stroke="#e8eaed"></line><text x="3476" y="2713.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><rect x="40" y="2812" width="3520" height="164" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="2839" font-size="14" class="mono">RS · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="355.0" height="36.0" viewBox="0 0 355 36" version="1.1" x="320" y="2876.0" role="img" aria-label="\frac{SERV_w+TAR_w}{RBIF_w-DPROV_w+SERV_w+TAR_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.681119</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q15-figure_1">
+  <g id="q15-patch_1">
+   <path d="M 0 36  L 355 36  L 355 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q15-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q15-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-25" d="M 1081 4666  L 2694 4666  Q 3350 4666 3675 4422  Q 4000 4178 4000 3688  Q 4000 3238 3720 2911  Q 3441 2584 2988 2516  Q 3375 2428 3569 2181  Q 3763 1934 3763 1522  Q 3763 819 3242 409  Q 2722 0 1819 0  L 172 0  L 1081 4666  z M 1234 2228  L 903 519  L 1919 519  Q 2491 519 2800 781  Q 3109 1044 3109 1522  Q 3109 1891 2904 2059  Q 2700 2228 2247 2228  L 1234 2228  z M 1606 4147  L 1331 2741  L 2272 2741  Q 2775 2741 3058 2959  Q 3341 3178 3341 3566  Q 3341 3869 3150 4008  Q 2959 4147 2541 4147  L 1606 4147  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-29" d="M 1081 4666  L 3756 4666  L 3653 4134  L 1606 4134  L 1338 2759  L 3188 2759  L 3084 2228  L 1234 2228  L 800 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-Oblique-32" d="M 2919 4238  Q 2400 4238 2003 3986  Q 1606 3734 1313 3219  Q 1125 2891 1026 2522  Q 928 2153 928 1778  Q 928 1128 1239 775  Q 1550 422 2119 422  Q 2631 422 3032 676  Q 3434 931 3719 1434  Q 3909 1772 4009 2142  Q 4109 2513 4109 2881  Q 4109 3528 3796 3883  Q 3484 4238 2919 4238  z M 2100 -91  Q 1241 -91 748 418  Q 256 928 256 1813  Q 256 2319 448 2847  Q 641 3375 978 3788  Q 1375 4272 1862 4511  Q 2350 4750 2938 4750  Q 3794 4750 4287 4245  Q 4781 3741 4781 2869  Q 4781 2331 4593 1812  Q 4406 1294 4056 872  Q 3656 384 3173 146  Q 2691 -91 2100 -91  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q15-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q15-DejaVuSans-Oblique-36" transform="translate(337.25 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-28" transform="translate(381.683594 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(425.912109 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-39" transform="translate(474.549805 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(522.435547 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-e" transform="translate(578.062988 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-37" transform="translate(650.353027 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-24" transform="translate(686.811816 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(734.697559 45.046875) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(783.335254 34.546909) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(6.25 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-25" transform="translate(54.887695 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-2c" transform="translate(102.910156 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-29" transform="translate(123.554687 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(163.818359 -46.656182) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-c9c" transform="translate(219.445801 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-27" transform="translate(291.73584 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-33" transform="translate(345.637207 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(387.849121 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-32" transform="translate(436.486816 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-39" transform="translate(491.584473 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(539.470215 -46.656182) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-e" transform="translate(595.097656 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-36" transform="translate(667.387695 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-28" transform="translate(711.821289 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(756.049805 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-39" transform="translate(804.6875 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(852.573242 -46.656182) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-e" transform="translate(908.200684 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-37" transform="translate(980.490723 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-24" transform="translate(1016.949512 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-35" transform="translate(1064.835254 -36.156216) scale(0.7)"></use>
+    <use xlink:href="#q15-DejaVuSans-Oblique-5a" transform="translate(1113.472949 -46.656182) scale(0.49)"></use>
+    <use xlink:href="#q15-DejaVuSans-99" transform="translate(1181.195117 0.171909)"></use>
+    <use xlink:href="#q15-DejaVuSans-14" transform="translate(1284.466602 0.171909)"></use>
+    <use xlink:href="#q15-DejaVuSans-13" transform="translate(1348.089648 0.171909)"></use>
+    <use xlink:href="#q15-DejaVuSans-13" transform="translate(1411.712695 0.171909)"></use>
+    <path d="M 6.25 22.046909  L 6.25 28.296909  L 1155.462695 28.296909  L 1155.462695 22.046909  L 6.25 22.046909  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="2872" font-size="22" class="">Participação de</text><text x="60" y="2897" font-size="22" class="">serviços e tarifas na</text><text x="60" y="2922" font-size="22" class="">renda selecionada</text><text x="940" y="2844" font-size="20" class="">SERV: Rendas de Prestação de Serviços [78216; rel.4]</text><text x="940" y="2869" font-size="20" class="">TAR: Rendas de Tarifas Bancárias [78217; rel.4]</text><text x="940" y="2894" font-size="20" class="">RBIF: Resultado de Intermediação Financeira [78215; rel.4]</text><text x="940" y="2919" font-size="20" class="">DPROV: Resultado de Provisão para Créditos de Difícil</text><text x="940" y="2944" font-size="20" class="">Liquidação [78213; rel.4]</text><text x="1660" y="2844" font-size="20" class="">Participação de serviços e tarifas na renda</text><text x="1660" y="2869" font-size="20" class="">selecionada. Pode superar100% com outras</text><text x="1660" y="2894" font-size="20" class="">perdas; não é participação na receita bruta</text><text x="1660" y="2919" font-size="20" class="">total.</text><line x1="2216" y1="2812" x2="2216" y2="2976" stroke="#e8eaed"></line><text x="2300" y="2901.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2384" y1="2812" x2="2384" y2="2976" stroke="#e8eaed"></line><text x="2468" y="2901.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2552" y1="2812" x2="2552" y2="2976" stroke="#e8eaed"></line><text x="2636" y="2901.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="2720" y1="2812" x2="2720" y2="2976" stroke="#e8eaed"></line><text x="2804" y="2901.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2888" y1="2812" x2="2888" y2="2976" stroke="#e8eaed"></line><text x="2972" y="2901.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3056" y1="2812" x2="3056" y2="2976" stroke="#e8eaed"></line><text x="3140" y="2901.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><line x1="3224" y1="2812" x2="3224" y2="2976" stroke="#e8eaed"></line><text x="3308" y="2901.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="2812" x2="3392" y2="2976" stroke="#e8eaed"></line><text x="3476" y="2901.0" text-anchor="middle" font-size="19" font-weight="600">Foco</text><rect x="40" y="2976" width="3520" height="112" fill="#fff" stroke="#c4c8cf"></rect><text x="60" y="3003" font-size="14" class="mono">E3 · PROPOSTA</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="228.0" height="40.0" viewBox="0 0 228 40" version="1.1" x="320" y="3012.0" role="img" aria-label="\frac{-(PESS_w+ADM_w)}{\overline{AT}_w}\times100">
+ <metadata>
+  <rdf:rdf>
+   <ns2:work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"></dc:type>
+    <dc:date>2026-10-17T13:11:30.693905</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:agent>
+    </dc:creator>
+   </ns2:work>
+  </rdf:rdf>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="q16-figure_1">
+  <g id="q16-patch_1">
+   <path d="M 0 40  L 228 40  L 228 0  L 0 0  z " style="fill: #ffffff"></path>
+  </g>
+  <g id="q16-text_1">
+   
+   <g style="fill: #2d3142" transform="translate(0 24) scale(0.24 -0.24)">
+    <defs>
+     <path id="q16-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-b" d="M 1984 4856  Q 1566 4138 1362 3434  Q 1159 2731 1159 2009  Q 1159 1288 1364 580  Q 1569 -128 1984 -844  L 1484 -844  Q 1016 -109 783 600  Q 550 1309 550 2009  Q 550 2706 781 3412  Q 1013 4119 1484 4856  L 1984 4856  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-5a" d="M 544 3500  L 1113 3500  L 1259 684  L 2566 3500  L 3231 3500  L 3425 684  L 4666 3500  L 5241 3500  L 3641 0  L 2969 0  L 2797 2900  L 1459 0  L 781 0  L 544 3500  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-30" d="M 1081 4666  L 2028 4666  L 2572 1522  L 4378 4666  L 5350 4666  L 4441 0  L 3828 0  L 4622 4091  L 2791 897  L 2175 897  L 1581 4103  L 788 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-c" d="M 513 4856  L 1013 4856  Q 1481 4119 1714 3412  Q 1947 2706 1947 2009  Q 1947 1309 1714 600  Q 1481 -109 1013 -844  L 513 -844  Q 928 -128 1133 580  Q 1338 1288 1338 2009  Q 1338 2731 1133 3434  Q 928 4138 513 4856  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-99" d="M 4488 3438  L 3059 2003  L 4488 575  L 4116 197  L 2681 1631  L 1247 197  L 878 575  L 2303 2003  L 878 3438  L 1247 3816  L 2681 2381  L 4116 3816  L 4488 3438  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-14" d="M 794 531  L 1825 531  L 1825 4091  L 703 3866  L 703 4441  L 1819 4666  L 2450 4666  L 2450 531  L 3481 531  L 3481 0  L 794 0  L 794 531  z " transform="scale(0.015625)"></path>
+     <path id="q16-DejaVuSans-13" d="M 2034 4250  Q 1547 4250 1301 3770  Q 1056 3291 1056 2328  Q 1056 1369 1301 889  Q 1547 409 2034 409  Q 2525 409 2770 889  Q 3016 1369 3016 2328  Q 3016 3291 2770 3770  Q 2525 4250 2034 4250  z M 2034 4750  Q 2819 4750 3233 4129  Q 3647 3509 3647 2328  Q 3647 1150 3233 529  Q 2819 -91 2034 -91  Q 1250 -91 836 529  Q 422 1150 422 2328  Q 422 3509 836 4129  Q 1250 4750 2034 4750  z " transform="scale(0.015625)"></path>
+    </defs>
+    <use xlink:href="#q16-DejaVuSans-c9c" transform="translate(6.25 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-b" transform="translate(64.902344 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-33" transform="translate(92.211914 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-28" transform="translate(134.423828 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-36" transform="translate(178.652344 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-36" transform="translate(223.085938 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-5a" transform="translate(267.519531 34.387534) scale(0.49)"></use>
+    <use xlink:href="#q16-DejaVuSans-e" transform="translate(323.146973 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-24" transform="translate(395.437012 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-27" transform="translate(443.322754 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-30" transform="translate(497.224121 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-5a" transform="translate(557.619629 34.387534) scale(0.49)"></use>
+    <use xlink:href="#q16-DejaVuSans-c" transform="translate(599.609375 44.8875) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-24" transform="translate(252.25 -52.771841) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-37" transform="translate(295.235742 -52.771841) scale(0.7)"></use>
+    <use xlink:href="#q16-DejaVuSans-Oblique-5a" transform="translate(338.664453 -63.221807) scale(0.49)"></use>
+    <use xlink:href="#q16-DejaVuSans-99" transform="translate(652.651367 0.012534)"></use>
+    <use xlink:href="#q16-DejaVuSans-14" transform="translate(755.922852 0.012534)"></use>
+    <use xlink:href="#q16-DejaVuSans-13" transform="translate(819.545898 0.012534)"></use>
+    <use xlink:href="#q16-DejaVuSans-13" transform="translate(883.168945 0.012534)"></use>
+    <path d="M 6.25 21.887534  L 6.25 28.137534  L 626.918945 28.137534  L 626.918945 21.887534  L 6.25 21.887534  z "></path>
+    <path d="M 252.25 11.262534  L 252.25 15.637534  L 337.994531 15.637534  L 337.994531 11.262534  L 252.25 11.262534  z "></path>
+   </g>
+  </g>
+ </g>
+</svg><text x="60" y="3036" font-size="22" class="">Intensidade de custos</text><text x="60" y="3061" font-size="22" class="">sobre o ativo médio</text><text x="940" y="3008" font-size="20" class="">PESS: Despesas de Pessoal [78218; rel.4]</text><text x="940" y="3033" font-size="20" class="">ADM: Despesas Administrativas [78219; rel.4]</text><text x="940" y="3058" font-size="20" class="">AT: Ativo Total [78182; rel.1]</text><text x="1660" y="3008" font-size="20" class="">Custos de pessoal e administração por R$ 100</text><text x="1660" y="3033" font-size="20" class="">de ativo médio. Ativo leve pode elevar a</text><text x="1660" y="3058" font-size="20" class="">razão sem menor produtividade.</text><line x1="2216" y1="2976" x2="2216" y2="3088" stroke="#e8eaed"></line><text x="2300" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2384" y1="2976" x2="2384" y2="3088" stroke="#e8eaed"></line><text x="2468" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2552" y1="2976" x2="2552" y2="3088" stroke="#e8eaed"></line><text x="2636" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2720" y1="2976" x2="2720" y2="3088" stroke="#e8eaed"></line><text x="2804" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="2888" y1="2976" x2="2888" y2="3088" stroke="#e8eaed"></line><text x="2972" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3056" y1="2976" x2="3056" y2="3088" stroke="#e8eaed"></line><text x="3140" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3224" y1="2976" x2="3224" y2="3088" stroke="#e8eaed"></line><text x="3308" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><line x1="3392" y1="2976" x2="3392" y2="3088" stroke="#e8eaed"></line><text x="3476" y="3039.0" text-anchor="middle" font-size="19" class="muted">Avaliar</text><text x="40" y="3128" font-size="30" class="serif">Categorias literais de SegmentoTb em cada família</text><text x="40" y="3162" font-size="21" class="muted">Agrupamento interpretativo para seleção; não é recodificação implementada. Desconhecidos permanecem separados.</text><rect x="40" y="3192" width="856" height="142" fill="#fff" stroke="#c4c8cf"></rect><text x="56" y="3226" font-size="23" class="serif">Bancos depositários</text><text x="56" y="3260" font-size="19" class="">Banco Comercial · Banco Comercial Estrangeiro - Filial no país · Banco Múltiplo</text><text x="56" y="3285" font-size="19" class="">· Caixa Econômica Federal</text><rect x="928" y="3192" width="856" height="142" fill="#fff" stroke="#c4c8cf"></rect><text x="944" y="3226" font-size="23" class="serif">Cooperativas e bancos coop.</text><text x="944" y="3260" font-size="19" class="">Cooperativa de Crédito · Banco Comercial Cooperativo · Banco Múltiplo</text><text x="944" y="3285" font-size="19" class="">Cooperativo</text><rect x="1816" y="3192" width="856" height="142" fill="#fff" stroke="#c4c8cf"></rect><text x="1832" y="3226" font-size="23" class="serif">Confederação de serviços</text><text x="1832" y="3260" font-size="19" class="">Confederação de Serviços</text><rect x="2704" y="3192" width="856" height="142" fill="#fff" stroke="#c4c8cf"></rect><text x="2720" y="3226" font-size="23" class="serif">Desenvolvimento e fomento</text><text x="2720" y="3260" font-size="19" class="">BNDES · Banco de Desenvolvimento · Agência de Fomento</text><rect x="40" y="3350" width="856" height="192" fill="#fff" stroke="#c4c8cf"></rect><text x="56" y="3384" font-size="23" class="serif">Crédito não bancário</text><text x="56" y="3418" font-size="19" class="">Associação de Poupança e Empréstimo · Companhia Hipotecária · Sociedade de</text><text x="56" y="3443" font-size="19" class="">Crédito Imobiliário - Repassadora · Sociedade de Crédito ao Microempreendedor ·</text><text x="56" y="3468" font-size="19" class="">Sociedade de Crédito, Financiamento e Investimento · Sociedade de Crédito Direto</text><text x="56" y="3493" font-size="19" class="">· Sociedade de Empréstimo entre Pessoas</text><rect x="928" y="3350" width="856" height="192" fill="#fff" stroke="#c4c8cf"></rect><text x="944" y="3384" font-size="23" class="serif">Mercado de capitais / câmbio</text><text x="944" y="3418" font-size="19" class="">Banco de Investimento · Banco de Câmbio · Sociedade Corretora de Câmbio ·</text><text x="944" y="3443" font-size="19" class="">Sociedade Corretora de TVM · Sociedade Distribuidora de TVM</text><rect x="1816" y="3350" width="856" height="192" fill="#fff" stroke="#c4c8cf"></rect><text x="1832" y="3384" font-size="23" class="serif">Arrendamento mercantil</text><text x="1832" y="3418" font-size="19" class="">Sociedade de Arrendamento Mercantil</text><rect x="2704" y="3350" width="856" height="192" fill="#fff" stroke="#c4c8cf"></rect><text x="2720" y="3384" font-size="23" class="serif">Pagamentos </text><text x="2720" y="3418" font-size="19" class="">Instituição de Pagamento</text><text x="40" y="3578" font-size="15" class="mono">COMO LER</text><text x="40" y="3608" font-size="21" class="">Foco: prioridade econômica da pesquisa, sob dados/perímetro compatíveis. Avaliar: depende de modelo, exposição ou regra; não significa não aplicável.</text><text x="40" y="3646" font-size="15" class="mono">CAPITAL E EFICIÊNCIA</text><text x="40" y="3676" font-size="21" class="">C3/C4 exigem unidade e regime prudenciais próprios. E3 exige modelos comparáveis; não há prioridade universal. E2-B depende do mix de renda.</text><text x="40" y="3714" font-size="15" class="mono">TEMPO E SINAIS</text><text x="40" y="3744" font-size="21" class="">w: trimestre efetivo ou TTM; t: estoque; barra: média por dias. Provisões/despesas mantêm sinais nativos; zero no denominador é indefinido.</text><text x="40" y="3782" font-size="15" class="mono">LIMITES ECONÔMICOS</text><text x="40" y="3812" font-size="21" class="">Q1/Q2 não são inadimplência; fluxo DPROV não certificado exclusivo ao crédito. LA não é LCR; LC não mede qualidade; LF não mede estabilidade por prazo.</text><text x="40" y="3850" font-size="15" class="mono">ESCOPO</text><text x="40" y="3880" font-size="21" class="">Sistema inteiro; vinculadas/restante/desconhecido separados. Financeiro principal; Individual próprio; C3/C4 Prudencial2015–2024. Tc/Td não criam fórmula nova.</text><text x="40" y="3918" font-size="15" class="mono">VARIÁVEIS IF.DATA</text><text x="40" y="3948" font-size="21" class="">Nomes de exibição sem sufixos de hierarquia; rel. indica o relatório. Variantes integrais noCSV de componentes. RBIF é alias do Resultado de Intermediação Financeira.</text><text x="40" y="3986" font-size="15" class="mono">SÍMBOLOS E CONTAS</text><text x="40" y="4016" font-size="21" class="">Fórmulas e nomes na linha do indicador; fonteLaTeX no guia. LF: quatro participações; F=DEP+OC+EM+REP do Passivo3. Não somar pai e filhas.</text><text x="40" y="4054" font-size="15" class="mono">FONTES E ESTADO</text><text x="40" y="4084" font-size="21" class="">Assaf Neto11.ed.(2015),pp.324,333–335,337,341–342; FMI/CMN/BCBS e limites nas fichas143. Propostas ainda não adotadas nem implementadas.</text></svg>
