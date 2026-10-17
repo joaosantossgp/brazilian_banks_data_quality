@@ -24,13 +24,19 @@ Conceitos para ler a monografia e interpretar seus dados. Os nomes técnicos da 
 
 **Vínculo temporal:** relação entre entidades sustentada por evidência referente a uma data ou intervalo. Controle, participação em conglomerado e identidade jurídica são relações diferentes; uma fonte corrente não prova todo o passado.
 
-**Unidade analítica:** entidade ou conjunto representado por cada observação da pesquisa. No desenho parcial aprovado em 2026-10-13, as principais são conglomerados financeiros e instituições independentes vinculados às companhias elegíveis, com tipo explícito.
+**Unidade analítica:** entidade ou conjunto representado por cada observação, identificado por perspectiva, referência e perímetro. O desenho corrente compara o sistema observado IF.data, unidades vinculadas às companhias selecionadas, restante e vínculos desconhecidos. Companhia e unidade não são contagens equivalentes; várias companhias podem remeter à mesma unidade. A [lista aprovada de 55 companhias](docs/engineering/cvm-open-financial-universe-2024-20261016.md) é documental e não recalcula os resultados dos contratos anteriores.
 
 **Ocorrência de reporte (reporting occurrence):** representação de uma unidade numa perspectiva e referência específicas da fonte. Mesmo nome em duas datas não comprova identidade ou perímetro estável.
 
 **Atividade / modelo de negócio:** operações e fontes de receita, financiamento e risco que caracterizam a unidade. Um conglomerado pode reunir atividades distintas; segmento regulatório e atividade econômica não são classificações intercambiáveis.
 
-**População técnica e amostra acadêmica:** população técnica é o conjunto representado nos dados disponíveis; amostra acadêmica é o recorte escolhido para responder à pesquisa. Estar na base IF.data não comprova elegibilidade CVM/B3.
+**População técnica e amostra acadêmica:** população técnica é o conjunto representado nos dados disponíveis; amostra acadêmica é o recorte escolhido para responder à pesquisa. O sistema observado inteiro é o universo da pesquisa de indicadores; o recorte das companhias permite comparação, sem limitar a avaliação de cobertura às associadas. Estar no IF.data não comprova registro CVM ou vínculo com uma companhia; registro CVM não exige negociação em bolsa no corte aprovado.
+
+**Tcb e SegmentoTb:** campos observados que ajudam a identificar tipo institucional e modelo de negócio. Não são equivalentes nem definem sozinhos uma fórmula aplicável. As famílias econômicas usadas na pesquisa são agrupamentos interpretativos, sem de-para histórico automático. [Inventário e categorias](docs/engineering/ifdata-segmentation-inventory-20261013.md).
+
+**Tc e Td:** Tc estratifica o tipo de controle; Td distingue conglomerado e instituição no cadastro correspondente. Td=I não prova independência societária. Controle não identifica causalidade, e consolidação exige numerador/denominador no mesmo perímetro, sem dupla contagem de conglomerado e membros.
+
+**Sr e SrAnalitico:** Sr original informa enquadramento prudencial observado, com S1–S5 e ausências; não é simples faixa de tamanho. SrAnalitico é derivado, com origem/conflitos preservados e recorte separado do original. Ausência de Sr não prova inaplicabilidade; C3/C4 exigem componentes, unidade, regra e data próprios. [Quadros e limites por recorte](docs/engineering/financial-indicators-formulas-20261017.md).
 
 ## Demonstrações, medidas e interpretação
 
@@ -46,7 +52,7 @@ Conceitos para ler a monografia e interpretar seus dados. Os nomes técnicos da 
 
 **Janela de apuração (reporting window):** intervalo coberto por um fluxo ou cálculo. Lucros semestrais e trimestrais não se tornam comparáveis apenas por terem referência em dezembro ou março.
 
-**Indicador candidato e adotado:** candidato é uma medida proposta com fundamentos e condições de aplicação; adotado é aquele escolhido explicitamente para a pesquisa. Existir num piloto não o torna parte da metodologia final.
+**Indicador candidato, adotado e implementado:** candidato é uma medida proposta com fundamentos e condições; adotado é aquele escolhido explicitamente; implementado é o cálculo entregue em código/contrato próprios. A [pesquisa143](docs/engineering/financial-indicators-activity-review-20261016.md) distingue dez métricas atuais e sete complementos prioritários ainda candidatos. Implementação não certifica adequação universal a todos os negócios; existir num piloto ou diagrama não significa adoção.
 
 **Aplicabilidade:** pertinência de um indicador à pergunta, atividade e unidade medidas. Crédito/depósitos, por exemplo, exige examinar o papel de depósitos no financiamento da unidade.
 

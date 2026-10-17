@@ -1,5 +1,7 @@
 # Revisão do repositório e guia das tabelas IF.data — 12/10/2026
 
+**Snapshot técnico de12/10, preservado — leitura corrente de17/10/2026:** os módulos, tabelas e mapas abaixo descrevem a base auditada nessa data. A [arquitetura corrente](../architecture.md) registra extensões posteriores; os motores de indicadores [127](ifdata-monograph-analysis-20261014.md) e [130](ifdata-universe-analysis-20261014.md) têm módulos, contratos e resultados próprios. O [README](../../README.md) orienta a pesquisa atual e a [revisão documental](documentation-review-20261017.md) explica a reconciliação. Este inventário não deve ser usado como prova de que módulos/entregas posteriores inexistem, nem como autorização para remover os leitores históricos.
+
 [Issue 91](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/91). Base auditada: `6dd18273dd476c09c6f822928bff6b6743346d25`. Esta é uma revisão do estado existente, com documentação explicativa nova; não executa refatoração, exclusão de legados, aquisição ou mudança metodológica. Autor: Root; revisão independente de módulos/código e conferência final registradas na Issue. Contratos de organização: [arquitetura](../architecture.md), [glossário](../../GLOSSARY.md) e [workflow](../agents/workflow.md).
 
 ## Parecer
