@@ -1,0 +1,56 @@
+# Proveniência — proposta de tratamentos, testes e robustez
+
+- Data:18/10/2026; [Issue 173](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/173).
+- Natureza: revisão narrativa dirigida e proposta aplicada, sem interpretação econômica dos resultados ou testes inferenciais executados. Não afirma exigência curricular/adoção acadêmica.
+- [Plano e allowlist](../superpowers/plans/2026-10-18-statistical-treatment-protocol.md); [protocolo](statistical-treatment-protocol-20261018.md).
+- Base de código: `96a678b4b206a27d9b87de12f43f28158583adc7`; branch `codex/statistical-treatment-protocol`, worktree anexado existente. Três adiçõesMarkdown públicas, nenhum rename/delete; responsabilidade existente emengineering/plans, sem camada/dependência/estrutura nova.
+- Skills: Feynman `deep-research`, `literature-review`, `pdf-explore`; Matt `research`; Superpowers revisão/verificação. Fluxo manual plano→pesquisa→sínteseRoot→verificador→revisor. `/deepresearch` e `/lit` nativos não validados/executados; layoutoutputs adaptado aos destinos canônicos. Pedido explícito de seguir a pesquisa satisfaz autorização da direção já apresentada, sem reconfirmação rotineira.
+- Verification: **PASS na evidência A, na verificação de fontes B e na revisão independente da composição C.** Não é aceite acadêmico ou execução estatística.
+
+## Fontes aceitas e localizadores
+
+As referências abaixo distinguem artigo primário, orientação institucional e síntese metodológica autoral. Leituras parciais não são apresentadas como reprodução dos teoremas. Aplicações ao IF.data são propostas desta pesquisa, não recomendações específicas dessas fontes para este pacote.
+
+|Fonte|Identificação, versão/localizador lido|Uso e limite|
+|---|---|---|
+|S0|Martins, Silveira e Bacic, SOBER 2012, *Análise do desempenho econômico das empresas agroindustrais de capital aberto no Brasil*. [Registro autoral](https://www.researchgate.net/publication/264759277_Analise_do_desempenho_economico_das_empresas_agroindustrais_de_capital_aberto_no_Brasil), DOI10.13140/2.1.3519.1684. PDF indicado por João, corpo de 20 páginas físicas, métodos pp. 3–5 impressas, tabelas pp. 10/13/15/17, ressalva p. 11|Precedente e exame crítico, sem reprodução; n/gl/dados/código não disponíveis para resolver divergências. Capa adicional: página PDF = impressa + 1|
+|S1|ASA, comunicado institucional de 07/03/2016, [PDF de 3 páginas, princípios 1–6p. 2](https://www.amstat.org/asa/files/pdfs/p-valuestatement.pdf)|Orientação sobrep-valor, transparência/magnitude; comunicado lido, sem alegar leitura integral do artigo editorialDOI 10.1080/00031305.2016.1154108|
+|S2|NIST/SEMATECH, [outliers§1.3.5.17](https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h.htm) e [Grubbs§1.3.5.17.1](https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h1.htm), HTML integral|Sinalização≠exclusão e condições dos testes; data editorial não determinada|
+|S3|NIST, [F§1.3.5.9](https://www.itl.nist.gov/div898/handbook/eda/section3/eda359.htm) e [Levene§1.3.5.10](https://www.itl.nist.gov/div898/handbook/eda/section3/eda35a.htm), HTML integral|Variâncias, mediana Brown–Forsythe e limites; não substitui dependência|
+|S4|NIST, [normalidade§7.2.1.3](https://www.itl.nist.gov/div898/handbook/prc/section2/prc213.htm) e [KS§1.3.5.16](https://www.itl.nist.gov/div898/handbook/eda/section3/eda35g.htm), HTML integral|Objeto do teste e parâmetros estimados; não define método universal|
+|S5|Delacre, Lakens e Leys 2017, IRSP 30(1),92–101, [DOI10.5334/irsp.82](https://rips-irsp.com/articles/10.5334/irsp.82), introdução e seções de pré-testes; **[correção de 2022,35(1),art21, DOI10.5334/irsp.661](https://rips-irsp.com/articles/10.5334/irsp.661)**, corpo integral|LimitesF→t/Welch; correção sobre assimetria/n desigual e médias aparadas. Definição clássicaF vem doNIST, não da notação ambígua da correção|
+|S6|Fay e Proschan 2010, StatisticsSurveys 4,1–39, DOI10.1214/09-SS051, [corpo autoralPMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC2857732/), §§3/5.1.1/5.3.2–5.3.3/tabela 1|Múltiplas hipóteses/interpretaçõesWMW, leitura parcialHTML; não impor interpretação de mediana|
+|S7|Franz 2007, [arXiv 0710.2024v1](https://arxiv.org/pdf/0710.2024),10/10/2007, pp. 6–12/15–18 do manuscrito|Razões/denominador eFieller; preprint metodológico não bancário, condiçõesi.i.d. não transportadas à série/painel|
+|S8|FMI, *Financial Soundness Indicators Compilation Guide*, final 2019, [PDF de 218 páginas](https://www.imf.org/-/media/files/data/2019/2019-fsi-guide.pdf), cap. 12§§12.1–12.3/12.18–12.30, pp. 156–162 impressas/PDF172–178|Agregado/distribuição/concentração; não equivalência automáticaIF.data–FSI nem fórmula de teste leave-one-out|
+|S9|Politis 2003, StatisticalScience 18(2),219–230, [texto autoral](https://math.ucsd.edu/~politis/StatSci03.pdf), pp. 219–225, §§1–2.3 e advertência ACF|Síntese metodológica autoral de bootstrap dependente e limites; não declarar corpo Politis–Romano 1994 lido|
+|S10|Kiefer e Vogelsang 2005, [manuscrito revisado 23/03/2005](https://kiefer.economics.cornell.edu/newasym2.pdf), §§1–2/5, pp. 1–9/13–18 manuscrito; DOI10.1017/S0266466605050565|HAC/kernel/bandwidth e inferência finita, sem garantia para nossa série|
+|S11|Abadie, Athey, Imbens e Wooldridge 2020, Econometrica 88(1),265–296, [DOI10.3982/ECTA 12675, texto autoral](https://economics.mit.edu/sites/default/files/publications/ECTA12675.pdf), introduçãopp. 265–267|Fonte da incerteza; não importar resultados causais/teoremas não examinados|
+|S12|Cameron e Miller 2015, [manuscrito autoral](https://cameron.econ.ucdavis.edu/research/Cameron_Miller_JHR_2015_February.pdf), §§III–VI, pp. 12–32, DOI10.3368/jhr.50.2.317|Dependência/cluster/painel; consulta delimitadora, não escolha de estimador|
+|S13|Romano e Wolf 2005, JASA 100(469),94–108, [texto autoral](https://www.econ.uzh.ch/dam/jcr:ffffffff-935a-b0d6-ffff-ffffd823d949/jasa.pdf), pp. 94–97/105, DOI10.1198/016214504000000539|FWE/Holm e necessidade dep-valores individuais válidos; não adotar resampling stepdown|
+|S14|NIST, [Box–Ljung§6.4.4.8.1](https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc4481.htm), HTML integral|Diagnóstico de resíduos/dados e graus de liberdade conforme modelo; não prova de independência|
+
+São 15 núcleos S0–S14, incluindo páginas institucionais correlatas agrupadas; não 15 artigos independentes. Pesquisa 162 e contratos locais são contexto previamente produzido, não novas fontes primárias. Romano–Shaikh–Wolf 2008 também foi consultado pelo Root nesta rodada, mas a proposta final usaS 13 para multiplicidade e não depende do artigo de 2008. Politis–Romano 1994 teve acesso a metadados/resumo, excluído da fundamentação de corpo.
+
+## Evidência privada e comandos
+
+Preparação no destino ignorado `.scratch/statistical-treatment-protocol/`, dentro do worktree destaIssue. Não publicar conteúdo integral doDrive/PDF, URLs assinadas, paths privados ou recibos com tokens.
+
+- `sober-readable.json`: extração legível do conector; `sober2012.pdf` original recuperado por referência autenticada. `article-receipt.json`: HTTP 200,20:28:51 UTC,1.386.047 bytes,SHA-256 `ffa7ae0973c8e0b71923f91955fcede8da0163200adf8fd65a6163587ccc9c93`. Hash é doPDF, não daextração. `sober-pages.json`, imagens daspáginasPDF 6/11/14/16 e notas cruzadas. Inspeção visual efetiva de PDF 6/14/16.
+- `inspect_article.py`: urllib +pypdf bundled; `inspect_structure.py`: Python/DuckDB 1.5.6 já existentes na .venv principal,1 thread/2 GB, autenticação e consulta estrutural somenteleitura.
+- `structure-receipt.json`: pacote atual `historical-links32-composition-20261018-run3`, manifest `d47a15746fc7b6cdaaa0c82cf511622e8bb8cd89386808682b57d6271a89bb60`.
+- Tabelas consumidas: aggregates SHA `1bc08ffc5ad8999369de28bd63aa4f36d98b0a644c3b2149a6f0f13dcf757008`,12.960 linhas; joint_cells SHA `06dcfb475092905ec51b36f255f501d6a0dba4b4dbc1942ed7d4ded04821a5ec`,305.296; unit_coverage SHA `c45dcb06b99945ec088c2d1ac008df18efa15520ec4830a66cdc771a50db32b6`,5.021.050. Hashes/contagens conferidos pelo produtor; inspeção de chaves/schema não audita todas as identidades ou valores.
+- `article-and-base-notes.md`, `research-methods.md`: fontes, perguntas, buscas exatas, limites e propostas dos pesquisadores; nenhum teste IF.data executado. Root redige a síntese.
+- `read_sources.py`/`source-receipts.json`: recuperação finita doFMI após timeoutweb; HTTP 200,2.924.458 bytes,SHA `a104ebd220a04a5757b18047ce94b7ca955759db3e99597a3e2b0d29cceae7dd`. Primeira seleção de extração apontou capítulo 13; corrigida em extração separada de PDF 172–180, sem basear o cap. 12 nas páginas erradas. FalhaPolitis 1994 preservada.
+- `protocol-draft.md`, `protocol-cited.md` e relatórios de verificação/revisão: trilha de síntese e gates; estado conclusivo será registrado após conferência.
+
+Gate A, `review-A.md`: PDF/hash/páginas e pin reautenticados independentemente, sem revarrer 1,3 GB; PASS para síntese. Precisão sobre payload inicial incorporada. Gate B, `verification-B.md`:17 URLs metodológicos/artigo do draft abertos e três Issues conferidas, leitura dirigida dos localizadores; PASS com três precisões incorporadas (WMW não é teste omnibus universal;HAC/blocos também exigem condições de momentos/limite adequadas). Protocolo verificado SHA-256 `536bb42c588a9715c8a4a539f3018336604645df9f73bc54c50832bfc54b8f12`; referência do estágio, não hash prometido de futuras revisões. Verificador concluiu antes de solicitar reviewer. A verificação é de claims, sem releitura integral/reprodução de todos os artigos.
+
+Revisão C, `review-C.md`: PASS, sem achados Critical/Important; confirmou escopo, operacionalidade, limites, inventário de três adições e destinos canônicos. Achado Minor de espaçamento corrigido sem alterar hipóteses, números, fórmulas ou links. A conferência final do commit e os checks remotos ficam registrados na mesma Issue/PR; esse gate não é substituído por uma revisão anterior.
+
+## Limitações e falhas preservadas
+
+Não houve instalação de runtime/bibliotecas nem nova coleta de dados financeiros. Drive somente leitura; três cópias de nome/tamanho iguais localizadas, escolhida a pasta Mono 2 por contexto, sem afirmar igualdade binária entre elas. A recuperação bruta utilizou referência do conector após conferir MIME/metadados; URLassinada permanece privada e temporária.
+
+Fontes web secundárias retornadas em buscas só orientaram descoberta. RotasFMI eLibrary 403/PDF timeout, Politis 1994 timeout/URLError e outras tentativas do pesquisador estão nas notas; Politis 2003 fornece o corpo efetivamente lido. PMC inicialmente apresentou CAPTCHA/erro no navegador, recuperado pelo pesquisador via urllib HTTP 200; não usar a página de desafio como artigo. Tentativa de identificador arXiv errado retornou artigo de física e foi descartada. Uma leitura de filename local inexistente foi corrigida via`rg --files`; não sustentou qualquer conclusão.
+
+O diagnóstico não estimou MCAR/MAR/MNAR nem corrigiu seleção; não testou estabilidade temporal, independência, distribuição ou adequação de um contraste específico. A observação do universo não elimina erro de mensuração ou desconhecimento. Protocolo inferencial permanece condicional e precisa de adoção/ficha/validação antes de execução. Material privado e outputs da 166 continuam preservados.
