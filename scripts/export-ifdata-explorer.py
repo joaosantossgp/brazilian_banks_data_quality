@@ -92,6 +92,7 @@ def export(root, pin, output, template):
             for nested in value:
                 guard_sources(nested)
     guard_sources(manifest['config'])
+    guard_sources(manifest.get('derivation',{}))
     connection = duckdb.connect(config={'threads': 1, 'memory_limit': '256MiB'})
 
     def table(path, source_manifest, name):
@@ -188,6 +189,11 @@ def export(root, pin, output, template):
             issue = 138 if scope['dataset'] == 'individual' else 137 if scope['metric'] == 'R2' else 133 if scope['period'] == '201903' else 134
             corrections.append(dict(issue=issue, scope=[scope[k] for k in ('period','dataset','metric','horizon')],
                                     manifest=spec['expected_manifest_sha256'], note='Ponte nativa delimitada de 2019; exceções e perímetros preservados.'))
+    derivation=manifest.get('derivation',{})
+    if derivation.get('rule')=='terra-individual-history-financial-202412-v1':
+        spec=derivation['patch'];source=package(Path(spec['root']).resolve(),spec['expected_manifest_sha256'])
+        corrections.append(dict(issue=154,scope=['202412','financial','Terra','quarter/ttm'],manifest=spec['expected_manifest_sha256'],
+            note='Ponte finita Terra: histórico Individual 4T2023–3T2024; corrente Financeiro preservado. Originais mantidos no pacote. Não preenche os 21 períodos sem unidade Financeiro; crédito zero mantém Q2/R5 indefinidos.'))
     data = dict(cells=records, cell_contract="joint-cells-compact-v1", monetary_unit="BRL", monetary_scale=1, names=names, companies=companies, formulas=formulas, metric_info=METRIC_INFO,
                 adequacy=ADEQUACY, manifest=pin, periods=manifest['periods'], source_counts=manifest['tables'],
                 corrections=corrections,

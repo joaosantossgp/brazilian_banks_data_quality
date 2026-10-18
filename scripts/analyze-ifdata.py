@@ -28,6 +28,10 @@ def main():
         selective.add_argument('--'+option,required=True)
     caixa=commands.add_parser('recalculate-caixa',help='Patch the complete reviewed Caixa transition window only')
     for option in ('baseline','expected-baseline-manifest-sha256','output'):caixa.add_argument('--'+option,required=True)
+    terra=commands.add_parser('recalculate-terra',help='Recover only Terra202412 using the approved explicit Individual history bridge')
+    for option in ('composition','expected-manifest-sha256','output'):terra.add_argument('--'+option,required=True)
+    apply_terra=commands.add_parser('apply-terra',help='Reduce only the sixteen contexts affected by the accepted Terra patch')
+    for option in ('composition','composition-pin','patch','patch-pin','output'):apply_terra.add_argument('--'+option,required=True)
     membership=commands.add_parser('update-universe-membership',help='Update dated company membership without financial recalculation')
     for option in ('baseline','expected-baseline-manifest-sha256','universe-note','expected-universe-note-sha256','output'):
         membership.add_argument('--'+option,required=True)
@@ -62,6 +66,12 @@ def main():
     elif args.command=='recalculate-caixa':
         from bank_quality.ifdata_universe_analysis import recalculate_caixa_transition
         result=recalculate_caixa_transition(args.baseline,args.expected_baseline_manifest_sha256,args.output)
+    elif args.command=='recalculate-terra':
+        from bank_quality.ifdata_universe_analysis import recalculate_terra_history
+        result=recalculate_terra_history(args.composition,args.expected_manifest_sha256,args.output)
+    elif args.command=='apply-terra':
+        from bank_quality.ifdata_universe_analysis import apply_terra_history
+        result=apply_terra_history(args.composition,args.composition_pin,args.patch,args.patch_pin,args.output)
     elif args.command=='update-universe-membership':
         from bank_quality.ifdata_population import build_updated_membership
         result=build_updated_membership(args.baseline,args.expected_baseline_manifest_sha256,
