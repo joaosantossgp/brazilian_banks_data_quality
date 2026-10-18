@@ -520,4 +520,147 @@ class CaixaTransitionTests(unittest.TestCase):
             self.assertFalse((root/'bad-source').exists())
 
 
+TERRA_DATES=('202312','202403','202406','202409','202412')
+
+def terra_fixture(metric='R1'):
+    profile=universe.compile_complement_profile(universe.load_profile(),complement_catalogue(),['financial','individual'])
+    names=math.METRICS.get(metric,math.COMPLEMENT_METRICS.get(metric));original={};individual={}
+    cad=[dict(Data=p,CodInst='03751794',CnpjInstituicaoLider='03751794',Td='I',CodConglomeradoFinanceiro=None,CodConglomeradoPrudencial='C0084514') for p in TERRA_DATES]
+    for name in names:
+        original[name]=[];individual[name]=[]
+        for i,p in enumerate(TERRA_DATES):
+            for ds,target in [('financial',original),('individual',individual)]:
+                role=math.COMPONENT_NAMES[name]
+                ctx=next(c for c in profile['contexts'] if c['component']==role and c['literal_context']['dataset']==ds and p in c['periods'])
+                token=str([20,5,12,7,18][i]) if name in math.FLOW_COMPONENTS else '0' if name=='credit' else '50' if name=='PL' else '100'
+                row={k:v for k,v in ctx['literal_context'].items() if k!='dataset'};row.update(CodInst='03751794',AnoMes=p,Saldo=token,source_file='fixture.parquet',source_sha256='a'*64,source_row=str(i))
+                ob=math.resolve_component(profile,role,ds,'03751794',p,[row] if ds=='individual' or p=='202412' else [])
+                ob.update(id=ds+'|'+name+'|'+p,component=name,dataset=ds,code='03751794',status=ob.get('status','ok'))
+                target[name].append(ob)
+    return profile,original,individual,cad
+
+class TerraHistoryTests(unittest.TestCase):
+    def bridge(self,profile,original,individual,cad,**kw):
+        fn=getattr(universe,'bridge_terra_history',None);self.assertIsNotNone(fn,'Finite Terra history bridge missing')
+        return fn(original,individual,cad,profile=profile,period=kw.pop('period','202412'),metric=kw.pop('metric','R1'),horizon=kw.pop('horizon','ttm'),**kw)
+
+    def test_exact_quarter_and_ttm_preserve_native_identity_and_original(self):
+        for horizon,expected in [('quarter',Fraction(11,100)),('ttm',Fraction(30,100))]:
+            profile,original,individual,cad=terra_fixture();saved=deepcopy((original,individual,cad))
+            patched,proof=self.bridge(profile,original,individual,cad,horizon=horizon)
+            self.assertTrue(proof['released']);self.assertEqual(proof['rule'],'terra-individual-history-financial-202412-v1')
+            result=math.evaluate_metric('R1',dict(period='202412',components=patched,financial_statement=True),horizon)
+            self.assertEqual(result['status'],'ok');self.assertEqual(math._rational(result['value_fraction']),expected)
+            self.assertEqual(patched['LL'][-1],original['LL'][-1]);self.assertEqual(patched['LL'][0],original['LL'][0])
+            self.assertEqual(len(proof['replacements']),2 if horizon=='quarter' else 7)
+            for rows in patched.values():
+                for o in rows:
+                    if o.get('reporting_transition'):
+                        n=next(x for x in individual[o['component']] if x['period']==o['period'])
+                        self.assertEqual(o['binding'],n['binding']);self.assertEqual(o['sources'],n['sources']);self.assertEqual(o['token'],n['token'])
+                        self.assertEqual(o['native_unit_key'],n['unit_key']);self.assertEqual(o['native_definition_id'],n['definition_id']);self.assertEqual(tuple(o['unit_key']),('financial','2','03751794'))
+            self.assertEqual((original,individual,cad),saved)
+
+    def test_all_eight_metrics_and_zero_credit_are_not_fabricated_as_valid(self):
+        for metric in ('R1','R2','Q2','E2-B','RS','E3','R4','R5'):
+            for horizon in ('quarter','ttm'):
+                profile,original,individual,cad=terra_fixture(metric)
+                patched,proof=self.bridge(profile,original,individual,cad,metric=metric,horizon=horizon)
+                self.assertTrue(proof['released'],(metric,horizon,proof))
+                result=math.evaluate_metric(metric,dict(period='202412',components=patched,financial_statement=True),horizon)
+                self.assertEqual(result['status'],'zero_denominator' if metric in ('Q2','R5') else 'ok')
+
+    def test_rejects_bad_scope_cadastro_context_and_anchor_without_mutation(self):
+        for case in ('period','horizon','group','leader','missing_cad','duplicate_cad','prudential','null_source','different_token','context','source_key','existing_history','anchor_null'):
+            profile,original,individual,cad=terra_fixture();kw={}
+            if case=='period':kw['period']='202409'
+            elif case=='horizon':kw['horizon']='point'
+            elif case=='group':cad[0]['CodConglomeradoFinanceiro']='COTHER'
+            elif case=='leader':cad[0]['CnpjInstituicaoLider']='OTHER'
+            elif case=='missing_cad':cad.pop(0)
+            elif case=='duplicate_cad':cad.append(deepcopy(cad[0]))
+            elif case=='prudential':cad[0]['CodConglomeradoPrudencial']='OTHER'
+            elif case=='null_source':individual['AT'][0]['token']=None
+            elif case=='different_token':individual['LL'][-1]['token']='999'
+            elif case=='context':individual['AT'][0]['binding']['literal_context']['DescricaoColuna']='OTHER'
+            elif case=='source_key':individual['AT'][0]['unit_key']=('individual','3','OTHER')
+            elif case=='existing_history':original['AT'][0]['status']='ok';original['AT'][0]['token']='100'
+            elif case=='anchor_null':original['LL'][-1]['token']=None
+            saved=deepcopy(original);patched,proof=self.bridge(profile,original,individual,cad,**kw)
+            self.assertFalse(proof['released'],case);self.assertEqual(patched,saved,case)
+
+    def test_unused_opening_flow_is_not_a_new_requirement(self):
+        profile,original,individual,cad=terra_fixture();individual['LL'][0]['token']=None
+        patched,proof=self.bridge(profile,original,individual,cad)
+        self.assertTrue(proof['released']);self.assertEqual(patched['LL'][0],original['LL'][0])
+
+class TerraRunnerBoundaryTests(unittest.TestCase):
+    def test_context_copy_replaces_only_selected_terra_rows_and_preserves_payloads(self):
+        import duckdb
+        fn=getattr(universe,'_terra_copy_context',None);self.assertIsNotNone(fn)
+        with tempfile.TemporaryDirectory() as tmp,duckdb.connect() as conn:
+            root=Path(tmp);base=root/'base.parquet';patch=root/'patch.parquet';out=root/'out.parquet'
+            conn.execute("create table records(code varchar,dataset varchar,period varchar,metric varchar,horizon varchar,payload varchar)")
+            conn.execute("insert into records values ('03751794','financial','202412','R1','ttm','old'),('OTHER','financial','202412','R1','ttm','exact other'),('03751794','financial','202409','R1','ttm','exact earlier')")
+            conn.execute('copy records to $destination (format parquet)',{'destination':str(base)})
+            conn.execute("copy (select code,dataset,period,metric,horizon,'new' as payload from records where payload='old') to $destination (format parquet)",{'destination':str(patch)})
+            fn(conn,base,patch,out,unit_only=True)
+            self.assertEqual(sorted(r[0] for r in conn.execute('select payload from read_parquet(?)',[str(out)]).fetchall()),['exact earlier','exact other','new'])
+
+    def test_applied_origin_and_signature_describe_corrected_economic_fields(self):
+        fn=getattr(universe,'_terra_applied_contribution',None);self.assertIsNotNone(fn)
+        old=dict(id='old',status='binding_missing',origin={'kind':'baseline'},preservation={'signature_sha256':'old'})
+        patch=deepcopy(old);patch.update(status='ok',value_fraction=math._fraction_field(Fraction(1,2)))
+        row=fn(patch,Path('/patch'),'a'*64)
+        self.assertEqual(row['prior_origin'],old['origin']);self.assertEqual(row['origin']['kind'],'corrections')
+        self.assertEqual(row['origin']['expected_manifest_sha256'],'a'*64)
+        self.assertEqual(row['preservation']['signature_sha256'],__import__('hashlib').sha256(universe._composition_result_signature(row).encode()).hexdigest())
+        self.assertEqual(patch['origin'],old['origin']);self.assertEqual(patch['preservation']['signature_sha256'],'old')
+
+    def test_nominal_gaps_only_block_when_included_in_analytical_scope(self):
+        fn=getattr(universe,'_terra_require_admitted_company_coverage',None);self.assertIsNotNone(fn)
+        nominal=[dict(status='missing_native_unit',analytical_included=False) for _ in range(23)]
+        fn(nominal)
+        with self.assertRaisesRegex(ValueError,'nominal company gaps'):
+            fn(nominal+[dict(status='missing_native_unit',analytical_included=True)])
+        fn([dict(status='ok',analytical_included=True)])
+
+    def test_selective_composition_refuses_patch_from_another_composition(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);base=root/'base';base.mkdir();patch=root/'patch';patch.mkdir();out=root/'out'
+            def save(path,value):
+                payload=json.dumps(value).encode();(path/'manifest.json').write_bytes(payload)
+                return hashlib.sha256(payload).hexdigest()
+            pin=save(base,{'contract':universe.COMPOSITION_CONTRACT,'config':{}})
+            pp=save(patch,{'contract':'ifdata-terra-history-analysis-v1','composition':{'root':str(base),'expected_manifest_sha256':'0'*64}})
+            fn=getattr(universe,'apply_terra_history',None);self.assertIsNotNone(fn)
+            with self.assertRaisesRegex(ValueError,'composition'):
+                fn(base,pin,patch,pp,out)
+            self.assertFalse(out.exists())
+
+    def test_bad_composition_pin_refuses_before_output(self):
+        fn=getattr(universe,'recalculate_terra_history',None);self.assertIsNotNone(fn,'Terra selective runner missing')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);base=root/'base';base.mkdir();(base/'manifest.json').write_text('{}',encoding='utf8');out=root/'out'
+            with self.assertRaises(ValueError):fn(base,'0'*64,out)
+            self.assertFalse(out.exists())
+
+    def test_nested_source_destination_refuses_before_reading_or_writing(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);base=root/'composition';base.mkdir();protected=root/'membership';protected.mkdir()
+            manifest={'contract':universe.COMPOSITION_CONTRACT,'config':{'membership':{'root':str(protected)}}}
+            payload=json.dumps(manifest).encode();(base/'manifest.json').write_bytes(payload);out=protected/'terra-new'
+            with self.assertRaisesRegex(ValueError,'overlaps source'):
+                universe.recalculate_terra_history(base,hashlib.sha256(payload).hexdigest(),out)
+            self.assertFalse(out.exists());self.assertEqual(list(protected.iterdir()),[])
+
+    def test_existing_output_is_preserved(self):
+        fn=getattr(universe,'recalculate_terra_history',None);self.assertIsNotNone(fn,'Terra selective runner missing')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'out';out.mkdir();p=out/'accepted';p.write_bytes(b'keep')
+            with self.assertRaises(FileExistsError):fn(root/'missing','0'*64,out)
+            self.assertEqual(p.read_bytes(),b'keep')
+
 if __name__=='__main__':unittest.main()

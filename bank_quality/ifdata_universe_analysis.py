@@ -34,6 +34,188 @@ PROFIT_BRIDGE_ID='LL-native-before-capital-remuneration-201903-v1'
 CAIXA_TRANSITION_PERIODS=('202109','202112','202203','202206')
 CAIXA_TRANSITION_ID='caixa-financial-observed-perimeter-202109-v1'
 
+TERRA_HISTORY_ID='terra-individual-history-financial-202412-v1'
+TERRA_HISTORY_PERIODS=('202312','202403','202406','202409','202412')
+TERRA_HISTORY_METRICS=('R1','R2','Q2','E2-B','RS','E3','R4','R5')
+
+
+def bridge_terra_history(observations,individual,cadastro_rows,*,profile,period,metric,horizon):
+    """Explicit same-institution history bridge approved in Issue154.
+
+    Native Individual bindings/tokens remain Individual. Only analytical unit
+    and compatibility identities align with the observed Financial endpoint.
+    This never creates Financial units in dates absent from that source.
+    """
+    original=deepcopy(observations)
+    proof=dict(rule=TERRA_HISTORY_ID,released=False,reason='unreviewed_target',replacements=[],
+        limits=['Individual history is an explicit analytical bridge, not native Financial data',
+                'Historical overlap evidence does not certify all missing Financial dates',
+                'No new Financial unit-periods or general cross-perspective equivalence'])
+    if period!='202412' or metric not in TERRA_HISTORY_METRICS or horizon not in ('quarter','ttm'):return original,proof
+    names=math.METRICS.get(metric,math.COMPLEMENT_METRICS.get(metric))
+    if set(observations)!=set(names) or set(individual)!=set(names):return original,proof
+    target=('financial','2','03751794');source=('individual','3','03751794');dates=list(TERRA_HISTORY_PERIODS)
+    cad={};proof['reason']='dated_identity_not_proven'
+    for row in cadastro_rows:
+        key=(row.get('Data'),row.get('CodInst'))
+        if key in cad:return original,proof
+        cad[key]=row
+    for p in dates:
+        row=cad.get((p,'03751794'))
+        if not row or any(row.get(k)!=v for k,v in dict(CnpjInstituicaoLider='03751794',Td='I',
+                CodConglomeradoFinanceiro=None,CodConglomeradoPrudencial='C0084514').items()):return original,proof
+    changes=[];proof['reason']='native_history_not_verified'
+    for name in names:
+        if ([o.get('period') for o in observations[name]]!=dates or
+            [o.get('period') for o in individual[name]]!=dates):return original,proof
+        role=math.COMPONENT_NAMES[name]
+        for index,p in enumerate(dates):
+            needed=index>=3 if horizon=='quarter' else (index>0 if name in math.FLOW_COMPONENTS else True)
+            if not needed:continue
+            old=observations[name][index];native=individual[name][index]
+            contexts={}
+            for ds in ('financial','individual'):
+                matches=[c for c in profile['contexts'] if c['component']==role and c['literal_context']['dataset']==ds and p in c['periods']]
+                if len(matches)!=1:return original,proof
+                contexts[ds]=matches[0]
+            a,b=contexts['financial'],contexts['individual']
+            def semantic(ctx):return {k:v for k,v in ctx['literal_context'].items() if k not in ('dataset','TipoInstituicao')}
+            if semantic(a)!=semantic(b) or a['window_rule']!=b['window_rule']:return original,proof
+            if (tuple(old.get('unit_key',()))!=target or old.get('binding')!=a or old.get('definition_id')!=a['compatibility'] or
+                old.get('scale')!='BRL' or old.get('window_rule')!=a['window_rule'] or
+                tuple(native.get('unit_key',()))!=source or native.get('binding')!=b or
+                native.get('definition_id')!=b['compatibility'] or native.get('scale')!='BRL' or
+                native.get('window_rule')!=b['window_rule'] or math._native_value(native)[1] is not None or not native.get('sources')):return original,proof
+            literal=b['literal_context']
+            if any(r.get('CodInst')!='03751794' or r.get('AnoMes')!=p or r.get('Saldo')!=native['token'] or
+                   any(type(r.get(k)) is not type(v) or r.get(k)!=v for k,v in literal.items() if k!='dataset') for r in native['sources']):return original,proof
+            if p=='202412':
+                if math._native_value(old)[1] is not None or old['token']!=native['token'] or not old.get('sources'):return original,proof
+                if any(r.get('CodInst')!='03751794' or r.get('AnoMes')!=p or r.get('Saldo')!=old['token'] or
+                       any(type(r.get(k)) is not type(v) or r.get(k)!=v for k,v in a['literal_context'].items() if k!='dataset') for r in old['sources']):return original,proof
+                continue
+            if old.get('status')!='binding_missing' or old.get('token') is not None:return original,proof
+            value=deepcopy(native)
+            value.update(id=hashlib.sha256((str(old.get('id'))+'|'+TERRA_HISTORY_ID).encode()).hexdigest()[:32],
+                unit_key=target,native_unit_key=deepcopy(native['unit_key']),native_definition_id=native['definition_id'],
+                definition_id=a['compatibility'],reporting_transition=dict(rule=TERRA_HISTORY_ID,
+                    source_period=p,source_unit_key=list(source),analysis_unit_key=list(target),analytical_definition_id=a['compatibility']),
+                flags=sorted(set(native.get('flags',[])+['terra_individual_history_bridge'])))
+            changes.append((name,index,value))
+    if not changes:return original,proof
+    for name,index,value in changes:
+        original[name][index]=value
+        proof['replacements'].append(dict(component=name,period=value['period'],native_unit_key=value['native_unit_key'],analytical_component_id=value['id']))
+    proof.update(released=True,reason='approved_finite_same_institution_history',metric=metric,horizon=horizon,
+        analysis_period=period,cadastro_evidence=deepcopy(cadastro_rows))
+    return original,proof
+
+
+def recalculate_terra_history(composition,expected_manifest_sha256,output):
+    """Produce only sixteen Terra202412 contributions, retaining their originals."""
+    from time import perf_counter
+    import duckdb
+    from .ifdata_odata import CONTRACT as DATA_CONTRACT
+    from .ifdata_cadastro import CONTRACT as CAD_CONTRACT
+    from .ifdata_variable_catalog import CONTRACT as CAT_CONTRACT,query_catalog
+    started=perf_counter();output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    consumed={};guards={}
+    def identity(path):
+        s=_ordinary(path).stat();return s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns
+    def source(spec,contract):
+        root=Path(spec['root']).resolve();path=root/'manifest.json';pin=spec['expected_manifest_sha256']
+        if output==root or root in output.parents or output in root.parents:raise ValueError('Terra output overlaps source')
+        if not isinstance(pin,str) or not re.fullmatch('[a-f0-9]{64}',pin) or math._digest_file(path)!=pin:raise ValueError('Terra source pin mismatch')
+        m=math._json_unique(path.read_bytes())
+        if m.get('contract')!=contract:raise ValueError('Terra source contract mismatch')
+        consumed[path]=pin;guards[path]=identity(path)
+        return root,m
+    def consume(root,m,name):
+        entries=[e for e in m['files'] if e['file']==name]
+        if len(entries)!=1:raise ValueError('Missing or ambiguous Terra source inventory')
+        e=entries[0];_capture_payload(root,e);path=root/e['file'];consumed[path]=e['sha256'];guards[path]=identity(path)
+        return path
+    root,full=source(dict(root=str(composition),expected_manifest_sha256=expected_manifest_sha256),COMPOSITION_CONTRACT)
+    def guard_sources(value):
+        if isinstance(value,dict):
+            if isinstance(value.get('root'),str):
+                declared=Path(value['root']).resolve()
+                if output==declared or declared in output.parents or output in declared.parents:
+                    raise ValueError('Terra output overlaps source')
+            for nested in value.values():guard_sources(nested)
+        elif isinstance(value,list):
+            for nested in value:guard_sources(nested)
+    guard_sources(full['config'])
+    base,main=source(full['config']['baseline'],CONTRACT)
+    if main.get('stage')!='coverage-and-aggregation':raise ValueError('Admitted baseline required')
+    profile=load_profile(expected_sha256=main['profile_sha256']);consumed[PROFILE_PATH]=main['profile_sha256'];guards[PROFILE_PATH]=identity(PROFILE_PATH)
+    sources={};partitions={};dates=list(TERRA_HISTORY_PERIODS)
+    for name,contract in [('financial',DATA_CONTRACT),('individual',DATA_CONTRACT),('cadastro',CAD_CONTRACT),('catalogue',CAT_CONTRACT)]:
+        sr,sm=source(main['inputs'][name],contract);sources[name]=(sr,sm)
+        entries=sm['files'] if name=='catalogue' else [e for e in sm['files'] if str(e.get('period')) in dates]
+        if name!='catalogue' and (len(entries)!=5 or {str(e['period']) for e in entries}!=set(dates)):raise ValueError('Missing Terra dependency partition')
+        for e in entries:consume(sr,sm,e['file'])
+        partitions[name]=entries
+    profile=compile_complement_profile(profile,query_catalog(sources['catalogue'][0],'select * from catalogo_variaveis'),['financial','individual'])
+    coverage_path=consume(root,full,'unit_coverage.parquet')
+    with duckdb.connect(config={'threads':1,'memory_limit':'512MiB'}) as conn:
+        originals=math._records(conn.execute("select payload from read_parquet(?) where dataset='financial' and code='03751794' and period='202412'",[str(coverage_path)]))
+        originals=[math._json_unique(r['payload'].encode()) for r in originals if math._json_unique(r['payload'].encode())['metric'] in TERRA_HISTORY_METRICS]
+        native={}
+        for ds in ('financial','individual'):
+            _window(conn,sources[ds],dates,dataset=ds,view='native_'+ds)
+            native[ds]=math._records(conn.execute("select * from native_"+ds+" where CodInst='03751794' and NumeroRelatorio in ('1','2','4')"))
+        cr,cm=sources['cadastro'];cad=math._records(conn.execute("select * from read_parquet(?) where CodInst='03751794'",[[str(cr/e['file']) for e in partitions['cadastro']]]))
+    expected={(m,h) for m in TERRA_HISTORY_METRICS for h in ('quarter','ttm')}
+    keys=[(r['metric'],r['horizon']) for r in originals]
+    if len(keys)!=16 or set(keys)!=expected:raise ValueError('Exact sixteen observed Terra contributions required')
+    if any(r.get('unit_key')!=['financial','2','03751794'] or r.get('unit_id')!='financial|2|03751794|202412' or r.get('row_kind')!='native_unit' for r in originals):raise ValueError('Terra reporting identity mismatch')
+    observations={};components={}
+    for name in sorted({n for m in TERRA_HISTORY_METRICS for n in math.METRICS.get(m,math.COMPLEMENT_METRICS.get(m))}):
+        for ds in ('financial','individual'):
+            observations[ds,name]=[]
+            for p in dates:
+                ob=math.resolve_component(profile,math.COMPONENT_NAMES[name],ds,'03751794',p,native[ds])
+                ob.update(id=hashlib.sha256((TERRA_HISTORY_ID+'|'+ds+'|'+name+'|'+p).encode()).hexdigest()[:32],
+                    component=name,dataset=ds,code='03751794',analysis_period='202412',status=ob.get('status','ok'))
+                components[ob['id']]=ob;observations[ds,name].append(ob)
+    results=[];coverage=[]
+    for old in originals:
+        metric,horizon=old['metric'],old['horizon'];names=math.METRICS.get(metric,math.COMPLEMENT_METRICS.get(metric))
+        before={n:observations['financial',n] for n in names};individual={n:observations['individual',n] for n in names}
+        original_result=math.evaluate_metric(metric,dict(period='202412',components=before,financial_statement=True),horizon)
+        if _composition_result_signature(original_result)!=_composition_result_signature(old):raise ValueError('Original Terra calculation differs from accepted economic result')
+        bridged,proof=bridge_terra_history(before,individual,cad,profile=profile,period='202412',metric=metric,horizon=horizon)
+        if not proof['released']:raise ValueError('Terra bridge not released: '+metric+'/'+horizon+'/'+proof['reason'])
+        for rows in bridged.values():
+            for ob in rows:components[ob['id']]=ob
+        result=math.evaluate_metric(metric,dict(period='202412',components={n:[_thin(o) for o in rows] for n,rows in bridged.items()},financial_statement=True),horizon)
+        result.update(id=old['result_id']+'|'+TERRA_HISTORY_ID,unit_id=old['unit_id'],unit_key=old['unit_key'],dataset='financial',code='03751794',
+            membership=old['membership'],baseline_status=old['status'],reporting_transition=proof)
+        result['flags']=sorted(set(result.get('flags',[])+['terra_individual_history_bridge']))
+        row=deepcopy(old)
+        for key in ('status','applicability','applicability_evidence','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary'):row[key]=deepcopy(result.get(key))
+        row.update(result_id=result['id'],reporting_transition=proof,prior_origin=deepcopy(old['origin']))
+        row['flags']=sorted(set(row['flags']+old.get('flags',[])))
+        results.append(_normalize_temporal(result));coverage.append(row)
+    for p,pin in consumed.items():
+        if identity(p)!=guards[p] or math._digest_file(p)!=pin:raise ValueError('Terra consumed source changed')
+    output.mkdir(parents=True);tables=dict(components=list(components.values()),results=results,unit_coverage=coverage,original_unit_coverage=originals);files=[]
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        for table,rows in tables.items():
+            writer=Writer(output,table,stack)
+            for row in rows:writer.append(row)
+            files.extend(writer.finish(conn))
+    manifest=dict(contract='ifdata-terra-history-analysis-v1',scope=dict(dataset='financial',code='03751794',periods=['202412'],metrics=list(TERRA_HISTORY_METRICS),horizons=['quarter','ttm']),
+        composition=dict(root=str(root),expected_manifest_sha256=expected_manifest_sha256),baseline=full['config']['baseline'],bridge_rule=TERRA_HISTORY_ID,
+        dependency_periods=dates,native_partitions=partitions,profile_sha256=main['profile_sha256'],tables={t:len(rows) for t,rows in tables.items()},files=files,
+        consumed_files=[dict(file=str(p),sha256=h) for p,h in sorted(consumed.items(),key=lambda v:str(v[0]))],
+        producer_sha256=math._digest_file(Path(__file__)),elapsed_seconds=perf_counter()-started,
+        limits=['Explicit Individual-to-Financial dependency bridge for Terra202412 only','Original contributions retained; no new Financial unit-periods','Patch only; aggregate with unchanged contributions'])
+    (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf8')
+    return manifest
+
 
 def bridge_caixa_transition(observations,predecessor,cadastro_rows,*,period,metric,horizon='ttm'):
     """Nominated reporting lineage, not a constant-perimeter reconstruction.
@@ -2338,6 +2520,129 @@ def compose_analysis(config,output):
         limits=['Observed native perimeters; no economic exposure elimination','Membership relative to admitted known associations; nominal gaps retained','Descriptive statistics only; no causal inference or composite index'])
     (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf-8')
     return manifest
+
+
+def _terra_require_admitted_company_coverage(rows):
+    if any(r.get('analytical_included') is True and r.get('status')=='missing_native_unit' for r in rows):
+        raise ValueError('Terra context has nominal company gaps')
+
+
+def _terra_applied_contribution(patch,root,pin):
+    row=deepcopy(patch);row['prior_origin']=deepcopy(patch['origin'])
+    row['origin']=dict(kind='corrections',root=str(root),expected_manifest_sha256=pin,coverage_id=patch['id'])
+    row['preservation']=dict(status='exact_stored_economic_fields',signature_sha256=hashlib.sha256(_composition_result_signature(row).encode()).hexdigest())
+    return row
+
+
+def _terra_copy_context(conn,base,replacement,destination,*,unit_only=False):
+    predicate="dataset='financial' and period='202412' and metric in (select unnest($metrics)) and horizon in ('quarter','ttm')"
+    if unit_only:predicate="code='03751794' and "+predicate
+    conn.execute('copy (select * from read_parquet($base) where not ('+predicate+') union all select * from read_parquet($replacement)) to $destination (format parquet,compression zstd,row_group_size 2048)',
+        dict(base=str(base),replacement=str(replacement),destination=str(destination),metrics=list(TERRA_HISTORY_METRICS)))
+
+
+def apply_terra_history(composition,composition_pin,patch,patch_pin,output):
+    """Replace sixteen stored contributions; reduce only their existing contexts.
+
+    No indicator formula is evaluated. Unaffected payload strings survive exactly;
+    the three structural tables are copied byte-for-byte. Original contributions
+    remain in the pinned patch, and the accepted composition remains untouched.
+    """
+    import duckdb
+    import shutil
+    from time import perf_counter
+    started=perf_counter();output=Path(output).resolve();consumed={}
+    if output.exists():raise FileExistsError(output)
+    def protect(path):
+        path=Path(path).resolve()
+        if output==path or path in output.parents or output in path.parents:raise ValueError('Terra output overlaps source')
+        return path
+    def guard(value):
+        if isinstance(value,dict):
+            if isinstance(value.get('root'),str):protect(value['root'])
+            for nested in value.values():guard(nested)
+        elif isinstance(value,list):
+            for nested in value:guard(nested)
+    def package(root,pin,contract):
+        root=protect(root);path=root/'manifest.json'
+        if math._digest_file(path)!=pin:raise ValueError('Terra application manifest pin mismatch')
+        value=math._json_unique(path.read_bytes())
+        if value.get('contract')!=contract:raise ValueError('Terra application contract mismatch')
+        consumed[path]=pin;guard(value);return root,value
+    root,full=package(composition,composition_pin,COMPOSITION_CONTRACT)
+    pr,pm=package(patch,patch_pin,'ifdata-terra-history-analysis-v1')
+    if pm['composition']!=dict(root=str(root),expected_manifest_sha256=composition_pin):raise ValueError('Terra patch composition mismatch')
+    expected={(m,h) for m in TERRA_HISTORY_METRICS for h in ('quarter','ttm')}
+    def table(root,manifest,name):
+        entries=[e for e in manifest['files'] if e['file']==name+'.parquet']
+        if len(entries)!=1:raise ValueError('Terra table inventory mismatch')
+        entry=entries[0];_capture_payload(root,entry);path=root/entry['file'];consumed[path]=entry['sha256'];return path
+    with duckdb.connect(config={'threads':1,'memory_limit':'512MiB'}) as conn:
+        def rows(path,where='',params=None):
+            return [math._json_unique(p.encode()) for p, in conn.execute('select payload from read_parquet(?) '+where,[str(path)]+(params or [])).fetchall()]
+        patches=rows(table(pr,pm,'unit_coverage'));originals=rows(table(pr,pm,'original_unit_coverage'))
+        def valid(items):
+            return len(items)==16 and {(r['metric'],r['horizon']) for r in items}==expected and all(r['dataset']=='financial' and r['period']=='202412' and r['code']=='03751794' and r['membership']=='remaining' and not r['companies'] for r in items)
+        if not valid(patches) or not valid(originals):raise ValueError('Exact sixteen remaining Terra contributions required')
+        old_by_id={r['id']:r for r in originals};patch_by_id={r['id']:r for r in patches}
+        if len(old_by_id)!=16 or old_by_id.keys()!=patch_by_id.keys():raise ValueError('Terra patch identity mismatch')
+        mutable={'status','applicability','applicability_evidence','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary','result_id','reporting_transition','prior_origin'}
+        for key,row in patch_by_id.items():
+            if {k:v for k,v in row.items() if k not in mutable}!={k:v for k,v in old_by_id[key].items() if k not in mutable}:raise ValueError('Terra patch changed structural fields')
+            if row.get('reporting_transition',{}).get('rule')!=TERRA_HISTORY_ID:raise ValueError('Terra proof missing')
+        patches=[_terra_applied_contribution(r,pr,patch_pin) for r in patches]
+        patch_by_id={r['id']:r for r in patches}
+        paths={name:table(root,full,name) for name in COMPOSITION_TABLES}
+        context="where dataset='financial' and period='202412' and metric in ("+','.join('?' for _ in TERRA_HISTORY_METRICS)+") and horizon in ('quarter','ttm')"
+        context_rows=rows(paths['unit_coverage'],context,list(TERRA_HISTORY_METRICS))
+        found={r['id']:r for r in context_rows if r['id'] in patch_by_id}
+        if found!=old_by_id:raise ValueError('Accepted Terra originals differ from patch')
+        # Finite destination has no missing admitted companies. Refuse rather
+        # than silently lose nominal rows if the target cohort changes later.
+        _terra_require_admitted_company_coverage(rows(paths['company_coverage'],context+" and status='missing_native_unit'",list(TERRA_HISTORY_METRICS)))
+        projected=[patch_by_id.get(r['id'],r) for r in context_rows]
+        derived=aggregate_unit_results(projected,fields=COMPOSITION_AXES)
+        by_context={}
+        for r in projected:by_context.setdefault((r['metric'],r['horizon']),[]).append(r)
+        for name,values in derived.items():
+            for value in values:
+                if name in ('aggregates','segment_coverage'):
+                    subset=[r for r in by_context[value['metric'],value['horizon']] if value['cohort']=='total' or r['membership']==value['cohort']]
+                    if value.get('field') is not None:subset=[r for r in subset if _category(r,value['field'])==(value['category_state'],value['category'])]
+                    value['representation_coverage']={role:_composition_stock_summary(subset,role,'financial') for role in ('credit','PL')}
+            derived[name]=[_composition_compact_summary(v) for v in values]
+        derived['joint_cells']=_composition_joint_cells(projected)
+        derived['unit_coverage']=patches
+        for path,pin in consumed.items():
+            if math._digest_file(path)!=pin:raise ValueError('Terra input changed before application')
+        output.mkdir(parents=True);files=[];counts={};joint_counts=None
+        with ExitStack() as stack:
+            for name in COMPOSITION_TABLES:
+                destination=output/(name+'.parquet')
+                if name not in derived:
+                    shutil.copyfile(paths[name],destination);counts[name]=full['tables'][name]
+                else:
+                    # Writer serializes exact fractions, then DuckDB copies all
+                    # untouched rows without parsing their JSON payloads.
+                    writer=Writer(output,'replacement_'+name,stack,formats=('parquet',))
+                    for row in derived[name]:writer.append(row)
+                    entry=writer.finish(conn)[0];replacement=output/entry['file']
+                    _terra_copy_context(conn,paths[name],replacement,destination,unit_only=name=='unit_coverage')
+                    replacement.unlink();counts[name]=conn.execute('select count(*) from read_parquet(?)',[str(destination)]).fetchone()[0]
+                files.append(dict(file=destination.name,rows=counts[name],sha256=math._digest_file(destination)))
+                if name=='joint_cells':
+                    sums=conn.execute("select sum(cast(json_extract_string(payload,'$.source_counts.native_units') as bigint)),sum(cast(json_extract_string(payload,'$.source_counts.nominal_companies') as bigint)),sum(cast(json_extract_string(payload,'$.source_counts.eligible_units') as bigint)) from read_parquet(?)",[str(destination)]).fetchone()
+                    joint_counts=dict(native_units=sums[0],nominal_companies=sums[1],eligible_units=sums[2],rows=sums[0]+sums[1])
+        if joint_counts['native_units']!=counts['unit_coverage']:raise ValueError('Terra joint partition mismatch')
+        for path,pin in consumed.items():
+            if math._digest_file(path)!=pin:raise ValueError('Terra input changed during application')
+        manifest=deepcopy(full);manifest.update(files=files,tables=counts,
+            derivation=dict(rule=TERRA_HISTORY_ID,composition=dict(root=str(root),expected_manifest_sha256=composition_pin),patch=dict(root=str(pr),expected_manifest_sha256=patch_pin),changed_contributions=16,reduced_contexts=16,formula_evaluations=0),
+            consumed_files=[dict(file=str(p),sha256=h) for p,h in sorted(consumed.items(),key=lambda x:str(x[0]))],producer_sha256=math._digest_file(Path(__file__)),elapsed_seconds=perf_counter()-started)
+        manifest['joint_partition_checks'].update(joint_source_counts=joint_counts,native_contributions=counts['unit_coverage'])
+        manifest['preservation']=dict(status='unchanged_payloads_outside_sixteen_contributions_and_contexts',originals_retained_in_patch=True,legacy_formula_evaluations=0)
+        (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf8')
+        return manifest
 
 
 def query_composition(output,expected_manifest_sha256,sql):
