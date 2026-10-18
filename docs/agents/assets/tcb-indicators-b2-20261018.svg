@@ -3,7 +3,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.725412</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -46,7 +46,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.731297</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -88,7 +88,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.736815</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -144,7 +144,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.742682</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -192,7 +192,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.748086</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -240,7 +240,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.753748</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -288,7 +288,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.759111</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -339,7 +339,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.764184</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -377,12 +377,12 @@
    </g>
   </g>
  </g>
-</svg><text x="364" y="996" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Q1/Q2 apenas no crédito próprio. LC baixo não significa baixo risco de mercado ou</text><text x="364" y="1028" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">contraparte.</text><text x="364" y="1160" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.335–336 · Assaf p.324 + REF nov.2024, p.37/nota1; adaptação IF.data</text><text x="1488" y="836" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">CONCILIAR / COMPLETAR</text><text x="1488" y="872" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Mercado e contraparte</text><text x="1488" y="912" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Abrir exposições próprias, garantias e riscos ponderados; Q1/Q2 de crédito</text><text x="1488" y="940" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">não cobrem todo o negócio.</text><text x="1488" y="1244" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: BCB, Corretoras e distribuidoras; atividades (152)</text><rect x="64" y="1292" width="2272" height="480" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1340" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">Capital e</text><text x="88" y="1376" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">alavancagem</text><text x="88" y="1428" font-size="20" fill="#7a8399" font-weight="400" font-family="Consolas" class="">03 / 05</text><text x="364" y="1344" font-size="24" fill="#2d3142" font-weight="600" font-family="Arial" class="">C1</text><text x="472" y="1344" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1008">Capitalização contábil</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="142.85714285714286" height="40.0" viewBox="0 0 75 21" version="1.1" x="1040" y="1320" aria-label="PL_t/AT_t" class="formula">
+</svg><text x="364" y="996" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Q1/Q2 apenas no crédito próprio. LC baixo não significa baixo risco de mercado ou</text><text x="364" y="1028" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">contraparte.</text><text x="364" y="1160" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.335–336 · Assaf p.324 + REF nov.2024, p.37/nota1; adaptação IF.data</text><text x="1488" y="836" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">CONCILIAR / COMPLETAR</text><text x="1488" y="872" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Mercado e contraparte</text><text x="1488" y="912" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Abrir exposições próprias, garantias e riscos ponderados; Q1/Q2 de crédito</text><text x="1488" y="940" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">não cobrem todo o negócio. Proposta de escopo178.</text><text x="1488" y="1244" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: Assaf 2015, cap.18, p.337</text><rect x="64" y="1292" width="2272" height="480" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1340" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">Capital e</text><text x="88" y="1376" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">alavancagem</text><text x="88" y="1428" font-size="20" fill="#7a8399" font-weight="400" font-family="Consolas" class="">03 / 05</text><text x="364" y="1344" font-size="24" fill="#2d3142" font-weight="600" font-family="Arial" class="">C1</text><text x="472" y="1344" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1008">Capitalização contábil</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="142.85714285714286" height="40.0" viewBox="0 0 75 21" version="1.1" x="1040" y="1320" aria-label="PL_t/AT_t" class="formula">
  <metadata>
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.768568</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -425,7 +425,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.772708</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -469,7 +469,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.777011</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -514,7 +514,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.784146</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -579,7 +579,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.791527</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -637,7 +637,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.799540</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -702,7 +702,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.807237</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -760,7 +760,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.812929</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -805,7 +805,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.817271</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -844,7 +844,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.821930</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -900,7 +900,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.828113</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>

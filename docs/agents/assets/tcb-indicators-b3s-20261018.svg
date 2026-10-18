@@ -3,7 +3,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.841396</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -46,7 +46,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.846481</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -88,7 +88,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.851617</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -136,7 +136,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.857278</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -184,7 +184,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.863595</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -235,12 +235,12 @@
    </g>
   </g>
  </g>
-</svg><text x="364" y="604" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Retorno mede sustentabilidade da unidade; não resume condições e serviços aos</text><text x="364" y="636" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">associados.</text><text x="364" y="664" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.341–342 · Assaf 2015, cap.18, p.342</text><text x="1488" y="340" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">FONTE ADICIONAL</text><text x="1488" y="376" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Benefício ao cooperado</text><text x="1488" y="416" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Taxas, tarifas e condições ao associado exigem dados comparáveis.</text><text x="1488" y="444" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Sobras/ROE não medem o benefício total.</text><text x="1488" y="748" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: BCB, Panorama SNCC dez.2024, p.22/PDF22, nota10</text><rect x="64" y="796" width="2272" height="480" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="844" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">Qualidade dos</text><text x="88" y="880" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">ativos</text><text x="88" y="932" font-size="20" fill="#7a8399" font-weight="400" font-family="Consolas" class="">02 / 05</text><text x="364" y="848" font-size="24" fill="#2d3142" font-weight="600" font-family="Arial" class="">Q1</text><text x="472" y="848" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1008">Intensidade de provisionamento</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="249.52380952380952" height="40.0" viewBox="0 0 131 21" version="1.1" x="1040" y="824" aria-label="-PROV_t/CR_t" class="formula">
+</svg><text x="364" y="604" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Retorno mede sustentabilidade da unidade; não resume condições e serviços aos</text><text x="364" y="636" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">associados.</text><text x="364" y="664" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.341–342 · Assaf 2015, cap.18, p.342</text><text x="1488" y="340" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">FONTE ADICIONAL</text><text x="1488" y="376" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Benefício ao cooperado</text><text x="1488" y="416" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Taxas, tarifas e condições ao associado exigem dados comparáveis.</text><text x="1488" y="444" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Sobras/ROE não medem o benefício total.</text><text x="1488" y="748" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: BCB, REB2022, pp.39–43; benefício cooperativo (143/152)</text><rect x="64" y="796" width="2272" height="480" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="844" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">Qualidade dos</text><text x="88" y="880" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="324">ativos</text><text x="88" y="932" font-size="20" fill="#7a8399" font-weight="400" font-family="Consolas" class="">02 / 05</text><text x="364" y="848" font-size="24" fill="#2d3142" font-weight="600" font-family="Arial" class="">Q1</text><text x="472" y="848" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1008">Intensidade de provisionamento</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="249.52380952380952" height="40.0" viewBox="0 0 131 21" version="1.1" x="1040" y="824" aria-label="-PROV_t/CR_t" class="formula">
  <metadata>
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.869403</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -288,7 +288,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.875379</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -339,7 +339,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.880868</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -382,7 +382,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.886162</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -436,7 +436,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.895071</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -503,7 +503,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.914113</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -546,7 +546,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.918758</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -590,7 +590,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.923330</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -635,7 +635,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.929422</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -700,7 +700,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.939619</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -758,7 +758,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.945500</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -801,7 +801,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.952939</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -866,7 +866,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.960597</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -924,7 +924,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.966972</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -969,7 +969,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.972602</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -1008,7 +1008,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.977340</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -1064,7 +1064,7 @@
   <rdf:RDF>
    <ns2:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-    <dc:date>2026-10-18T19:01:57.983367</dc:date>
+
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <ns2:Agent>
@@ -1101,4 +1101,4 @@
    </g>
   </g>
  </g>
-</svg><text x="364" y="2484" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Custos precisam de porte/modelo comparáveis. Menor custo não prova maior</text><text x="364" y="2516" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">benefício ao cooperado.</text><text x="364" y="2648" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.341–342 · Assaf 2015, cap.18, p.342</text><text x="1488" y="2324" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">FONTE ADICIONAL</text><text x="1488" y="2360" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Benefício ao cooperado</text><text x="1488" y="2400" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Taxas, tarifas e condições ao associado exigem dados comparáveis.</text><text x="1488" y="2428" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Sobras/ROE não medem o benefício total.</text><text x="1488" y="2732" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: BCB, Panorama SNCC dez.2024, p.22/PDF22, nota10</text><text x="64" y="2840" font-size="20" fill="#2d3142" font-weight="600" font-family="Arial" class="">LEITURA DAS FÓRMULAS E LIMITES</text><text x="64" y="2880" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Razões ×100 (%); folga de capital em p.p.; w=trimestre efetivo ou TTM; t=data do estoque; barra=média temporal adotada.</text><text x="64" y="2916" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">C=−(pessoal+administrativas); S=RBIF−DPROV+serviços+tarifas. LF: quatro participações DEP, OC, EM e REP sobre F.</text><text x="64" y="2952" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Já usamos = implementado no motor, sujeito à cobertura da unidade/janela. Esta figura não cria whitelist de elegibilidade por Tcb.</text><text x="64" y="2988" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Financeiro é principal; C3/C4 são prudenciais próprios. Zero/nulo/histórico insuficiente não viram não aplicabilidade.</text><text x="64" y="3024" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">LA/LF/RS/E3 e E2-B são adaptações do projeto; médias adaptam R1/R2/R4/R5. Assaf não fornece sozinho todos os específicos.</text><text x="64" y="3060" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Fontes abreviadas das lacunas e nomes/contas completos: nota textual tcb-indicators-assaf-atlas-20261018.md. Arial/Georgia locais.</text></svg>
+</svg><text x="364" y="2484" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Custos precisam de porte/modelo comparáveis. Menor custo não prova maior</text><text x="364" y="2516" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">benefício ao cooperado.</text><text x="364" y="2648" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="1424">Fontes: Assaf 2015, cap.18, pp.341–342 · Assaf 2015, cap.18, p.342</text><text x="1488" y="2324" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">FONTE ADICIONAL</text><text x="1488" y="2360" font-size="24" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="2288">Benefício ao cooperado</text><text x="1488" y="2400" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Taxas, tarifas e condições ao associado exigem dados comparáveis.</text><text x="1488" y="2428" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Sobras/ROE não medem o benefício total.</text><text x="1488" y="2732" font-size="16" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Fontes: BCB, REB2022, pp.39–43; benefício cooperativo (143/152)</text><text x="64" y="2840" font-size="20" fill="#2d3142" font-weight="600" font-family="Arial" class="">LEITURA DAS FÓRMULAS E LIMITES</text><text x="64" y="2880" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Razões ×100 (%); folga de capital em p.p.; w=trimestre efetivo ou TTM; t=data do estoque; barra=média temporal adotada.</text><text x="64" y="2916" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">C=−(pessoal+administrativas); S=RBIF−DPROV+serviços+tarifas. LF: quatro participações DEP, OC, EM e REP sobre F.</text><text x="64" y="2952" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Já usamos = implementado no motor, sujeito à cobertura da unidade/janela. Esta figura não cria whitelist de elegibilidade por Tcb.</text><text x="64" y="2988" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Financeiro é principal; C3/C4 são prudenciais próprios. Zero/nulo/histórico insuficiente não viram não aplicabilidade.</text><text x="64" y="3024" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">LA/LF/RS/E3 e E2-B são adaptações do projeto; médias adaptam R1/R2/R4/R5. Assaf não fornece sozinho todos os específicos.</text><text x="64" y="3060" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Fontes abreviadas das lacunas e nomes/contas completos: nota textual tcb-indicators-assaf-atlas-20261018.md. Arial/Georgia locais.</text></svg>
