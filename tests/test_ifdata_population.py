@@ -14,6 +14,216 @@ from bank_quality.ifdata_cadastro import FIELDS, ORIGIN, CONTRACT as CAD_CONTRAC
 from bank_quality.ifdata_odata import COLUMNS, CONTRACT as DATA_CONTRACT
 
 
+class UpdatedMembershipTests(unittest.TestCase):
+    def api(self):
+        from bank_quality import ifdata_population as api
+        self.assertTrue(hasattr(api, 'update_membership_rows'), 'Missing Issue152 membership API')
+        return api
+
+    def test_new_selection_updates_reason_and_matrix_preserving_prior_decision(self):
+        api = self.api()
+        company = dict(company_cnpj14='62232889000190',cvm_code='020796',financial_code_2024='C0051987')
+        cad = {'62232889':cadastro('62232889','C0051987'),
+               'C0051987':cadastro('C0051987','C0051987')}
+        old = dict(unit_id='f',dataset='financial',code='C0051987',membership='remaining',companies=[],
+                   membership_reason='outside_sample125_financial_targets',matrix_id='financial|202412')
+        _, rows = api.update_membership_rows([company],[],cad,[old],'202412')
+        self.assertEqual(rows[0]['membership'],'sample')
+        self.assertEqual(rows[0]['membership_reason'],'dated_admitted_company_association142')
+        self.assertEqual(rows[0]['prior_membership_reason'],'outside_sample125_financial_targets')
+        self.assertEqual(rows[0]['prior_matrix_id'],'financial|202412')
+        self.assertEqual(rows[0]['matrix_id'],'ifdata-updated-membership-v1|financial|202412')
+        self.assertEqual(old['membership_reason'],'outside_sample125_financial_targets')
+
+    def test_individual_descendant_uses_validated_terminal_not_immediate_parent(self):
+        api = self.api()
+        company = dict(company_cnpj14='14388334000199',cvm_code='020729',financial_code_2024='FINAL')
+        cad = {code:cadastro(code,parent) for code,parent in
+               [('14388334','MID'),('CHILD','MID'),('MID','FINAL'),('FINAL','FINAL')]}
+        old = dict(unit_id='i',dataset='individual',code='CHILD',membership='remaining',companies=[])
+        maps, rows = api.update_membership_rows([company],[],cad,[old],'202412')
+        self.assertEqual(maps[0]['native_target_code'],'FINAL')
+        self.assertEqual(rows[0]['membership'],'sample')
+        self.assertEqual(rows[0]['companies'],['14388334000199'])
+        cad['MID']['CodConglomeradoFinanceiro'] = 'CHILD'
+        _, cyclic = api.update_membership_rows([company],[],cad,[old],'202412')
+        self.assertEqual(cyclic[0]['membership'],'remaining')
+        self.assertEqual(cyclic[0]['companies'],[])
+
+    def test_dated_operators_and_original_states_are_preserved(self):
+        api = self.api()
+        companies = [dict(company_cnpj14='62232889000190', cvm_code='020796',
+                          financial_code_2024='C0051987')]
+        cad = {'62232889': dict(cadastro('62232889', '62232889'), Data='201509'),
+               'C0051987': dict(cadastro('C0051987', 'C0051987'), Data='201509')}
+        old = [dict(unit_id='u', dataset='financial', code='62232889', period='201509',
+                    membership='remaining', companies=[], own_cadastro={'proof': None}, literal='')]
+        maps, units = api.update_membership_rows(companies, [], cad, old, '201509')
+        self.assertEqual(maps[0]['native_target_code'], '62232889')
+        self.assertEqual(units[0]['membership'], 'sample')
+        self.assertEqual(units[0]['prior_membership'], 'remaining')
+        self.assertEqual(units[0]['own_cadastro'], {'proof': None})
+        self.assertEqual(units[0]['literal'], '')
+        self.assertEqual(old[0]['membership'], 'remaining')
+        cad = {code:dict(row, Data='201512') for code,row in cad.items()}
+        cad['62232889']['CodConglomeradoFinanceiro'] = 'C0051987'
+        maps, _ = api.update_membership_rows(companies, [], cad, [], '201512')
+        self.assertEqual(maps[0]['native_target_code'], 'C0051987')
+
+    def test_oliveira_unknown_and_nacional_event_do_not_backproject(self):
+        api = self.api()
+        companies = [dict(company_cnpj14='21110778000123', cvm_code='026417', financial_code_2024='36113876'),
+                     dict(company_cnpj14='17157777000167', cvm_code='001350', financial_code_2024='C0049944')]
+        cad = {'17157777': cadastro('17157777', 'C0049944'),
+               '36113876': cadastro('36113876', '36113876'),
+               'C0049944': cadastro('C0049944', 'C0049944')}
+        units = [dict(unit_id=c, dataset='financial', code=c, membership='remaining', companies=[])
+                 for c in ('36113876', 'C0049944')]
+        cad = {code:dict(row, Data='202406') for code,row in cad.items()}
+        maps, updated = api.update_membership_rows(companies, [], cad, units, '202406')
+        self.assertIsNone(maps[0]['native_target_code'])
+        self.assertIsNone(maps[1]['native_target_code'])
+        self.assertEqual(updated[0]['membership'], 'unknown')
+        self.assertEqual(updated[1]['membership'], 'remaining')
+        cad = {code:dict(row, Data='202409') for code,row in cad.items()}
+        maps, updated = api.update_membership_rows(companies, [], cad, units, '202409')
+        self.assertEqual(maps[1]['native_target_code'], 'C0049944')
+        self.assertEqual(updated[1]['companies'], ['17157777000167'])
+        cad = {code:dict(row, Data='202412') for code,row in cad.items()}
+        maps, updated = api.update_membership_rows(companies, [], cad, units, '202412')
+        self.assertEqual(updated[0]['membership'], 'sample')
+
+    def test_dedup_native_cohort_and_unknown_baseline(self):
+        api = self.api()
+        companies = [dict(company_cnpj14=c, cvm_code=str(i), financial_code_2024='F')
+                     for i, c in enumerate(('a', 'b'))]
+        oldmaps = [dict(company_cnpj14=c, native_target_code='F', operator_base8='O', period='202412')
+                   for c in ('a', 'b')]
+        units = [dict(unit_id='f', dataset='financial', code='F', membership='sample', companies=['a']),
+                 dict(unit_id='x', dataset='individual', code='X', membership='unknown', companies=[])]
+        maps, updated = api.update_membership_rows(companies, oldmaps, {}, units, '202412')
+        self.assertEqual(len(updated), 2)
+        self.assertEqual(updated[0]['companies'], ['a', 'b'])
+        self.assertEqual(updated[1]['membership'], 'unknown')
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            api.update_membership_rows(companies, oldmaps, {}, units + units[:1], '202412')
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            api.update_membership_rows(companies, oldmaps, {}, units + [dict(units[0],unit_id='other')], '202412')
+        self.assertFalse(maps[0]['issuer_balance_equivalence_certified'])
+
+    def test_missing_or_conflicting_operator_does_not_promote_individual(self):
+        api = self.api()
+        companies = [dict(company_cnpj14='62232889000190', cvm_code='020796', financial_code_2024='C0051987')]
+        unit = dict(unit_id='u', dataset='individual', code='62232889', membership='unknown', companies=[])
+        _, units = api.update_membership_rows(companies, [], {}, [unit], '202412')
+        self.assertEqual(units[0]['membership'], 'unknown')
+        cad = {'62232889': cadastro('62232889','WRONG')}
+        _, units = api.update_membership_rows(companies, [], cad, [unit], '202412')
+        self.assertEqual(units[0]['membership'], 'unknown')
+        with self.assertRaisesRegex(ValueError, 'dated'):
+            api.update_membership_rows(companies, [], cad, [unit], '202409')
+
+    def test_oliveira_unknown_reaches_dated_prudential_unit_but_not_other_sample(self):
+        api = self.api()
+        companies = [dict(company_cnpj14='21110778000123', cvm_code='026417',financial_code_2024='36113876')]
+        cad = {'36113876': dict(cadastro('36113876','36113876','P'),Data='202409'),
+               'P': dict(cadastro('P','36113876','P'),Data='202409')}
+        units = [dict(unit_id='p', dataset='capital', code='P',membership='remaining',companies=[]),
+                 dict(unit_id='o', dataset='financial',code='36113876',membership='sample',companies=['known'])]
+        _, result = api.update_membership_rows(companies, [], cad, units,'202409')
+        self.assertEqual(result[0]['membership'],'unknown')
+        self.assertEqual(result[1]['membership'],'sample')
+
+    def test_strict_nominal_parser(self):
+        api = self.api()
+        with tempfile.TemporaryDirectory() as temp:
+            note = Path(temp) / 'note.md'
+            lines = []
+            for i in range(1, 56):
+                cnpj = f'{i:02}.000.000/0001-00'
+                code = f'C{i:07}' if i <= 24 else f'C{1:07}'
+                cells = [str(i), 'Company ' + str(i), cnpj, f'{i:06}', 'A']
+                cells += ['`'+code+'`', 'association', '1 / 2'] if i <= 32 else ['missing', '1 / 2']
+                lines.append('|'+'|'.join(cells)+'|')
+            note.write_text('\n'.join(lines), encoding='utf8')
+            parsed = api.parse_approved_universe(note, digest(note))
+            self.assertEqual(len(parsed), 55)
+            self.assertEqual(sum(r['financial_code_2024'] is not None for r in parsed), 32)
+            with self.assertRaisesRegex(ValueError, 'pin'):
+                api.parse_approved_universe(note, '0'*64)
+            note.write_text('\n'.join(lines[:-1]), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, '55'):
+                api.parse_approved_universe(note, digest(note))
+
+    def test_updated_runner_authenticates_only_consumed_files_and_exclusive_destination(self):
+        api = self.api()
+        self.assertTrue(hasattr(api, 'build_updated_membership'), 'Missing updated membership runner')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            periods = [f'{y}{m}' for y in range(2010,2025) for m in ('03','06','09','12')]
+            # The synthetic core24 share20 native units, as in the accepted125.
+            original = [(f'{i:014}', f'{i:06}', f'C{(i-1)%20+1:07}') for i in range(1,25)]
+            additions = [('62232889000190','020796','C0051987'), ('14388334000199','020729','C0030881'),
+                         ('01027058000191','021733','01027058'), ('21110778000123','026417','36113876'),
+                         ('62307848000115','021466','C0000001'), ('17157777000167','001350','C0000002'),
+                         ('47509120000182','019640','C0000003'), ('65654303000173','014214','C0000004')]
+            nominal = original + additions + [(f'{i:014}', f'{i:06}', None) for i in range(100,123)]
+            note = root/'note.md'
+            lines = []
+            for n,(cid,cvm,code) in enumerate(nominal,1):
+                cnpj = cid[:2]+'.'+cid[2:5]+'.'+cid[5:8]+'/'+cid[8:12]+'-'+cid[12:]
+                cells = [str(n), 'Company', cnpj, cvm, 'A']
+                cells += ['`'+code+'`','Association','1 / 2'] if code else ['No admitted principal','1 / 2']
+                lines.append('|'+'|'.join(cells)+'|')
+            note.write_text('\n'.join(lines),encoding='utf8')
+            sample = root/'sample'; sample.mkdir()
+            maps = [dict(company_cnpj14=cid, operator_base8='O'+str(i), native_target_code=code,
+                         period=p) for p in periods for i,(cid,cvm,code) in enumerate(original)]
+            dump(sample/'company-quarter-map.json',maps)
+            dump(sample/'manifest.json',dict(files={'company-quarter-map.json':digest(sample/'company-quarter-map.json')}))
+            cadroot = root/'cad'; cadroot.mkdir()
+            entries = []
+            for p in periods:
+                rows = [dict(cadastro(code,code),Data=p) for code in sorted({c for _,_,c in nominal if c})]
+                for (_,cvm,target) in additions:
+                    op = api.ADDED_OPERATORS[cvm]
+                    parent = ('62232889' if p <= '201509' else target) if cvm == '020796' else target
+                    if op not in {r['CodInst'] for r in rows}:
+                        rows.append(dict(cadastro(op,parent),Data=p))
+                partdesc = package(cadroot/('p'+p), FIELDS+ORIGIN,rows,CAD_CONTRACT,period=p)
+                entry = json.loads((Path(partdesc['root'])/'manifest.json').read_text())['files'][0]
+                entries.append(dict(entry,file='p'+p+'/'+entry['file']))
+            dump(cadroot/'manifest.json',dict(contract=CAD_CONTRACT,files=entries,rows=sum(e['rows'] for e in entries)))
+            base = root/'baseline';base.mkdir()
+            units = [dict(unit_id='financial|2|C0000001|'+p,code='C0000001',dataset='financial',period=p,
+                          membership='sample',companies=[original[0][0]],own_cadastro={'literal':None}) for p in periods]
+            with duckdb.connect() as conn:
+                conn.execute('create table units (payload varchar)')
+                conn.executemany('insert into units values (?)',[(json.dumps(r),) for r in units])
+                conn.execute('copy units to ? (format parquet)',[str(base/'unit_periods.parquet')])
+            dump(base/'manifest.json',dict(contract='ifdata-universe-analysis-v1', periods=periods,
+                 inputs=dict(sample=dict(root=str(sample),expected_manifest_sha256=digest(sample/'manifest.json')),
+                             cadastro=dict(root=str(cadroot),expected_manifest_sha256=digest(cadroot/'manifest.json'))),
+                 tables=dict(unit_periods=60),files=[dict(file='unit_periods.parquet',sha256=digest(base/'unit_periods.parquet'),rows=60),
+                                                  dict(file='results.parquet',sha256='f'*64,rows=999)]))
+            out = root/'output'
+            manifest = api.build_updated_membership(base,digest(base/'manifest.json'),note,digest(note),out)
+            self.assertEqual(manifest['tables'],dict(companies=55,company_quarter_map=3300,unit_membership=60))
+            self.assertFalse((out/'results.parquet').exists())
+            self.assertEqual(len(manifest['files']),9)
+            for entry in manifest['files']:
+                self.assertEqual(digest(out/entry['file']),entry['sha256'])
+            with self.assertRaises(FileExistsError):
+                api.build_updated_membership(base,digest(base/'manifest.json'),note,digest(note),out)
+            with self.assertRaisesRegex(ValueError,'pin'):
+                api.build_updated_membership(base,'0'*64,note,digest(note),root/'bad-pin')
+            self.assertFalse((root/'bad-pin').exists())
+            with (base/'unit_periods.parquet').open('ab') as handle:
+                handle.write(b'corrupt')
+            with self.assertRaisesRegex(ValueError,'hash'):
+                api.build_updated_membership(base,digest(base/'manifest.json'),note,digest(note),root/'bad-file')
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

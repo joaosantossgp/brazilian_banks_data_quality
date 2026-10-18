@@ -23,6 +23,25 @@ def main():
     for option in ('config','source-root','output','evidence','expected-evidence-sha256'):admit.add_argument('--'+option,required=True)
     finalize=commands.add_parser('finalize-universe')
     for option in ('checkpoint','expected-manifest-sha256','output'):finalize.add_argument('--'+option,required=True)
+    selective=commands.add_parser('recalculate-universe')
+    for option in ('baseline','expected-baseline-manifest-sha256','output','metric','horizon','dataset','period'):
+        selective.add_argument('--'+option,required=True)
+    caixa=commands.add_parser('recalculate-caixa',help='Patch the complete reviewed Caixa transition window only')
+    for option in ('baseline','expected-baseline-manifest-sha256','output'):caixa.add_argument('--'+option,required=True)
+    membership=commands.add_parser('update-universe-membership',help='Update dated company membership without financial recalculation')
+    for option in ('baseline','expected-baseline-manifest-sha256','universe-note','expected-universe-note-sha256','output'):
+        membership.add_argument('--'+option,required=True)
+    complements=commands.add_parser('calculate-complements',help='Calculate only the selected additive metrics from pinned native inputs')
+    for option in ('baseline','expected-baseline-manifest-sha256','output'):
+        complements.add_argument('--'+option,required=True)
+    complements.add_argument('--periods',nargs='+',required=True)
+    complements.add_argument('--datasets',nargs='+',choices=('financial','individual'),required=True)
+    complements.add_argument('--metrics',nargs='+',required=True)
+    complements.add_argument('--parquet-only',action='store_true',help='Persist exact tables without redundant JSON/CSV copies')
+    composition=commands.add_parser('compose-analysis',help='Compose accepted values, corrections, membership and coverage without metric recalculation')
+    composition.add_argument('--config',required=True);composition.add_argument('--output',required=True)
+    composed_query=commands.add_parser('query-composition',help='Query the pinned composition with read-only SQL')
+    for option in ('output','expected-manifest-sha256','sql'):composed_query.add_argument('--'+option,required=True)
     opening=commands.add_parser('prepare-universe-opening')
     for option in ('raw-root','output','profile-id','profile-expected-sha256'):opening.add_argument('--'+option,required=True)
     for name in ('verify','query','verify-universe','query-universe','compare-universe','compare-universe-replay','resolve-universe'):
@@ -36,6 +55,28 @@ def main():
     if args.command in ('build','build-universe'):
         cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
         result=build_analysis(cfg,args.output) if args.command=='build' else build_universe_analysis(cfg,args.output,batch_size=args.batch_size,stage=args.stage)
+    elif args.command=='recalculate-universe':
+        from bank_quality.ifdata_universe_analysis import recalculate_slice
+        result=recalculate_slice(args.baseline,args.expected_baseline_manifest_sha256,args.output,
+                                 metric=args.metric,horizon=args.horizon,dataset=args.dataset,period=args.period)
+    elif args.command=='recalculate-caixa':
+        from bank_quality.ifdata_universe_analysis import recalculate_caixa_transition
+        result=recalculate_caixa_transition(args.baseline,args.expected_baseline_manifest_sha256,args.output)
+    elif args.command=='update-universe-membership':
+        from bank_quality.ifdata_population import build_updated_membership
+        result=build_updated_membership(args.baseline,args.expected_baseline_manifest_sha256,
+                                       args.universe_note,args.expected_universe_note_sha256,args.output)
+    elif args.command=='calculate-complements':
+        from bank_quality.ifdata_universe_analysis import calculate_complements
+        result=calculate_complements(args.baseline,args.expected_baseline_manifest_sha256,args.output,
+                                     periods=args.periods,datasets=args.datasets,metrics=args.metrics,
+                                     formats=('parquet',) if args.parquet_only else ('json','csv','parquet'))
+    elif args.command=='compose-analysis':
+        from bank_quality.ifdata_universe_analysis import compose_analysis
+        result=compose_analysis(json.loads(Path(args.config).read_text(encoding='utf-8')),args.output)
+    elif args.command=='query-composition':
+        from bank_quality.ifdata_universe_analysis import query_composition
+        result=query_composition(args.output,args.expected_manifest_sha256,args.sql)
     elif args.command=='admit-universe-checkpoint':
         cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
         result=admit_universe_unit_checkpoint(cfg,args.source_root,args.output,evidence=args.evidence,expected_evidence_sha256=args.expected_evidence_sha256)

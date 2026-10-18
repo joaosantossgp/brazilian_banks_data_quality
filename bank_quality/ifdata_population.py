@@ -20,6 +20,7 @@ from contextlib import ExitStack, closing
 import csv
 import io
 import json
+import re
 from pathlib import Path
 
 import duckdb
@@ -43,6 +44,190 @@ TABLE_COLUMNS = {
                           'company_id', 'relation', 'scope', 'matrix_id', 'payload'),
 }
 SCOPE = 'dated_native_relations_to_sample125_targets_and_named_operators'
+
+UPDATED_CONTRACT = 'ifdata-updated-membership-v1'
+# Explicit operators transcribed from research142. Never derive an operator
+# from a company's CNPJ, denomination, or the name of its financial group.
+ADDED_OPERATORS = {'020796':'62232889', '020729':'14388334',
+                   '021733':'01027058', '026417':'36113876',
+                   '021466':'62307848', '001350':'17157777',
+                   '019640':'47509120', '014214':'65654303'}
+
+
+def parse_approved_universe(note: Path, expected_sha256: str) -> list[dict]:
+    """Parse only the finite numbered company tables of externally pinned142.
+
+    This is a documentary identity parser, not a CNPJ-to-native-code bridge.
+    It deliberately refuses changes to the accepted55/32/24/23 composition.
+    """
+    if (not isinstance(expected_sha256, str) or
+            not re.fullmatch('[0-9a-f]{64}', expected_sha256) or
+            _digest_file(Path(note)) != expected_sha256):
+        raise ValueError('Universe note external pin mismatch')
+    rows = []
+    for line in Path(note).read_text(encoding='utf-8').splitlines():
+        cells = [s.strip() for s in line.strip().strip('|').split('|')]
+        if not line.startswith('|') or not cells or not re.fullmatch('[0-9]+', cells[0]):
+            continue
+        if len(cells) not in (7, 8, 9):
+            raise ValueError('Invalid numbered universe table row')
+        number, name, cnpj, cvm, category = cells[:5]
+        if (not re.fullmatch(r'\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}', cnpj)
+                or not re.fullmatch('[0-9]{6}', cvm) or category not in ('A', 'B') or not name):
+            raise ValueError('Invalid literal CNPJ/CVM identity')
+        n = int(number)
+        financial = cells[5].strip('`') if n <= 32 else None
+        if financial is not None and not re.fullmatch('(?:C[0-9]{7}|[0-9]{8})', financial):
+            raise ValueError('Invalid admitted financial code')
+        rows.append(dict(number=n, company_cnpj14=re.sub('[^0-9]', '', cnpj),
+                         company_cnpj_literal=cnpj, company_name_2024=name,
+                         cvm_code=cvm, category_2024=category,
+                         financial_code_2024=financial,
+                         association_2024=cells[6] if financial else None,
+                         principal_state='admitted_association' if financial else 'no_admitted_principal',
+                         registration_state_2024=cells[5] if n >= 44 else 'Ativo',
+                         source_note_sha256=expected_sha256, source_table_row=n))
+    if (len(rows) != 55 or [r['number'] for r in rows] != list(range(1,56)) or
+            len({r['company_cnpj14'] for r in rows}) != 55 or
+            len({r['cvm_code'] for r in rows}) != 55):
+        raise ValueError('Universe requires55 unique ordered identities')
+    financial = [r['financial_code_2024'] for r in rows if r['financial_code_2024']]
+    if len(financial) != 32 or len(set(financial)) != 24:
+        raise ValueError('Universe requires32 associations/24 financial codes/23 no principal')
+    return rows
+
+
+def update_membership_rows(companies, prior_maps, cadastro, native_rows, period):
+    """Pure one-quarter update; retain every original native attribute.
+
+    Prior125 maps are authoritative for the original24. Added associations
+    use explicit operators/events and contemporary cadastro. Unknown nominal
+    holdings never cause blanket uncertainty for the technical complement.
+    """
+    if _period_date(period) is None:
+        raise ValueError('Invalid membership period')
+    if any(r.get('Data') != period or r.get('CodInst') != code for code,r in cadastro.items()):
+        raise ValueError('Cadastro must be dated to the selected quarter')
+    old = {}
+    for row in prior_maps:
+        company = row['company_cnpj14']
+        if company in old or row['period'] != period:
+            raise ValueError('Duplicate or wrong-period prior company map')
+        old[company] = row
+    targets, operators, prudential = (defaultdict(set) for _ in range(3))
+    maps = []
+    unresolved_oliveira = defaultdict(set)
+    for company in companies:
+        cid, cvm = company['company_cnpj14'], company['cvm_code']
+        op, target, state, previous = None, None, 'no_admitted_principal', old.get(cid)
+        if previous is not None:
+            op, target = previous['operator_base8'], previous['native_target_code']
+            state = 'preserved_sample125'
+        elif cvm in ADDED_OPERATORS:
+            op = ADDED_OPERATORS[cvm]
+            own = cadastro.get(op)
+            parent = own.get('CodConglomeradoFinanceiro') if own else None
+            state = 'operator_cadastro_missing' if own is None else 'dated_operator_association'
+            if cvm == '026417' and period < '202412':
+                state = 'historical_holding_control_unknown'
+                for ds in ('financial','individual'):
+                    unresolved_oliveira[ds].add(op)
+                pc = own.get('CodConglomeradoPrudencial') if own else None
+                if pc:
+                    for ds in ('capital','segmentation'):
+                        unresolved_oliveira[ds].add(pc)
+                op = None
+            elif cvm == '001350' and period < '202409':
+                state = 'liquidation_before_btg_event'
+                # Independent operator remains nominal; no pre-event BTG.
+            elif cvm == '021733' and period < '201712':
+                state = 'before_observed_financial_reporting'
+            elif own is not None:
+                if cvm == '020796':
+                    expected = '62232889' if period <= '201509' else 'C0051987'
+                    if parent not in (None, op, expected):
+                        state = 'operator_financial_parent_conflict'
+                    else:
+                        target = expected
+                elif cvm == '021733' or cvm == '026417':
+                    if parent not in (None, op):
+                        state = 'operator_financial_parent_conflict'
+                    else:
+                        target = op
+                elif parent:
+                    path = _terminal(cadastro, parent, 'CodConglomeradoFinanceiro')
+                    if path['state'] == 'self_terminal':
+                        target = path['path'][-1]
+                    else:
+                        state = path['state']
+                else:
+                    state = 'operator_financial_parent_unknown'
+        if target:
+            targets[target].add(cid)
+        # Unknown holding control must not select its operator in other views.
+        if op and (previous is not None or (cadastro.get(op) is not None and
+                state not in ('operator_financial_parent_conflict',))):
+            operators[op].add(cid)
+        pc, pstate = None, 'no_agreed_dated_prudential_bridge'
+        own, financial = cadastro.get(op), cadastro.get(target)
+        if target and own and financial:
+            candidate = own.get('CodConglomeradoPrudencial')
+            if (candidate and financial.get('CodConglomeradoPrudencial') == candidate
+                    and _terminal(cadastro,candidate,'CodConglomeradoPrudencial')['state'] == 'self_terminal'):
+                pc, pstate = candidate, 'agreed_dated_prudential_bridge'
+                prudential[pc].add(cid)
+        maps.append(dict(company_cnpj14=cid, cvm_code=cvm, period=period,
+                         financial_matrix_id=UPDATED_CONTRACT+'|financial|'+period,
+                         prudential_matrix_id=UPDATED_CONTRACT+'|prudential|'+period,
+                         operator_base8=op, native_target_code=target,
+                         financial_state=state, prudential_target_code=pc,
+                         prudential_state=pstate, native_cadastro=cadastro.get(op),
+                         prior_company_map=previous,
+                         financial_target_native_present=any(r['dataset']=='financial' and r['code']==target
+                                                             for r in native_rows) if target else False,
+                         issuer_balance_equivalence_certified=False,
+                         overlap_flag='shared_control_cielo_bb_bradesco' if cvm in ('021733','001023','000906') else None))
+    result, seen, native_keys = [], set(), set()
+    for row in native_rows:
+        uid = row['unit_id']
+        if uid in seen:
+            raise ValueError('Duplicate native membership identity')
+        seen.add(uid)
+        ds, code = row['dataset'], row['code']
+        native_key = (ds,code,period)
+        if native_key in native_keys:
+            raise ValueError('Duplicate native dataset/code/quarter')
+        native_keys.add(native_key)
+        if row.get('period', period) != period or ds not in DATASET_TYPES:
+            raise ValueError('Invalid native membership quarter/dataset')
+        selected = targets if ds == 'financial' else operators if ds == 'individual' else prudential
+        companies_for_unit = set(selected.get(code, ()))
+        if ds != 'financial':
+            field = 'CodConglomeradoFinanceiro' if ds == 'individual' else 'CodConglomeradoPrudencial'
+            parent = cadastro.get(code, {}).get(field)
+            lookup = targets if ds == 'individual' else prudential
+            path = _terminal(cadastro,parent,field)
+            if parent and path['state'] == 'self_terminal':
+                companies_for_unit.update(lookup.get(path['path'][-1], ()))
+        previous = row['membership']
+        state, reason = previous, 'preserved_native_membership'
+        if companies_for_unit:
+            state, reason = 'sample', 'dated_admitted_company_association142'
+        elif code in unresolved_oliveira[ds] and previous != 'sample':
+            state, reason = 'unknown', 'historical_holding_control_unknown'
+        # Preserve pre-existing positive/unknown evidence. Neither23 nominal
+        # gaps nor absence of a newly admitted link proves a negative.
+        result.append(dict(row, prior_membership=previous, membership=state,
+                           prior_membership_reason=row.get('membership_reason'),
+                           prior_matrix_id=row.get('matrix_id'),
+                           membership_reason=reason,
+                           matrix_id=UPDATED_CONTRACT+'|'+('financial' if ds in ('financial','individual')
+                                                          else 'prudential')+'|'+period,
+                           companies=sorted(companies_for_unit | set(row.get('companies', []))),
+                           selection_reason=reason,
+                           complement_scope='relative_to_known_admitted_associations',
+                           economic_overlap_eliminated=False))
+    return maps, result
 
 
 def _canonical(value):
@@ -206,8 +391,8 @@ def _quarter_view(conn, source, period, dataset=None):
 
 class _TableWriter:
     """Stream quarter rows; avoid retaining the complete reporting history."""
-    def __init__(self, output, table, stack):
-        self.output, self.table, self.columns = output, table, TABLE_COLUMNS[table]
+    def __init__(self, output, table, stack, columns=None):
+        self.output, self.table, self.columns = output, table, columns or TABLE_COLUMNS[table]
         self.count, self.max_line = 0, 2*1024*1024
         self.json = stack.enter_context((output/(table+'.json')).open('w',encoding='utf-8'))
         self.csv = stack.enter_context((output/(table+'.csv')).open('w',encoding='utf-8',newline=''))
@@ -233,6 +418,153 @@ class _TableWriter:
                           destination=str(self.output/(self.table+'.parquet'))))
         return [dict(file=self.table+'.'+ext,sha256=_digest_file(self.output/(self.table+'.'+ext)),rows=self.count)
                 for ext in ('json','csv','parquet')]
+
+
+def _membership_manifest(root, pin):
+    """Authenticate a manifest without reading its unconsumed financial files."""
+    root = Path(root).resolve()
+    if (not isinstance(pin,str) or not re.fullmatch('[0-9a-f]{64}',pin)
+            or _digest_file(root/'manifest.json') != pin):
+        raise ValueError('External membership source manifest pin mismatch')
+    manifest = _json_unique((root/'manifest.json').read_bytes())
+    if not isinstance(manifest,dict):
+        raise ValueError('Invalid membership source manifest')
+    entries = manifest.get('files')
+    if isinstance(entries,dict):
+        entries = [dict(file=k,sha256=v) for k,v in entries.items()]
+    if not isinstance(entries,list) or not entries:
+        raise ValueError('Missing membership source inventory')
+    indexed = {}
+    for entry in entries:
+        path = _contained(root,entry.get('file'))
+        name = path.relative_to(root).as_posix()
+        if name in indexed or not re.fullmatch('[0-9a-f]{64}',str(entry.get('sha256',''))):
+            raise ValueError('Duplicate or invalid membership source inventory')
+        indexed[name] = entry
+    return root, manifest, indexed
+
+
+def build_updated_membership(baseline, pin, universe_note, note_pin, output):
+    """Materialize Issue152B membership only, without recomputing any value.
+
+    Inputs are explicit externally pinned baseline and research142 paths.
+    Baseline supplies admitted sample125/cadastro descriptors. Only consumed
+    native population Parquet, old company map, and60 cadastro parts are hashed;
+    results/components and financial observations are neither read nor copied.
+    Output is exclusive; failure leaves no accepted manifest. Each table has
+    complete logical JSON rows plus textual CSV/Parquet with canonical payload.
+    """
+    output = Path(output).resolve()
+    if output.exists():
+        raise FileExistsError(output)
+    companies = parse_approved_universe(Path(universe_note),note_pin)
+    base, manifest, inventory = _membership_manifest(baseline,pin)
+    if manifest.get('contract') != 'ifdata-universe-analysis-v1':
+        raise ValueError('Updated membership requires admitted universe baseline')
+    periods = [f'{year}{month}' for year in range(2010,2025) for month in ('03','06','09','12')]
+    if manifest.get('periods') != periods:
+        raise ValueError('Updated membership requires all60 core quarters')
+    consumed = {str(base/'manifest.json'):pin, str(Path(universe_note).resolve()):note_pin}
+
+    def consume(root, index, name):
+        if name not in index:
+            raise ValueError('Missing consumed membership file: '+name)
+        path = _contained(root,name)
+        expected = index[name]['sha256']
+        if _digest_file(path) != expected:
+            raise ValueError('Consumed membership input hash mismatch')
+        consumed[str(path)] = expected
+        return path
+
+    native_file = consume(base,inventory,'unit_periods.parquet')
+    inputs = manifest['inputs']
+    sources = {}
+    for name in ('sample','cadastro'):
+        descriptor = inputs[name]
+        root, doc, index = _membership_manifest(descriptor['root'],descriptor['expected_manifest_sha256'])
+        consumed[str(root/'manifest.json')] = descriptor['expected_manifest_sha256']
+        sources[name] = root,doc,index
+    sample_root,sample_manifest,sample_index = sources['sample']
+    old_maps = _json_unique(consume(sample_root,sample_index,'company-quarter-map.json').read_bytes())
+    if not isinstance(old_maps,list) or len(old_maps) != 1440:
+        raise ValueError('Original125 requires24 companies times60 quarters')
+    company_ids = {r['company_cnpj14'] for r in companies}
+    old_ids = {r['company_cnpj14'] for r in old_maps}
+    if len(old_ids) != 24 or not old_ids <= company_ids:
+        raise ValueError('Original125 company identity mismatch')
+    by_period = defaultdict(list)
+    for row in old_maps:
+        by_period[row['period']].append(row)
+    if set(by_period) != set(periods) or any(len(by_period[p]) != 24 or
+            {r['company_cnpj14'] for r in by_period[p]} != old_ids for p in periods):
+        raise ValueError('Incomplete original125 company quarter map')
+    cadroot,cadmanifest,cadindex = sources['cadastro']
+    if cadmanifest.get('contract') != CAD_CONTRACT:
+        raise ValueError('Cadastro source contract mismatch')
+    for period in periods:
+        parts = [e for e in cadmanifest['files'] if str(e.get('period')) == period]
+        if not parts:
+            raise ValueError('Missing dated membership cadastro part')
+        for entry in parts:
+            consume(cadroot,cadindex,entry['file'])
+    schemas = dict(companies=('company_cnpj14','cvm_code','financial_code_2024','payload'),
+                   company_quarter_map=('company_cnpj14','cvm_code','period','native_target_code','operator_base8','payload'),
+                   unit_membership=('unit_id','dataset','period','code','prior_membership',
+                                    'prior_membership_reason','prior_matrix_id','membership',
+                                    'membership_reason','matrix_id','payload'))
+    result = dict(contract=UPDATED_CONTRACT, baseline_manifest_sha256=pin,
+                  universe_note_sha256=note_pin, inputs=inputs, periods=periods,
+                  tables={}, schemas={k:list(v) for k,v in schemas.items()}, files=[],
+                  known_nominal_companies=55, admitted_associations_202412=32,
+                  financial_codes_202412=24, no_admitted_principal_202412=23,
+                  financial_calculations='none',
+                  complement_scope='relative_to_known_admitted_associations',
+                  aggregate_policy='deduplicate_native_dataset_code_quarter_not_economic_consolidation',
+                  overlap_policy='cielo_bb_bradesco_shared_control_no_balance_elimination',
+                  working_set='one_quarter', consumed_files=[])
+    output.mkdir(parents=True,exist_ok=False)
+    with ExitStack() as stack, duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as conn:
+        conn.from_parquet(str(native_file)).create_view('baseline_units')
+        expected_count = manifest['tables']['unit_periods']
+        if conn.execute('select count(*) from baseline_units').fetchone()[0] != expected_count:
+            raise ValueError('Baseline native unit count mismatch')
+        # Read JSON payload for literal nulls and every pre-existing attribute.
+        conn.execute("create view bounded_units as select payload, json_extract_string(payload,'$.period') as period from baseline_units")
+        if conn.execute('select count(*) from bounded_units where period is null or period not in ('+
+                        ','.join('?' for _ in periods)+')',periods).fetchone()[0]:
+            raise ValueError('Baseline native unit outside core quarters')
+        writers = {table:_TableWriter(output,table,stack,columns) for table,columns in schemas.items()}
+        for company in companies:
+            writers['companies'].append(company)
+        for period in periods:
+            _quarter_view(conn,(cadroot,cadmanifest),period)
+            cadrows = _records(conn.execute('select * from cadastro order by CodInst'))
+            if any(not row['CodInst'] for row in cadrows) or len({r['CodInst'] for r in cadrows}) != len(cadrows):
+                raise ValueError('Duplicate or missing dated cadastro identity')
+            cadastro = {r['CodInst']:r for r in cadrows}
+            native_rows = [json.loads(row[0]) for row in conn.execute(
+                'select payload from bounded_units where period=? order by payload',[period]).fetchall()]
+            maps,units = update_membership_rows(companies,by_period[period],cadastro,native_rows,period)
+            if period == '202412':
+                targets = {r['company_cnpj14']:r['native_target_code'] for r in maps}
+                if any(targets[c['company_cnpj14']] != c['financial_code_2024'] for c in companies):
+                    raise ValueError('Dated202412 association differs from admitted research142')
+            for row in maps:
+                writers['company_quarter_map'].append(row)
+            for row in units:
+                writers['unit_membership'].append(row)
+        if writers['unit_membership'].count != expected_count:
+            raise ValueError('Membership update changed native population count')
+        for table,writer in writers.items():
+            result['files'].extend(writer.finish(conn))
+            result['tables'][table] = writer.count
+    # Detect drift before accepting; receipt enumerates exactly what was read.
+    for name,expected in sorted(consumed.items()):
+        if _digest_file(Path(name)) != expected:
+            raise ValueError('Consumed membership source changed during update')
+        result['consumed_files'].append(dict(file=name,sha256=expected))
+    (output/'manifest.json').write_text(_canonical(result)+'\n',encoding='utf-8')
+    return result
 
 
 def build_population(config: dict, output: Path) -> dict:

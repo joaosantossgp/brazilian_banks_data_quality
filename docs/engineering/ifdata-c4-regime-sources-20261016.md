@@ -1,0 +1,45 @@
+# C4 prudencial: fontes sobre regime e aplicabilidade, 2017–2024
+
+Pesquisa primária de 16/10/2026 para a [Issue 139](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/139). Recorte: esclarecer a quebra de cobertura de Capital Principal/RWA a partir de 1T2018. Esta nota fornece contexto normativo; a [conferência quantitativa e da fonte armazenada](ifdata-c4-prudential-gaps-20261016.md) determina quais ocorrências da base correspondem ao padrão. Nenhuma fórmula, classificação de aplicabilidade, dado ou indicador foi alterado nesta pesquisa.
+
+## Conclusão sustentada e limite
+
+Existe mudança normativa diretamente alinhada ao primeiro trimestre de 2018: o regime de Patrimônio de Referência Simplificado — PRS5 — entra em vigor em **18/02/2018**. Para seus optantes, há capital e ativos ponderados pelo risco próprios. Portanto, Capital Principal nulo acompanhado de PR/RWA disponíveis pode ser compatível com mudança de regime, e não constitui, sozinho, falha de processamento. A norma não documenta o significado de cada token `null` do IF.data; esse último ponto depende da comparação entre fonte, componentes admitidos e resultado.
+
+**Não preencher C4 com PR/RWA.** No regime geral, Capital Principal é um componente do PR. A remissão legal de menções de capital para PRS5 não torna os dois índices estatisticamente idênticos. Uma série PRS5/RWAS5 seria uma métrica de regime próprio, a fundamentar e aprovar separadamente, com identificação temporal e do perímetro. Essa é uma consequência analítica proposta, não uma decisão metodológica já adotada.
+
+## Linha do tempo e localizadores primários
+
+| Fronteira | Evidência primária | Consequência para o diagnóstico |
+|---|---|---|
+| 2017 | [Resolução 4.553/2017, original](https://normativos.bcb.gov.br/Lists/Normativos/Attachments/50335/Res_4553_v1_O.pdf), art. 2º, §§ 5º–6º, p. 2; art. 6º, IV, b, p. 3 | O S5 original incluía tanto instituições que usavam metodologia simplificada quanto instituições não sujeitas à apuração de PR. Enquadramento é consolidado no conglomerado. Logo, S5 isolado não comprova opção individual pelo regime. |
+| 18/02/2018 | [Resolução 4.606/2017, original](https://normativos.bcb.gov.br/Lists/Normativos/Attachments/50454/Res_4606_v1_O.pdf), arts. 2º–3º, pp. 1–2; arts. 7º–13, pp. 4–7; arts. 16 e 35–37, pp. 7 e 14–15 | Opção facultativa exige grupo elegível, porte e perfil de risco; apuração consolidada, PRS5 e RWAS5 próprios. Art. 10 remete menções a PR/Nível I/Capital Principal ao PRS5 nos optantes. Art. 35 exclui optantes do cálculo geral da 4.192; art. 36 excetua S5 dos requerimentos da 4.193. Art. 16 disciplina opção/desistência/comunicação. Art. 37 fixa a vigência. |
+| 03/06/2019 | [Resolução 4.721/2019, página oficial](https://bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=4721&tipo=Resolu%C3%A7%C3%A3o), art. 26, III–IV, e art. 27; [PDF compilado com histórico](https://normativos.bcb.gov.br/Lists/Normativos/Attachments/50769/Res_4721_v3_P.pdf), p. 8 | Revoga o inciso do S5 referente a instituições não sujeitas a PR e a exclusão correspondente da 4.606. A redação original de S5 não deve ser aplicada invariavelmente a todos os anos. A norma trata das sociedades de crédito ao microempreendedor e à empresa de pequeno porte; não comprova opção de uma unidade específica. |
+| 03/01/2022 | [Resolução CMN 4.955/2021](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=4955&tipo=Resolu%C3%A7%C3%A3o+CMN), art. 1º, parágrafo único, I; art. 2º, caput e § 1º; art. 4º; [4.192 compilada e histórico de revogação](https://normativos.bcb.gov.br/Lists/Normativos/Attachments/49007/Res_4192_v12_L.pdf), p. 1 | Mantém optantes PRS5 fora da metodologia geral. No regime geral, PR soma Nível I e Nível II; Nível I soma Capital Principal e Complementar. A 4.192 foi revogada a partir de 03/01/2022 pela 4.955. Usar rubrica total como Capital Principal apagaria essa composição. |
+| 03/01/2022 | [Resolução CMN 4.958/2021](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=4958&tipo=Resolu%C3%A7%C3%A3o+CMN), arts. 1º, 3º–7º e 15 | Disciplina requerimentos de PR, Nível I e Capital Principal. Art. 7º distingue cooperativas singulares não filiadas e não optantes do cálculo simplificado; art. 15 fixa a vigência. Há regimes distintos também entre cooperativas: não extrapolar uma regra por tipo de instituição. |
+| 2023–2024 | [Resolução CMN 5.049/2022](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=5049&tipo=Resolu%C3%A7%C3%A3o+CMN), arts. 3º–7º e 9º | Vigência escalonada: nova redação de S5/gestão PRS5 em 01/01/2023; consolidação de conglomerados liderados por IP em 01/07/2023; grupos elegíveis e parcela de risco de serviços de pagamento em 01/01/2024. Não aplicar o texto vigente inteiro retrospectivamente a 2018. |
+
+Os links das Resoluções 4.955 e 4.958 exibem texto compilado com alterações posteriores. Os localizadores acima restringem o uso às disposições pertinentes; mudanças marcadas como eficazes em 2025 ficam fora da janela. A [Resolução CMN 5.194/2024](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=5194&tipo=RESOLU%C3%87%C3%83O+CMN), arts. 5º–7º, exclui corretoras/distribuidoras de determinados escopos **somente em 01/01/2025**. Não explica nulos em 2018–2024 por retroação.
+
+## Evidências complementares de reporte e comparabilidade
+
+O próprio BCB explica, no [Relatório de Administração 2017, regulação prudencial simplificada](https://www.bcb.gov.br/Pre/Surel/RelAdmBC/2017/index.html), que instituições não bancárias poderiam optar pelo regime a partir de fevereiro de 2018, e que o capital regulamentar simplificado seria extraído dos demonstrativos contábeis. É apoio institucional para a mudança operacional; não é prova da opção de cada unidade nem dicionário de nulos do IF.data.
+
+As [instruções históricas do DLO, versão agosto de 2022](https://www.bcb.gov.br/content/estabilidadefinanceira/Leiautes2061/Hist%C3%B3rico/informacoes_tecnicas/Instru%C3%A7%C3%B5es%202061%20V1%20Agosto%202022.pdf), têm título explícito de regra geral e não optantes RWA-S5, p. 1. Contas de requerimento de Capital Principal aparecem nas pp. 54–55. Isso demonstra a necessidade de identificar a população do documento; não autoriza interpretar campo ausente como zero ou como índice do outro regime.
+
+O [REF de abril de 2024](https://www.bcb.gov.br/content/publicacoes/ref/202404/RELESTAB202404-refPub.pdf), seção de Solvência, p. 35, descreve ampliação do escopo dos indicadores de capital e seu efeito sobre os agregados: instituições acrescidas elevaram os índices e representavam 24% do PR. Há, portanto, alerta oficial sobre composição e denominador da comparação temporal. As definições regulatórias de conglomerados Tipos 1/2/3 referidas nessa página **não são os códigos do parâmetro `TipoInstituicao` da API IF.data**. Não confundir Tipo 3 regulatório com perspectiva Individual do projeto.
+
+## Como classificar as ocorrências sem presumir a causa
+
+1. **Falha de processamento:** campo com valor observado na fonte armazenada, perdido, trocado ou selecionado incorretamente na admissão/motor. Exige divergência demonstrada; coincidência com vigência não descarta esse teste.
+2. **Ausência publicada:** `null` ou campo ausente já na fonte armazenada, preservado na cadeia. É conclusão de transporte; o motivo econômico pode continuar desconhecido.
+3. **Padrão compatível com regime simplificado:** ausência publicada de Capital Principal, PR/RWA ou índice de Basileia disponíveis e vínculo temporal com S5/transição de reporte. Essa classificação combina evidências, mantendo “compatível” quando não há prova individual da opção. Não deduzir PRS5 apenas do nome da rubrica PR.
+4. **Ausência fora desse padrão:** S1–S4 ou regime desconhecido com CP/índice nulos. Preservar investigação residual; não declarar não aplicabilidade a partir de um nulo.
+
+## Exceções nominais e busca delimitada
+
+A busca curta por DM Financeira e BRB não forneceu fonte primária que atribua especificamente os nulos examinados a opção/desistência ou alteração regulatória individual. Não se usa informação atual para classificar 2018. O código prudencial `C0083467` e o cadastro por data devem governar o caso DM; sem correspondência temporal comprovada, não transferir histórico por semelhança de nome. BRB em 3T2022 deve permanecer exceção a conferir na fonte, sem justificar automaticamente pelo S5. A ausência de achado nesta busca não comprova ausência de documento público.
+
+## Limites e estado da entrega
+
+Pesquisa documental com fontes oficiais, sem GET IF.data, coleta financeira, recálculo, imputação ou modificação do explorador. O desenho da Issue previa esta nota em `docs/engineering/`, sem novo destino estrutural. Conclusões unitárias e contagens pertencem ao diagnóstico quantitativo da Issue 139. A adoção de indicador alternativo ou alteração de elegibilidade acadêmica permanece decisão de João/orientador. Revisão independente B e composição final PASS em16/10/2026, com conferência direta dos localizadores normativos e sem achados materiais.
