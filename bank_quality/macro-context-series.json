@@ -1,0 +1,234 @@
+{
+  "contract": "macro-context-series-v1",
+  "research": "docs/engineering/macroeconomic-context-2010-2024-20261018.md",
+  "series": [
+    {
+      "key": "gdp_current_brl_million",
+      "provider": "IBGE_SIDRA",
+      "table": 1846,
+      "variable": 585,
+      "classification_path": "/c11255/90707",
+      "frequency": "quarterly",
+      "available_start": "1996Q1",
+      "unit": "BRL_million",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/1846/n1/1/v/585/p/{periods}/c11255/90707",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/1846/n1/1/v/585/p/200901,201001,202404/c11255/90707",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "585": {
+          "code": "1550",
+          "name": "Milhões de Reais",
+          "unit": "BRL_million"
+        }
+      }
+    },
+    {
+      "key": "gdp_volume_and_sectors",
+      "provider": "IBGE_SIDRA",
+      "table": 1620,
+      "variable": 583,
+      "classification_path": "/c11255/90707,90687,90691,90696,90697,90700",
+      "frequency": "quarterly",
+      "available_start": "1996Q1",
+      "unit": "index_1995_mean100",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/1620/n1/1/v/583/p/{periods}/c11255/90707,90687,90691,90696,90697,90700",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/1620/n1/1/v/583/p/200901,201001,202404/c11255/90707,90687,90691,90696,90697,90700",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "583": {
+          "code": "30",
+          "name": "Número-índice",
+          "unit": "index_1995_mean100"
+        }
+      }
+    },
+    {
+      "key": "gdp_volume_sa",
+      "provider": "IBGE_SIDRA",
+      "table": 1621,
+      "variable": 584,
+      "classification_path": "/c11255/90707",
+      "frequency": "quarterly",
+      "available_start": "1996Q1",
+      "unit": "index_1995_mean100",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/1621/n1/1/v/584/p/{periods}/c11255/90707",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/1621/n1/1/v/584/p/201001,202404/c11255/90707",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "584": {
+          "code": "30",
+          "name": "Número-índice",
+          "unit": "index_1995_mean100"
+        }
+      }
+    },
+    {
+      "key": "gdp_official_rates",
+      "provider": "IBGE_SIDRA",
+      "table": 5932,
+      "variable": "6561,6562,6564",
+      "classification_path": "/c11255/90707",
+      "frequency": "quarterly",
+      "available_start": "1996Q1",
+      "unit": "percent",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/5932/n1/1/v/6561,6562,6564/p/{periods}/c11255/90707",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/5932/n1/1/v/6561,6562,6564/p/201001,202404/c11255/90707",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "6561": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        },
+        "6562": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        },
+        "6564": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "key": "industrial_production",
+      "provider": "IBGE_SIDRA",
+      "table": 8888,
+      "variable": "12606,12607",
+      "classification_path": "/c544/129314",
+      "frequency": "monthly",
+      "available_start": "2002-01",
+      "unit": "index_2022_mean100",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/8888/n1/1/v/12606,12607/p/{periods}/c544/129314",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/8888/n1/1/v/12606,12607/p/200901,201001,202412/c544/129314",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "12606": {
+          "code": "30",
+          "name": "Número-índice",
+          "unit": "index_2022_mean100"
+        },
+        "12607": {
+          "code": "30",
+          "name": "Número-índice",
+          "unit": "index_2022_mean100"
+        }
+      }
+    },
+    {
+      "key": "ipca",
+      "provider": "IBGE_SIDRA",
+      "table": 1737,
+      "variable": "2266,63,2263,2265",
+      "classification_path": "",
+      "frequency": "monthly",
+      "available_start": "1979-12",
+      "unit": "mixed_index_1993dec100_and_percent",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/1737/n1/1/v/2266,63,2263,2265/p/{periods}",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/1737/n1/1/v/2266,63,2263,2265/p/200901,201001,202412",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "2266": {
+          "code": "30",
+          "name": "Número-índice",
+          "unit": "index_1993dec100"
+        },
+        "63": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        },
+        "2263": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        },
+        "2265": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "key": "unemployment",
+      "provider": "IBGE_SIDRA",
+      "table": 6468,
+      "variable": 4099,
+      "classification_path": "",
+      "frequency": "quarterly",
+      "available_start": "2012Q1",
+      "unit": "percent",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/6468/n1/1/v/4099/p/{periods}",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/6468/n1/1/v/4099/p/201201,202404",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "4099": {
+          "code": "2",
+          "name": "%",
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "key": "labor_income",
+      "provider": "IBGE_SIDRA",
+      "table": 6472,
+      "variable": "5933,5929",
+      "classification_path": "",
+      "frequency": "quarterly",
+      "available_start": "2012Q1",
+      "unit": "BRL_real_latest_quarter_and_nominal",
+      "url_template": "https://apisidra.ibge.gov.br/values/t/6472/n1/1/v/5933,5929/p/{periods}",
+      "verified_sample_url": "https://apisidra.ibge.gov.br/values/t/6472/n1/1/v/5933,5929/p/201201,202404",
+      "mvp": true,
+      "validation": "http200_valid_json_sample",
+      "output_window": "2010Q1:2024Q4",
+      "pre_roll": "2009 for TTM and YoY; PNAD only2012+",
+      "native_units": {
+        "5933": {
+          "code": "38",
+          "name": "Reais",
+          "unit": "BRL_at_latest_quarter_prices"
+        },
+        "5929": {
+          "code": "38",
+          "name": "Reais",
+          "unit": "BRL_nominal"
+        }
+      }
+    }
+  ],
+  "limits": [
+    "Vintage recuperada em2026; não é conjunto emtempo real",
+    "PNAD Contínua começa2012; 2010–2011 estruturalmente ausentes",
+    "Renda real aos preços do último trimestre civil divulgado; não deflacionar novamente",
+    "Sentinelas originais preservadas sem interpretar comozero",
+    "Selic e juros reais pendentes de capturaSGS válida; curva fora deste pacote",
+    "Nenhuma razão ativo/PIB reproduz classificaçãoSr oficial",
+    "2009 serve a aberturas e defasagens; núcleo analítico2010–2024"
+  ]
+}
