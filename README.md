@@ -30,6 +30,8 @@ Adoção desses complementos, fontes adicionais, recálculo para as 55 companhia
 
 ## Fórmulas e indicadores por recorte
 
+**Atualização de 18/10:** o [caderno visual por Tcb, comparação com o capítulo 18 do Assaf e plano seletivo](docs/engineering/tcb-indicators-assaf-atlas-20261018.md) distingue as 20 métricas já implementadas, candidatos locais e lacunas específicas. Reúne oito quadros por Tcb e três comparações com Assaf, com fórmulas, fontes e motivos. Os status de proposta do atlas anterior abaixo registram a etapa de pesquisa, anterior à implementação dos complementos na entrega152.
+
 O [atlas com explicações, variáveis nativas e fontes](docs/engineering/financial-indicators-formulas-20261017.md) reúne os dez indicadores atuais e sete propostas nas cinco dimensões. Cada quadro completo mostra nome, fórmula, contas/relatórios IF.data, interpretação e referência por indicador. As marcas de uso são condicionais; não comprovam calculabilidade de toda unidade.
 
 | Recorte | Papel na análise | Quadro completo |

@@ -1,0 +1,368 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2400" height="2320" viewBox="0 0 2400 2320" role="img" aria-labelledby="tcb-indicators-assaf-01-20261018-title tcb-indicators-assaf-01-20261018-desc"><title id="tcb-indicators-assaf-01-20261018-title">Assaf, capítulo 18 · Liquidez e composição</title><desc id="tcb-indicators-assaf-01-20261018-desc">11ª edição, Atlas,2015 · comparação com o conjunto implementado; candidatos não são adoções.</desc><rect width="2400" height="2320" fill="#f5f5f5"/><text x="64" y="64" font-size="20" fill="#4f5d75" font-weight="400" font-family="Consolas" class="">IF.DATA · SISTEMA OBSERVADO · PROPOSTA PARA DECISÃO · 18/10/2026</text><text x="64" y="124" font-size="40" fill="#2d3142" font-weight="600" font-family="Georgia" class="">Assaf, capítulo 18 · Liquidez e composição</text><text x="64" y="176" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2336">11ª edição, Atlas,2015 · comparação com o conjunto implementado; candidatos não são adoções.</text><rect x="64" y="256" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="304" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Encaixe voluntário</text><text x="88" y="432" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.334</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="376.3809523809524" height="76.0" viewBox="0 0 104 21" version="1.1" x="732" y="304" aria-label="DISP_t/DV_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-0-figure_1">
+  <g id="assaf1-0-patch_1">
+   <path d="M 0 21  L 104 21  L 104 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-0-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-0-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-0-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-27" transform="translate(0 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-2c" transform="translate(77.001953 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-36" transform="translate(106.494141 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-33" transform="translate(169.970703 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-57" transform="translate(230.273438 -14.218701) scale(0.7)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-12" transform="translate(260.454102 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-27" transform="translate(294.145508 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-39" transform="translate(371.147461 0.78125)" />
+    <use xlink:href="#assaf1-0-DejaVuSans-Oblique-57" transform="translate(439.555664 -14.218701) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="304" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">CANDIDATO LOCAL</text><text x="1512" y="356" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">L1 não adotado; complemento do caixa de L2, não rejeição</text><text x="1512" y="388" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">por falta de dados.</text><rect x="64" y="488" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="536" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Liquidez imediata</text><text x="88" y="664" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.334</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="680.3809523809524" height="76.0" viewBox="0 0 188 21" version="1.1" x="732" y="536" aria-label="(DISP_t+AIL_t)/DV_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-1-figure_1">
+  <g id="assaf1-1-patch_1">
+   <path d="M 0 21  L 188 21  L 188 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-1-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-1-DejaVuSans-b" d="M 1984 4856  Q 1566 4138 1362 3434  Q 1159 2731 1159 2009  Q 1159 1288 1364 580  Q 1569 -128 1984 -844  L 1484 -844  Q 1016 -109 783 600  Q 550 1309 550 2009  Q 550 2706 781 3412  Q 1013 4119 1484 4856  L 1984 4856  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-2c" d="M 1081 4666  L 1716 4666  L 806 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-36" d="M 3859 4513  L 3738 3897  Q 3422 4066 3111 4152  Q 2800 4238 2509 4238  Q 1944 4238 1609 3991  Q 1275 3744 1275 3334  Q 1275 3109 1398 2989  Q 1522 2869 2034 2731  L 2413 2638  Q 3053 2472 3303 2217  Q 3553 1963 3553 1503  Q 3553 797 2998 353  Q 2444 -91 1538 -91  Q 1166 -91 791 -17  Q 416 56 38 206  L 166 856  Q 513 641 861 531  Q 1209 422 1556 422  Q 2147 422 2503 684  Q 2859 947 2859 1369  Q 2859 1650 2717 1795  Q 2575 1941 2106 2059  L 1728 2156  Q 1081 2325 845 2545  Q 609 2766 609 3163  Q 609 3859 1145 4304  Q 1681 4750 2541 4750  Q 2875 4750 3203 4690  Q 3531 4631 3859 4513  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-e" d="M 2944 4013  L 2944 2272  L 4684 2272  L 4684 1741  L 2944 1741  L 2944 0  L 2419 0  L 2419 1741  L 678 1741  L 678 2272  L 2419 2272  L 2419 4013  L 2944 4013  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-c" d="M 513 4856  L 1013 4856  Q 1481 4119 1714 3412  Q 1947 2706 1947 2009  Q 1947 1309 1714 600  Q 1481 -109 1013 -844  L 513 -844  Q 928 -128 1133 580  Q 1338 1288 1338 2009  Q 1338 2731 1133 3434  Q 928 4138 513 4856  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-1-DejaVuSans-Oblique-39" d="M 1319 0  L 500 4666  L 1119 4666  L 1797 653  L 4063 4666  L 4750 4666  L 2053 0  L 1319 0  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-1-DejaVuSans-b" transform="translate(0 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-27" transform="translate(39.013672 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-2c" transform="translate(116.015625 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-36" transform="translate(145.507812 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-33" transform="translate(208.984375 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-57" transform="translate(269.287109 -14.874951) scale(0.7)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-e" transform="translate(318.950195 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-24" transform="translate(422.22168 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-2c" transform="translate(490.629883 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-2f" transform="translate(520.12207 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-57" transform="translate(575.834961 -14.874951) scale(0.7)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-c" transform="translate(606.015625 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-12" transform="translate(645.029297 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-27" transform="translate(678.720703 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-39" transform="translate(755.722656 0.125)" />
+    <use xlink:href="#assaf1-1-DejaVuSans-Oblique-57" transform="translate(824.130859 -14.874951) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="536" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">USAMOS · L2</text><text x="1512" y="588" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Base depositária; não mede prazo, ativos livres nem LCR.</text><rect x="64" y="720" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="768" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Empréstimos/depósitos</text><text x="88" y="896" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.335</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="347.42857142857144" height="76.0" viewBox="0 0 96 21" version="1.1" x="732" y="768" aria-label="CR_t/DEP_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-2-figure_1">
+  <g id="assaf1-2-patch_1">
+   <path d="M 0 21  L 96 21  L 96 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-2-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-2-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-2-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-26" transform="translate(0 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-35" transform="translate(69.824219 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-57" transform="translate(139.306641 -14.218701) scale(0.7)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-12" transform="translate(169.487305 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-27" transform="translate(203.178711 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-28" transform="translate(280.180664 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-33" transform="translate(343.364258 0.78125)" />
+    <use xlink:href="#assaf1-2-DejaVuSans-Oblique-57" transform="translate(403.666992 -14.218701) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="768" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">USAMOS · L3</text><text x="1512" y="820" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Compara crédito a depósitos; outras fontes exigem LF.</text><rect x="64" y="952" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1000" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Capital de giro próprio</text><text x="88" y="1128" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.335</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="408.95238095238096" height="76.0" viewBox="0 0 113 21" version="1.1" x="732" y="1000" aria-label="PL_t-ANC_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-3-figure_1">
+  <g id="assaf1-3-patch_1">
+   <path d="M 0 21  L 113 21  L 113 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-3-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-3-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-c9c" d="M 678 2272  L 4684 2272  L 4684 1741  L 678 1741  L 678 2272  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-Oblique-31" d="M 1081 4666  L 1931 4666  L 3219 666  L 4000 4666  L 4616 4666  L 3706 0  L 2853 0  L 1569 4025  L 788 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-3-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-33" transform="translate(0 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-2f" transform="translate(60.302734 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-57" transform="translate(116.015625 -14.218701) scale(0.7)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-c9c" transform="translate(165.678711 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-24" transform="translate(268.950195 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-31" transform="translate(337.358398 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-26" transform="translate(412.163086 0.78125)" />
+    <use xlink:href="#assaf1-3-DejaVuSans-Oblique-57" transform="translate(481.987305 -14.218701) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="1000" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">CONCILIAR</text><text x="1512" y="1052" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">ANC=realizável LP+permanente; sem equivalente demonstrado,</text><text x="1512" y="1084" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">não substituir por imobilizado.</text><rect x="64" y="1184" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1232" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Participação dos empréstimos</text><text x="88" y="1360" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.335–336</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="289.5238095238095" height="76.0" viewBox="0 0 80 21" version="1.1" x="732" y="1232" aria-label="CR_t/AT_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-4-figure_1">
+  <g id="assaf1-4-patch_1">
+   <path d="M 0 21  L 80 21  L 80 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-4-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-4-DejaVuSans-Oblique-26" d="M 4447 4306  L 4319 3641  Q 4019 3944 3683 4091  Q 3347 4238 2956 4238  Q 2422 4238 2017 3981  Q 1613 3725 1319 3200  Q 1131 2863 1032 2486  Q 934 2109 934 1728  Q 934 1091 1264 756  Q 1594 422 2222 422  Q 2656 422 3056 561  Q 3456 700 3834 978  L 3688 231  Q 3316 72 2936 -9  Q 2556 -91 2175 -91  Q 1278 -91 773 396  Q 269 884 269 1753  Q 269 2309 461 2846  Q 653 3384 1013 3828  Q 1394 4300 1883 4525  Q 2372 4750 3022 4750  Q 3422 4750 3780 4639  Q 4138 4528 4447 4306  z " transform="scale(0.015625)" />
+     <path id="assaf1-4-DejaVuSans-Oblique-35" d="M 1613 4147  L 1294 2491  L 2106 2491  Q 2584 2491 2879 2755  Q 3175 3019 3175 3444  Q 3175 3784 2976 3965  Q 2778 4147 2406 4147  L 1613 4147  z M 2772 2241  Q 2972 2194 3105 2009  Q 3238 1825 3413 1275  L 3809 0  L 3144 0  L 2778 1197  Q 2638 1659 2453 1815  Q 2269 1972 1888 1972  L 1191 1972  L 806 0  L 172 0  L 1081 4666  L 2503 4666  Q 3150 4666 3495 4373  Q 3841 4081 3841 3531  Q 3841 3044 3547 2687  Q 3253 2331 2772 2241  z " transform="scale(0.015625)" />
+     <path id="assaf1-4-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-4-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-4-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)" />
+     <path id="assaf1-4-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-26" transform="translate(0 0.78125)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-35" transform="translate(69.824219 0.78125)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-57" transform="translate(139.306641 -14.218701) scale(0.7)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-12" transform="translate(169.487305 0.78125)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-24" transform="translate(203.178711 0.78125)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-37" transform="translate(271.586914 0.78125)" />
+    <use xlink:href="#assaf1-4-DejaVuSans-Oblique-57" transform="translate(332.670898 -14.218701) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="1232" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">USAMOS · LC</text><text x="1512" y="1284" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Composição creditícia, não qualidade ou prazo.</text><rect x="64" y="1416" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1464" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Independência financeira</text><text x="88" y="1592" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.337</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="271.42857142857144" height="76.0" viewBox="0 0 75 21" version="1.1" x="732" y="1464" aria-label="PL_t/AT_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-5-figure_1">
+  <g id="assaf1-5-patch_1">
+   <path d="M 0 21  L 75 21  L 75 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-5-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-5-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-5-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-5-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-5-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-5-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)" />
+     <path id="assaf1-5-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-33" transform="translate(0 0.09375)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-2f" transform="translate(60.302734 0.09375)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-57" transform="translate(116.015625 -14.906201) scale(0.7)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-12" transform="translate(146.196289 0.09375)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-24" transform="translate(179.887695 0.09375)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-37" transform="translate(248.295898 0.09375)" />
+    <use xlink:href="#assaf1-5-DejaVuSans-Oblique-57" transform="translate(309.379883 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="1464" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">USAMOS · C1</text><text x="1512" y="1516" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Capitalização contábil, sem ponderação de risco.</text><rect x="64" y="1648" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1696" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Leverage</text><text x="88" y="1824" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.337</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="271.42857142857144" height="76.0" viewBox="0 0 75 21" version="1.1" x="732" y="1696" aria-label="AT_t/PL_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-6-figure_1">
+  <g id="assaf1-6-patch_1">
+   <path d="M 0 21  L 75 21  L 75 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-6-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-6-DejaVuSans-Oblique-24" d="M 2356 4666  L 3072 4666  L 3938 0  L 3278 0  L 3084 1197  L 984 1197  L 325 0  L -341 0  L 2356 4666  z M 2584 4044  L 1275 1722  L 2988 1722  L 2584 4044  z " transform="scale(0.015625)" />
+     <path id="assaf1-6-DejaVuSans-Oblique-37" d="M 378 4666  L 4325 4666  L 4225 4134  L 2559 4134  L 1759 0  L 1125 0  L 1925 4134  L 275 4134  L 378 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-6-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-6-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-6-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-6-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-24" transform="translate(0 0.09375)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-37" transform="translate(68.408203 0.09375)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-57" transform="translate(129.492188 -14.906201) scale(0.7)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-12" transform="translate(159.672852 0.09375)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-33" transform="translate(193.364258 0.09375)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-2f" transform="translate(253.666992 0.09375)" />
+    <use xlink:href="#assaf1-6-DejaVuSans-Oblique-57" transform="translate(309.379883 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="1696" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">LEITURA DERIVADA</text><text x="1512" y="1748" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Recíproco de C1; útil para explicar ROE, sem fator</text><text x="1512" y="1780" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">independente. Unidade: vezes.</text><rect x="64" y="1880" width="2272" height="216" rx="8" fill="white" stroke="#bfc0c0"/><text x="88" y="1928" font-size="28" fill="#4f5d75" font-weight="600" font-family="Arial" class="" data-right="680">Capital/depositantes</text><text x="88" y="2056" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Assaf · p.337</text><svg xmlns="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:ns2="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xlink="http://www.w3.org/1999/xlink" width="329.3333333333333" height="76.0" viewBox="0 0 91 21" version="1.1" x="732" y="1928" aria-label="PL_t/DEP_t" class="formula">
+ <metadata>
+  <rdf:RDF>
+   <ns2:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <ns2:Agent>
+      <dc:title>Matplotlib v3.11.1, https://matplotlib.org/</dc:title>
+     </ns2:Agent>
+    </dc:creator>
+   </ns2:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="assaf1-7-figure_1">
+  <g id="assaf1-7-patch_1">
+   <path d="M 0 21  L 91 21  L 91 0  L 0 0  z " style="fill: #ffffff" />
+  </g>
+  <g id="assaf1-7-text_1">
+
+   <g style="fill: #2d3142" transform="translate(0 17) scale(0.22 -0.22)">
+    <defs>
+     <path id="assaf1-7-DejaVuSans-Oblique-33" d="M 1081 4666  L 2541 4666  Q 3178 4666 3512 4369  Q 3847 4072 3847 3500  Q 3847 2731 3353 2303  Q 2859 1875 1966 1875  L 1172 1875  L 806 0  L 172 0  L 1081 4666  z M 1613 4147  L 1275 2394  L 2069 2394  Q 2606 2394 2893 2669  Q 3181 2944 3181 3456  Q 3181 3784 2986 3965  Q 2791 4147 2438 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-7-DejaVuSans-Oblique-2f" d="M 1075 4666  L 1709 4666  L 909 525  L 3181 525  L 3078 0  L 172 0  L 1075 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-7-DejaVuSans-Oblique-57" d="M 2706 3500  L 2619 3053  L 1472 3053  L 1100 1153  Q 1081 1047 1072 975  Q 1063 903 1063 863  Q 1063 663 1183 572  Q 1303 481 1569 481  L 2150 481  L 2053 0  L 1503 0  Q 991 0 739 200  Q 488 400 488 806  Q 488 878 497 964  Q 506 1050 525 1153  L 897 3053  L 409 3053  L 500 3500  L 978 3500  L 1172 4494  L 1747 4494  L 1556 3500  L 2706 3500  z " transform="scale(0.015625)" />
+     <path id="assaf1-7-DejaVuSans-12" d="M 1625 4666  L 2156 4666  L 531 -594  L 0 -594  L 1625 4666  z " transform="scale(0.015625)" />
+     <path id="assaf1-7-DejaVuSans-Oblique-27" d="M 1081 4666  L 2438 4666  Q 3519 4666 4070 4208  Q 4622 3750 4622 2847  Q 4622 2250 4412 1698  Q 4203 1147 3834 769  Q 3463 381 2891 190  Q 2319 0 1538 0  L 172 0  L 1081 4666  z M 1613 4147  L 909 519  L 1734 519  Q 2794 519 3375 1128  Q 3956 1738 3956 2847  Q 3956 3519 3581 3833  Q 3206 4147 2406 4147  L 1613 4147  z " transform="scale(0.015625)" />
+     <path id="assaf1-7-DejaVuSans-Oblique-28" d="M 1081 4666  L 4031 4666  L 3928 4134  L 1606 4134  L 1338 2753  L 3566 2753  L 3463 2222  L 1234 2222  L 909 531  L 3284 531  L 3181 0  L 172 0  L 1081 4666  z " transform="scale(0.015625)" />
+    </defs>
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-33" transform="translate(0 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-2f" transform="translate(60.302734 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-57" transform="translate(116.015625 -14.906201) scale(0.7)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-12" transform="translate(146.196289 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-27" transform="translate(179.887695 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-28" transform="translate(256.889648 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-33" transform="translate(320.073242 0.09375)" />
+    <use xlink:href="#assaf1-7-DejaVuSans-Oblique-57" transform="translate(380.375977 -14.906201) scale(0.7)" />
+   </g>
+  </g>
+ </g>
+</svg><text x="1512" y="1928" font-size="20" fill="#2e5aa8" font-weight="600" font-family="Arial" class="">CANDIDATO LOCAL</text><text x="1512" y="1980" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">Sem adoção formal encontrada; sensibilidade de</text><text x="1512" y="2012" font-size="24" fill="#4f5d75" font-weight="400" font-family="Arial" class="" data-right="2288">depositárias, não toda a captação.</text><text x="64" y="2180" font-size="20" fill="#2d3142" font-weight="400" font-family="Arial" class="">Fórmulas sintetizadas; médias adaptadas. Quocientes em %; leverage em vezes; capital de giro, GAP-diferença e VEA/MVA em moeda.</text><text x="64" y="2220" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">As páginas 353–354 foram relidas nesta entrega; demais localizadores: pesquisa111/143, releituras152 e recibo178.</text><text x="64" y="2260" font-size="20" fill="#4f5d75" font-weight="400" font-family="Arial" class="">Ausência no conjunto atual não prova rejeição metodológica. Fórmulas contábeis não certificam conformidade regulatória.</text></svg>
