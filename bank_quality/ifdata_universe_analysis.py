@@ -24,10 +24,373 @@ DERIVED_TABLES=('unit_coverage','aggregates','distributions','segment_coverage',
 FINAL_TABLES=TABLES+DERIVED_TABLES
 AXES=('Tcb','Td','Tc','Sr','Atividade','SegmentoTb')
 COHORTS=('total','sample','remaining','unknown')
+SELECTIVE_AXES=('Tcb','Td','Tc','Sr','SegmentoTb')
+PROFIT_BRIDGE_PERIODS=('201803','201806','201809','201812','201903')
+PROFIT_BRIDGE_WINDOWS={
+    '201903':PROFIT_BRIDGE_PERIODS,
+    '201906':('201806','201809','201812','201903','201906'),
+    '201909':('201809','201812','201903','201906','201909')}
+PROFIT_BRIDGE_ID='LL-native-before-capital-remuneration-201903-v1'
+CAIXA_TRANSITION_PERIODS=('202109','202112','202203','202206')
+CAIXA_TRANSITION_ID='caixa-financial-observed-perimeter-202109-v1'
+
+
+def bridge_caixa_transition(observations,predecessor,cadastro_rows,*,period,metric,horizon='ttm'):
+    """Nominated reporting lineage, not a constant-perimeter reconstruction.
+
+    Original native source identities/bindings/tokens are retained. Only the
+    analytical unit identity is aligned for the existing temporal arithmetic.
+    June2021 published investment/MEP discrepancies remain an explicit limit.
+    """
+    original=deepcopy(observations)
+    proof=dict(rule=CAIXA_TRANSITION_ID,released=False,reason='unreviewed_target',
+               constant_perimeter_certified=False,replacements=[],
+               limits=['Observed historical perimeter changes; no retrospective consolidation',
+                       'June2021 investment/equity-method differences remain unreconciled',
+                       'No addition of DTVM balances or substitution from corporate consolidated accounts'])
+    if period not in CAIXA_TRANSITION_PERIODS or metric not in ('R1','R2') or horizon!='ttm':return original,proof
+    periods=math.dependency_periods([period]);names=math.METRICS[metric]
+    if set(observations)!=set(names) or set(predecessor)!=set(names):return original,proof
+    target=('financial','2','C0051626');source=('financial','2','00360305')
+    for name in names:
+        if ([x.get('period') for x in observations[name]]!=periods or
+            [x.get('period') for x in predecessor[name]]!=periods or
+            any(tuple(x.get('unit_key',()))!=target for x in observations[name])):return original,proof
+    proof['reason']='dated_link_not_proven';cad={}
+    for row in cadastro_rows:
+        p=row.get('Data');code=row.get('CodInst')
+        if p not in periods:continue
+        key=(p,code)
+        if key in cad:return original,proof
+        cad[key]=row
+    for p in periods:
+        bank=cad.get((p,'00360305'))
+        if not bank or bank.get('CnpjInstituicaoLider')!='00360305':return original,proof
+        if p<'202109':
+            if bank.get('CodConglomeradoFinanceiro') is not None or cad.get((p,'C0051626')):return original,proof
+        else:
+            for code in ('00360305','C0051626','42040639'):
+                row=cad.get((p,code))
+                if not row or row.get('CnpjInstituicaoLider')!='00360305' or row.get('CodConglomeradoFinanceiro')!='C0051626':return original,proof
+            linked=[row for (date,code),row in cad.items() if date==p and row.get('CodConglomeradoFinanceiro')=='C0051626']
+            if any(row.get('CnpjInstituicaoLider')!='00360305' for row in linked):return original,proof
+            members={row['CodInst'] for row in linked}
+            if not members<= {'00360305','C0051626','42040639','C0080738'}:return original,proof
+    profile=load_profile();replacements=[]
+    proof['reason']='predecessor_not_verified'
+    for name in names:
+        for index,p in enumerate(periods):
+            # At June/December targets the opening LL precedes a native Q3/Q1;
+            # it is not consumed, unlike the opening stock used in the mean.
+            if p>='202109' or (name=='LL' and index==0 and period.endswith(('06','12'))):continue
+            old=observations[name][index];new=predecessor[name][index]
+            contexts=[c for c in profile['contexts'] if c['component']==name and c['literal_context']['dataset']=='financial' and p in c['periods']]
+            if len(contexts)!=1:return original,proof
+            context=contexts[0]
+            if (old.get('status')!='binding_missing' or old.get('token') is not None or
+                tuple(new.get('unit_key',()))!=source or new.get('status','ok')!='ok' or
+                new.get('definition_id')!=context['compatibility'] or old.get('definition_id')!=context['compatibility'] or
+                new.get('scale')!='BRL' or new.get('window_rule')!=context['window_rule'] or
+                old.get('scale')!='BRL' or old.get('window_rule')!=context['window_rule'] or
+                new.get('binding')!=context or old.get('binding')!=context or
+                not new.get('sources') or math._native_value(new)[1] is not None):return original,proof
+            literal=context['literal_context']
+            if any(n.get('CodInst')!='00360305' or n.get('AnoMes')!=p or
+                   n.get('Saldo')!=new['token'] or
+                   any(type(n.get(k)) is not type(v) or n.get(k)!=v for k,v in literal.items() if k!='dataset')
+                   for n in new['sources']):return original,proof
+            value=deepcopy(new)
+            value.update(id=hashlib.sha256((str(old.get('id'))+'|'+CAIXA_TRANSITION_ID).encode()).hexdigest()[:32],
+                         unit_key=target,native_unit_key=deepcopy(new['unit_key']),
+                         reporting_transition=dict(rule=CAIXA_TRANSITION_ID,observed_perimeter=True,
+                             source_period=p,source_unit_key=list(source),analysis_unit_key=list(target)),
+                         flags=sorted(set(new.get('flags',[])+['caixa_observed_perimeter_transition'])))
+            replacements.append((name,index,value))
+    if not replacements:return original,proof
+    for name,index,value in replacements:
+        original[name][index]=value
+        proof['replacements'].append(dict(component=name,period=value['period'],
+            native_unit_key=value['native_unit_key'],analytical_component_id=value['id']))
+    proof.update(released=True,reason='reviewed_observed_reporting_lineage',metric=metric,analysis_period=period,
+                 cadastro_evidence=[deepcopy(row) for (p,code),row in sorted(cad.items()) if code in ('00360305','C0051626','42040639','C0080738')])
+    return original,proof
+
+
+def bridge_profit_201903(observations,native_rows,cadastro,*,period='201903'):
+    """Reviewed finite semantic bridge; native bindings/tokens never change.
+
+    Financial conglomerates use their own published native profit, without
+    fiscal normalization. IPs/consortia additionally require observed zero
+    remuneration and identical Summary/DRE profit in every consumed profit input.
+    """
+    copied=deepcopy(observations)
+    proof=dict(rule=PROFIT_BRIDGE_ID,released=False,basis=None,reason='unreviewed_context',inputs=[])
+    periods=PROFIT_BRIDGE_WINDOWS.get(period)
+    if not periods or len(copied)!=5 or [r.get('period') for r in copied]!=list(periods):return copied,proof
+    # June opening LL is unused: Q3 and Q1 are native quarterly flows.
+    used=copied[1:] if period=='201906' else copied
+    proof.update(analysis_period=period,profit_dependency_periods=[r['period'] for r in used])
+    unit=copied[0].get('unit_key')
+    if not isinstance(unit,(list,tuple)) or len(unit)!=3 or tuple(unit[:2]) not in (('financial','2'),('individual','3')):return copied,proof
+    dataset,dtype=unit[:2];prefix='individual:' if dataset=='individual' else ''
+    if prefix:proof['rule']=prefix+PROFIT_BRIDGE_ID
+    for r in used:
+        before=r['period']<'201903';definition=prefix+('LL-pre201903' if before else 'LL-from201903')
+        formula='[70000009]+[80000006]-'+('[81955002]' if before else '[81956001]')
+        literal=r.get('binding',{}).get('literal_context',{})
+        if (r.get('definition_id')!=definition or tuple(r.get('unit_key',()))!=tuple(unit)
+            or r.get('scale')!='BRL' or r.get('window_rule')!='native-semester-analysis-v2'
+            or any(literal.get(k)!=v for k,v in dict(dataset=dataset,TipoInstituicao=dtype,NumeroRelatorio='1',Conta='78187',DescricaoColuna=formula).items())):
+            return copied,proof
+    cadre=cadastro or {};segment=cadre.get('SegmentoTb') or ''
+    exceptional=cadre.get('Tcb')=='N4' or segment=='Instituição de Pagamento' or 'consórcio' in segment.lower()
+    if not exceptional and cadre.get('Tcb') not in ('B1','B2','B3S','B3C','B4','N1','N2'):
+        proof['reason']='missing_or_unreviewed_classification';return copied,proof
+    if exceptional:
+        proof.update(basis='observed_zero_remuneration',reason='zero_effect_not_proven')
+        for r in used:
+            p=r['period'];expected='[81956001]' if p>='201903' else '[81955002]'
+            def matches(account):
+                return [n for n in native_rows if n.get('CodInst')==unit[2] and n.get('AnoMes')==p
+                        and n.get('TipoInstituicao')==dtype and n.get('NumeroRelatorio')=='4' and n.get('Conta')==account]
+            jcp,ll=matches('78230'),matches('78187')
+            if len(jcp)!=1 or len(ll)!=1:return copied,proof
+            j,s=math._native_value({'token':jcp[0].get('Saldo')});d,ds=math._native_value({'token':ll[0].get('Saldo')});v,vs=math._native_value(r)
+            proof['inputs'].append(dict(period=p,remuneration=deepcopy(jcp[0]),dre_profit=deepcopy(ll[0])))
+            if (s or ds or vs or j!=0 or d!=v or jcp[0].get('DescricaoColuna')!=expected
+                or ll[0].get('DescricaoColuna')!=r['binding']['literal_context']['DescricaoColuna']):
+                return copied,proof
+    else:proof['basis']='native_published_profit'
+    proof.update(released=True,reason='reviewed_semantic_compatibility',original_definitions=[r['definition_id'] for r in copied])
+    for r in used:r['definition_id']=prefix+PROFIT_BRIDGE_ID
+    return copied,proof
+
+
+def recalculate_caixa_transition(baseline,expected_baseline_manifest_sha256,output):
+    """Produce the eight reviewed Caixa patches in one finite source query.
+
+    This is a patch package, never an aggregate of the entire financial system.
+    Every native/analytical component and unavailable baseline result is retained.
+    """
+    from time import perf_counter
+    import duckdb
+    from .ifdata_odata import CONTRACT as NATIVE_CONTRACT
+    from .ifdata_cadastro import CONTRACT as CADASTRO_CONTRACT
+    started=perf_counter();root=Path(baseline).resolve();output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    if not isinstance(expected_baseline_manifest_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_baseline_manifest_sha256):
+        raise ValueError('External baseline manifest pin required')
+    if math._digest_file(root/'manifest.json')!=expected_baseline_manifest_sha256:raise ValueError('Baseline manifest hash mismatch')
+    main=math._json_unique((root/'manifest.json').read_bytes())
+    if main.get('contract')!=CONTRACT or main.get('stage')!='coverage-and-aggregation':raise ValueError('Accepted universe baseline required')
+    profile=load_profile(expected_sha256=main['profile_sha256'])
+    periods=sorted({p for target in CAIXA_TRANSITION_PERIODS for p in math.dependency_periods([target])})
+    guards={};sources={};inventories={}
+    def identity(path):
+        s=_ordinary(path).stat();return (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    for path in (root/'manifest.json',PROFILE_PATH):guards[path]=identity(path)
+    for name,contract in (('financial',NATIVE_CONTRACT),('cadastro',CADASTRO_CONTRACT)):
+        spec=main['inputs'][name];source=Path(spec['root']).resolve()
+        if output==source or source in output.parents or output in source.parents:raise ValueError('Output overlaps native source')
+        manifest_path=source/'manifest.json'
+        if math._digest_file(manifest_path)!=spec['expected_manifest_sha256']:raise ValueError('Native manifest hash mismatch')
+        m=math._json_unique(manifest_path.read_bytes())
+        if m.get('contract')!=contract:raise ValueError('Native contract mismatch')
+        entries=[e for e in m['files'] if str(e['period']) in periods]
+        if len(entries)!=len(periods) or {str(e['period']) for e in entries}!=set(periods):raise ValueError('Missing or ambiguous native parts')
+        guards[manifest_path]=identity(manifest_path)
+        for e in entries:
+            _capture_payload(source,e);guards[source/e['file']]=identity(source/e['file'])
+        sources[name]=(source,m);inventories[name]=entries
+    if output==root or root in output.parents or output in root.parents:raise ValueError('Output overlaps baseline')
+    entries=[e for e in main['files'] if e['file']=='unit_periods.csv']
+    if len(entries)!=1:raise ValueError('Missing baseline unit inventory')
+    entry=entries[0];_capture_payload(root,entry);path=root/entry['file'];guards[path]=identity(path)
+    units={};count=0;csv.field_size_limit(10000000)
+    with path.open(encoding='utf-8',newline='') as f:
+        for row in csv.DictReader(f):
+            count+=1
+            if row['dataset']!='financial' or row['period'] not in CAIXA_TRANSITION_PERIODS:continue
+            u=math._json_unique(row['payload'].encode('utf-8'))
+            if u.get('code')!='C0051626':continue
+            p=row['period'];uid='financial|2|C0051626|'+p
+            if p in units or u.get('dataset')!='financial' or u.get('period')!=p or u.get('unit_id')!=uid:raise ValueError('Ambiguous target unit')
+            units[p]=u
+    if count!=entry['rows'] or count!=main['tables']['unit_periods'] or set(units)!=set(CAIXA_TRANSITION_PERIODS):raise ValueError('Target population mismatch')
+    with duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        _window(conn,sources['financial'],periods,dataset='financial')
+        native=math._records(conn.execute("select * from native where CodInst in ('00360305','C0051626') and NumeroRelatorio='1' and Conta in ('78182','78186','78187')"))
+        source,_=sources['cadastro'];parts=[str(source/e['file']) for e in inventories['cadastro']]
+        cad=math._records(conn.execute("select * from read_parquet(?) where CodInst in ('00360305','C0051626','42040639','C0080738') or CodConglomeradoFinanceiro='C0051626'",[parts]))
+    indexed={}
+    for row in native:indexed.setdefault((row['CodInst'],row['AnoMes']),[]).append(row)
+    components={};results=[];coverage=[]
+    def remember(observation):
+        key=observation['id']
+        if key in components and canonical(components[key])!=canonical(observation):raise ValueError('Conflicting patch component identity')
+        components[key]=observation
+    for period in CAIXA_TRANSITION_PERIODS:
+        unit=units[period];uid=unit['unit_id'];dates=math.dependency_periods([period])
+        for metric in ('R1','R2'):
+            original={};predecessor={}
+            for name in math.METRICS[metric]:
+                original[name]=[];predecessor[name]=[]
+                for p in dates:
+                    for code,target in (('C0051626',original),('00360305',predecessor)):
+                        o=math.resolve_component(profile,name,'financial',code,p,indexed.get((code,p),[]))
+                        o.update(id=hashlib.sha256((uid+'|'+code+'|'+name+'|'+p).encode()).hexdigest()[:32],
+                                 component=name,dataset='financial',code=code,analysis_period=period,status=o.get('status','ok'))
+                        target[name].append(o);remember(o)
+            before=math.evaluate_metric(metric,dict(period=period,components=original,financial_statement=True),'ttm')
+            bridged,proof=bridge_caixa_transition(original,predecessor,cad,period=period,metric=metric)
+            if not proof['released']:raise ValueError('Caixa bridge not released: '+period+' '+metric+' '+proof['reason'])
+            for observations in bridged.values():
+                for o in observations:remember(o)
+            result=math.evaluate_metric(metric,dict(period=period,components={k:[_thin(o) for o in rows] for k,rows in bridged.items()},financial_statement=True),'ttm')
+            result.update(id=uid+'|'+metric+'|ttm',unit_id=uid,unit_key=['financial','2','C0051626'],dataset='financial',code='C0051626',
+                          membership=unit['membership'],baseline_status=before['status'],baseline_result=_normalize_temporal(before),reporting_transition=proof)
+            result['flags']=sorted(set(result['flags']+['caixa_observed_perimeter_transition']))
+            results.append(_normalize_temporal(result))
+            asset=math.resolve_component(profile,'AT','financial','C0051626',period,indexed.get(('C0051626',period),[]))
+            av,ast=math._native_value(asset)
+            if not unit.get('own_cadastro'):av,ast=None,'missing_dated_cadastro'
+            covered={k:deepcopy(result.get(k)) for k in ('period','dataset','code','metric','horizon','status','applicability','applicability_evidence','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary')}
+            covered.update(id=result['id']+'|coverage',result_id=result['id'],row_kind='native_unit',unit_id=uid,unit_key=result['unit_key'],
+                membership=unit['membership'],companies=deepcopy(unit['companies']),asset_fraction=math._fraction_field(av) if av is not None else None,
+                asset_status=ast or 'ok',target_cadastro=dict(Data=period,**unit['classifications']) if unit.get('classifications') is not None else None,
+                reporting_transition=proof)
+            coverage.append(covered)
+    for path,before in guards.items():
+        if identity(path)!=before:raise ValueError('Input changed during selective calculation')
+    output.mkdir(parents=True);files=[];tables=dict(components=list(components.values()),results=results,unit_coverage=coverage)
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        for table,rows in tables.items():
+            writer=Writer(output,table,stack)
+            for row in rows:writer.append(row)
+            files.extend(writer.finish(conn))
+    for path,before in guards.items():
+        if identity(path)!=before:raise ValueError('Input changed during selective output')
+    manifest=dict(contract='ifdata-caixa-transition-analysis-v1',scope=dict(dataset='financial',code='C0051626',metrics=['R1','R2'],horizon='ttm',periods=list(CAIXA_TRANSITION_PERIODS)),
+        baseline=dict(root=str(root),expected_manifest_sha256=expected_baseline_manifest_sha256),inputs={k:main['inputs'][k] for k in sources},
+        native_partitions=inventories,unit_periods=entry,profile_sha256=main['profile_sha256'],bridge_rule=CAIXA_TRANSITION_ID,
+        tables={k:len(v) for k,v in tables.items()},files=files,producer_sha256=math._digest_file(Path(__file__)),elapsed_seconds=perf_counter()-started,
+        limits=['Patch only: merge with unchanged contributions before aggregating',
+                'Observed historical perimeter, not a constant-perimeter consolidation; June2021 discrepancies retained'])
+    (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf-8')
+    return manifest
+
+
+def recalculate_slice(baseline,expected_baseline_manifest_sha256,output,*,metric='R1',horizon='ttm',dataset='financial',period='201903'):
+    """Recalculate one reviewed ROA/ROE slice; never rebuild or edit the baseline.
+
+    Source partitions are queried together in DuckDB. Native math, typed
+    bindings, precision and reductions are shared with the full-universe path.
+    The independently declared output is directly queryable as Parquet.
+    """
+    from collections import Counter
+    from time import perf_counter
+    import duckdb
+    from .ifdata_odata import CONTRACT as NATIVE_CONTRACT
+    if metric not in ('R1','R2') or horizon!='ttm' or dataset not in ('financial','individual') or period not in PROFIT_BRIDGE_WINDOWS:
+        raise ValueError('Not a reviewed selective target')
+    periods=PROFIT_BRIDGE_WINDOWS[period]
+    started=perf_counter();root=Path(baseline).resolve();output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    if not isinstance(expected_baseline_manifest_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_baseline_manifest_sha256):
+        raise ValueError('External baseline manifest pin required')
+    if math._digest_file(root/'manifest.json')!=expected_baseline_manifest_sha256:raise ValueError('Baseline manifest hash mismatch')
+    main=math._json_unique((root/'manifest.json').read_bytes())
+    if main.get('contract')!=CONTRACT or main.get('stage')!='coverage-and-aggregation':raise ValueError('Accepted universe baseline required')
+    profile=load_profile(expected_sha256=main['profile_sha256'])
+    native_input=main['inputs'][dataset];source=Path(native_input['root']).resolve();dtype=TYPES[dataset]
+    for protected in (root,source):
+        if protected in output.parents or output in protected.parents:raise ValueError('Selective output overlaps a source')
+    if math._digest_file(source/'manifest.json')!=native_input['expected_manifest_sha256']:raise ValueError('Financial manifest hash mismatch')
+    sm=math._json_unique((source/'manifest.json').read_bytes())
+    if sm.get('contract')!=NATIVE_CONTRACT:raise ValueError('Native financial contract mismatch')
+    entries=[e for e in sm['files'] if str(e['period']) in periods]
+    if len(entries)!=5 or {str(e['period']) for e in entries}!=set(periods):raise ValueError('Missing or ambiguous native periods')
+    guards={}
+    def identity(path):
+        s=_ordinary(path).stat();return (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    for p in (root/'manifest.json',source/'manifest.json',PROFILE_PATH):guards[p]=identity(p)
+    for e in entries:
+        p=math._contained(source,e['file']);_capture_payload(source,e);guards[p]=identity(p)
+    unit_entries=[e for e in main['files'] if e['file']=='unit_periods.csv']
+    if len(unit_entries)!=1:raise ValueError('Missing baseline native units')
+    ue=unit_entries[0];_capture_payload(root,ue);up=root/'unit_periods.csv';guards[up]=identity(up)
+    units=[];seen=set();count=0;csv.field_size_limit(10000000)
+    with up.open(encoding='utf-8',newline='') as f:
+        for raw in csv.DictReader(f):
+            count+=1
+            if raw['period']!=period or raw['dataset']!=dataset:continue
+            unit=math._json_unique(raw['payload'].encode('utf-8'))
+            if unit['period']!=period or unit['dataset']!=dataset or unit['code'] in seen:raise ValueError('Ambiguous selective native unit')
+            if unit['unit_id']!='|'.join((dataset,dtype,unit['code'],period)):raise ValueError('Native unit identity mismatch')
+            seen.add(unit['code']);units.append(unit)
+    if count!=ue['rows'] or count!=main['tables']['unit_periods'] or not units:raise ValueError('Native population count mismatch')
+    with duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        _window(conn,(source,sm),list(periods),dataset=dataset)
+        accounts="'78182','78187'" if metric=='R1' else "'78182','78187','78186'"
+        rows=math._records(conn.execute("select * from native where (NumeroRelatorio='1' and Conta in ("+accounts+")) or (NumeroRelatorio='4' and Conta in ('78187','78230'))"))
+    indexed={}
+    for row in rows:indexed.setdefault((row['CodInst'],row['AnoMes']),[]).append(row)
+    components=[];results=[];coverage=[];before=Counter();after=Counter()
+    for unit in sorted(units,key=lambda u:u['code']):
+        code=unit['code'];uid=unit['unit_id'];original={}
+        for name in (('LL','AT') if metric=='R1' else ('LL','PL','AT')):
+            original[name]=[]
+            for p in periods:
+                ob=math.resolve_component(profile,name,dataset,code,p,indexed.get((code,p),[]))
+                ob.update(id=hashlib.sha256((uid+'|'+name+'|'+p).encode()).hexdigest()[:32],component=name,dataset=dataset,code=code,status=ob.get('status','ok'),analysis_period=period)
+                original[name].append(ob);components.append(_compact_component(ob))
+        def calculate(data):
+            return math.evaluate_metric(metric,dict(period=period,components={k:[_thin(o) for o in v] for k,v in data.items()},financial_statement=True),horizon)
+        baseline_result=calculate(original);before[baseline_result['status']]+=1
+        native=[n for p in periods for n in indexed.get((code,p),[])]
+        ll,proof=bridge_profit_201903(original['LL'],native,unit.get('classifications'),period=period)
+        result=calculate(dict(original,LL=ll));after[result['status']]+=1
+        result.update(id=uid+'|'+metric+'|'+horizon,unit_id=uid,unit_key=[dataset,dtype,code],dataset=dataset,code=code,
+                      membership=unit['membership'],baseline_status=baseline_result['status'],profit_bridge=proof)
+        if proof['released']:result['flags']=sorted(set(result['flags']+['ll_native_definition_bridge_201903']))
+        results.append(_normalize_temporal(result))
+        av,ast=math._native_value(original['AT'][-1])
+        if not unit.get('own_cadastro'):av,ast=None,'missing_dated_cadastro'
+        covered={k:deepcopy(result.get(k)) for k in ('id','period','dataset','code','metric','horizon','status','applicability','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary')}
+        covered.update(unit_id=uid,unit_key=[dataset,dtype,code],membership=unit['membership'],companies=unit['companies'],
+                       asset_fraction=math._fraction_field(av) if av is not None else None,asset_status=ast or 'ok',
+                       target_cadastro=dict(Data=period,**unit['classifications']) if unit.get('classifications') is not None else None,
+                       baseline_status=baseline_result['status'],profit_bridge=proof)
+        coverage.append(covered)
+    derived=aggregate_unit_results(coverage,fields=SELECTIVE_AXES)
+    tables=dict(components=components,results=results,unit_coverage=coverage,**derived)
+    for p,guard in guards.items():
+        if identity(p)!=guard:raise ValueError('Selective source changed during calculation')
+    output.mkdir(parents=True)
+    files=[]
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        for table,values in tables.items():
+            writer=Writer(output,table,stack)
+            for row in values:writer.append(row)
+            files.extend(writer.finish(conn))
+    for p,guard in guards.items():
+        if identity(p)!=guard:raise ValueError('Selective source changed during output')
+    manifest=dict(contract='ifdata-selective-analysis-v1',scope=dict(metric=metric,horizon=horizon,dataset=dataset,period=period),
+                  baseline=dict(root=str(root),expected_manifest_sha256=expected_baseline_manifest_sha256),
+                  inputs={dataset:native_input,'native_partitions':entries,'unit_periods':ue},profile_sha256=main['profile_sha256'],
+                  bridge_rule=('individual:' if dataset=='individual' else '')+PROFIT_BRIDGE_ID,segmentation_fields=list(SELECTIVE_AXES),dependency_periods=list(periods),
+                  baseline_statuses=dict(before),result_statuses=dict(after),tables={t:len(v) for t,v in tables.items()},files=files,
+                  elapsed_seconds=perf_counter()-started,producer_sha256=math._digest_file(Path(__file__)),
+                  limits=['Native published profit; taxes retained as reported, no uniform fiscal counterfactual',
+                          'No change to baseline; only the declared slice replaces its corresponding analytical projection',
+                          'IPs/consortia require observed zero remuneration and equal Summary/DRE profit in all consumed profit inputs'])
+    (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf-8')
+    return manifest
 
 
 def _category(row,field):
-    if row.get('classification_states',{}).get(field)=='conflict':return ('conflict',None)
+    state=row.get('classification_states',{}).get(field)
+    if state in ('conflict','before_regime','unknown','missing_dated_cadastro','missing_field'):return (state,None)
     cadre=row.get('target_cadastro')
     if not cadre or cadre.get('Data')!=row['period']:return ('missing_dated_cadastro',None)
     if field not in cadre:return ('missing_field',None)
@@ -41,12 +404,27 @@ def _eligible(row):
                 and math._rational(row['denominator_fraction'])!=0)
 
 
-def _unit_summary(rows,context):
+def _summary_values(row):
+    """Caller-local exact values; retain validation before any reduction."""
+    n=d=v=None
+    if row.get('unit_id') and row['status']=='ok':
+        n,d,v=(math._rational(row[k]) for k in ('numerator_fraction','denominator_fraction','value_fraction'))
+        if not d or n/d!=v:raise ValueError('Inconsistent native result fraction')
+    return dict(numerator=n,denominator=d,value=v,
+        asset=math._rational(row['asset_fraction']) if row.get('asset_fraction') is not None else None,
+        eligible=bool(row.get('unit_id') and row['status']=='ok' and row['applicability']=='applicable' and n is not None and d),
+        calculable=row['status']=='ok' and row.get('value_fraction') is not None)
+
+
+
+
+def _unit_summary(rows,context,parsed):
     """Reduce native contributions, keeping company relations nominal only."""
     units=sorted((r for r in rows if r.get('unit_id')),key=lambda r:r['unit_id'])
-    eligible=[r for r in units if _eligible(r)]
-    calculable=lambda r:r['status']=='ok' and r.get('value_fraction') is not None
-    predicates=dict(expected=lambda r:True,eligible=_eligible,calculable=calculable,
+    eligible_check=lambda r:parsed[id(r)]['eligible']
+    eligible=[r for r in units if eligible_check(r)]
+    calculable=lambda r:parsed[id(r)]['calculable']
+    predicates=dict(expected=lambda r:True,eligible=eligible_check,calculable=calculable,
         missing=lambda r:not calculable(r),not_applicable=lambda r:r['applicability']=='not_applicable' and bool(r.get('applicability_evidence')),
         unknown=lambda r:r['applicability']=='unknown' or (r['applicability']=='not_applicable' and not r.get('applicability_evidence')),
         diagnostic=lambda r:calculable(r) and r['applicability']!='applicable')
@@ -61,8 +439,8 @@ def _unit_summary(rows,context):
     known=[r for r in units if r.get('asset_fraction') is not None]
     unknown=[r['unit_id'] for r in units if r.get('asset_fraction') is None]
     unknown_companies=sorted({c for r in rows if r.get('asset_fraction') is None for c in r.get('companies',[])})
-    total=sum((math._rational(r['asset_fraction']) for r in known),Fraction())
-    covered=sum((math._rational(r['asset_fraction']) for r in known if _eligible(r)),Fraction())
+    total=sum((parsed[id(r)]['asset'] for r in known),Fraction())
+    covered=sum((parsed[id(r)]['asset'] for r in known if eligible_check(r)),Fraction())
     share=covered/total if total else None
     f=math._fraction_field
     assets=dict(reference='contemporaneous_own_'+context['dataset']+'_AT',
@@ -71,11 +449,11 @@ def _unit_summary(rows,context):
         known_asset_fraction=f(total),eligible_known_asset_fraction=f(covered),
         share_of_known_fraction=f(share) if share is not None else None,
         share_of_total_fraction=f(share) if share is not None and not unknown and not unknown_companies else None,
-        flags=['negative_asset_weights'] if any(math._rational(r['asset_fraction'])<0 for r in known) else [])
-    numerator=sum((math._rational(r['numerator_fraction']) for r in eligible),Fraction())
-    denominator=sum((math._rational(r['denominator_fraction']) for r in eligible),Fraction())
+        flags=['negative_asset_weights'] if any(parsed[id(r)]['asset']<0 for r in known) else [])
+    numerator=sum((parsed[id(r)]['numerator'] for r in eligible),Fraction())
+    denominator=sum((parsed[id(r)]['denominator'] for r in eligible),Fraction())
     flags={flag for r in eligible for flag in r.get('flags',[])}
-    if any(math._rational(r['denominator_fraction'])<0 for r in eligible):flags.add('non_convex_denominator_weights')
+    if any(parsed[id(r)]['denominator']<0 for r in eligible):flags.add('non_convex_denominator_weights')
     status='no_eligible_units' if not eligible else 'zero_denominator' if not denominator else 'ok'
     overlap=dict(status='prudential_overlap_unproven' if context['dataset']=='capital' else 'financial_intergroup_exposures_retained' if context['dataset']=='financial' else 'individual_unconsolidated',
         certified_system_total=False,copresence=sorted({canonical(p) for r in units for p in r.get('parent_copresence',[])}))
@@ -88,7 +466,7 @@ def _unit_summary(rows,context):
         missing_reasons={state:sorted(r['unit_id'] for r in units if r['status']==state) for state in sorted({r['status'] for r in units if r['status']!='ok'})},
         annual_summary=context['period'].endswith('12') and context['horizon'] in ('point','ttm'))
     if status=='ok':a=math._valued(a,numerator/denominator)
-    values=sorted(math._rational(r['numerator_fraction'])/math._rational(r['denominator_fraction']) for r in eligible)
+    values=sorted(parsed[id(r)]['value'] for r in eligible)
     d=dict(context,status='ok' if values else 'no_eligible_units',n=len(values),method='empirical_quantile_type2',eligible_units=lists['eligible_units'],flags=a['flags'])
     quantiles={name:math._quantile2(values,p) if values else None for name,p in [('q1',Fraction(1,4)),('median',Fraction(1,2)),('q3',Fraction(3,4))]}
     quantiles['iqr']=quantiles['q3']-quantiles['q1'] if values else None
@@ -123,7 +501,7 @@ def _comparisons(aggregates,context):
     return output
 
 
-def aggregate_unit_results(rows):
+def aggregate_unit_results(rows,*,fields=None):
     """Exact pure reduction of native metric coverage, independently per axis.
 
     Native rows have unit_id/unit_key, membership, companies, own dated cadastro
@@ -131,7 +509,7 @@ def aggregate_unit_results(rows):
     a nominal row with unit_id/unit_key=None; it never contributes a unit/value.
     Duplicate native contributors are rejected, including equal duplicates.
     """
-    groups={};seen=set();seen_ids=set()
+    groups={};seen=set();seen_ids=set();parsed={}
     for row in rows:
         key=tuple(row[k] for k in ('period','dataset','metric','horizon'))
         if row['membership'] not in COHORTS[1:]:raise ValueError('Invalid native membership')
@@ -141,18 +519,16 @@ def aggregate_unit_results(rows):
             seen.add(identity)
             seen_ids.add((key,row['unit_id']))
             if row['unit_key']!=[row['dataset'],TYPES[row['dataset']],row['code']]:raise ValueError('Native coverage identity mismatch')
-            if row['status']=='ok':
-                n,d,v=(math._rational(row[k]) for k in ('numerator_fraction','denominator_fraction','value_fraction'))
-                if not d or n/d!=v:raise ValueError('Inconsistent native result fraction')
             if row['dataset']=='capital' and row.get('asset_fraction') is not None:raise ValueError('Capital own assets unavailable')
         elif row.get('unit_key') is not None or row.get('value_fraction') is not None or row.get('asset_fraction') is not None:
             raise ValueError('Nominal company cannot contribute native value')
+        parsed[id(row)]=_summary_values(row)
         groups.setdefault(key,[]).append(row)
     output={table:[] for table in DERIVED_TABLES[1:]}
     for key,group in sorted(groups.items()):
         base=dict(zip(('period','dataset','metric','horizon'),key));base['id']='|'.join(key)
         categories=[({},group)]
-        for field in AXES:
+        for field in (AXES if fields is None else fields):
             segments={}
             for row in group:
                 # JSON typed keys keep numeric and textual native categories distinct.
@@ -165,7 +541,7 @@ def aggregate_unit_results(rows):
             aggregates={}
             for cohort in COHORTS:
                 selected=subset if cohort=='total' else [r for r in subset if r['membership']==cohort]
-                a,d=_unit_summary(selected,dict(context,id=context['id']+'|'+cohort,cohort=cohort));aggregates[cohort]=a
+                a,d=_unit_summary(selected,dict(context,id=context['id']+'|'+cohort,cohort=cohort),parsed);aggregates[cohort]=a
                 if category:output['segment_coverage'].append(dict(a,distribution=d))
                 else:output['aggregates'].append(a);output['distributions'].append(d)
             output['cohort_comparisons'].extend(_comparisons(aggregates,context))
@@ -254,27 +630,238 @@ def component_periods(name,period,horizon):
     return [previous,period]
 
 
+COMPLEMENT_BINDINGS={
+    'funding':('3','78185','[41000007] + [42000006] + [43000005] + [46000002]'),
+    'repos':('3','78288','[42000006]'),
+    'issuances':('3','78294','[43000005]'),
+    'loans_transfers':('3','78295','[46000002]'),
+    'credit_income':('4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]'),
+}
+
+
+def compile_complement_profile(profile,catalogue,datasets):
+    """Append five finite own-perspective literal bindings; never edit v1.
+
+    One unchanged eight-dimensional catalogue context must cover all sixty
+    core references. A different description, missing quarter or ambiguity is
+    a hard failure, with no name matching or cross-perspective transplantation.
+    """
+    from .ifdata_variable_catalog import DIMENSIONS
+    result=deepcopy(profile)
+    periods=[f'{year}{quarter}' for year in range(2010,2025) for quarter in ('03','06','09','12')]
+    for dataset in datasets:
+        if dataset not in ('financial','individual'):raise ValueError('Complement perspective not approved')
+        for role,(report,account,description) in COMPLEMENT_BINDINGS.items():
+            candidates=[r for r in catalogue if r.get('dataset')==dataset and r.get('NumeroRelatorio')==report
+                        and r.get('Conta')==account and any(str(p) in periods for p in r.get('periodos',[]))]
+            if len(candidates)!=1:raise ValueError('Missing or ambiguous complement catalogue context: '+dataset+'/'+role)
+            row=candidates[0]
+            if row.get('TipoInstituicao')!=TYPES[dataset] or row.get('DescricaoColuna')!=description:
+                raise ValueError('Unreviewed complement literal context: '+dataset+'/'+role)
+            observed=[str(p) for p in row['periodos'] if '201003'<=str(p)<='202412']
+            if sorted(observed)!=periods or any(k not in row for k in DIMENSIONS):
+                raise ValueError('Incomplete complement catalogue periods or dimensions: '+dataset+'/'+role)
+            literal={k:row[k] for k in DIMENSIONS}
+            digest=hashlib.sha256(json.dumps(literal,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+            result['contexts'].append(dict(component=math.COMPONENT_NAMES[role],literal_context=literal,context_sha256=digest,
+                compatibility=digest,periods=periods,window_rule='native-semester-analysis-v2' if role=='credit_income' else 'stock',
+                sign_rule='native_signed_no_abs',proof_rule='literal_catalogue_60_core_references',
+                proof='Issue152 / research143; own dataset and TipoInstituicao, unchanged literal accounts; no cross-perimeter equivalence'))
+    return result
+
+
+def calculate_complements(baseline,expected_baseline_manifest_sha256,output,*,periods,datasets=None,metrics=None,formats=('json','csv','parquet')):
+    """Calculate approved additions from authenticated native components only.
+
+    Select output references explicitly (e.g. periods=['202412'], metrics=
+    ['LA','LC','LF-DEP','LF-OC','LF-EM','LF-REP']). Financial is the default;
+    Individual is its own optional perspective. Flows emit quarter and TTM.
+    Results, unit coverage and deduplicated components use the existing Writer
+    in JSON/CSV/Parquet. The additive contexts file resolves binding_ref.
+    This package contains unit contributions, never a system aggregate.
+    """
+    from time import perf_counter
+    import duckdb
+    from .ifdata_odata import CONTRACT as NATIVE_CONTRACT,COLUMNS
+    from .ifdata_variable_catalog import CONTRACT as CAT_CONTRACT,query_catalog
+    from .ifdata_cadastro import CONTRACT as CAD_CONTRACT
+    datasets=['financial'] if datasets is None else datasets
+    metrics=list(math.COMPLEMENT_METRICS) if metrics is None else metrics
+    if (not isinstance(periods,list) or not periods or len(set(periods))!=len(periods)
+        or any(not isinstance(p,str) or math._period_date(p) is None or not '201003'<=p<='202412' for p in periods)):
+        raise ValueError('Invalid complement periods')
+    if (not isinstance(datasets,list) or not datasets or len(set(datasets))!=len(datasets)
+        or any(d not in ('financial','individual') for d in datasets)):
+        raise ValueError('Invalid complement perspectives')
+    if (not isinstance(metrics,list) or not metrics or len(set(metrics))!=len(metrics)
+        or any(m not in math.COMPLEMENT_METRICS for m in metrics)):
+        raise ValueError('Invalid complement metrics')
+    if tuple(formats) not in (('json','csv','parquet'),('parquet',)):raise ValueError('Invalid complement output formats')
+    started=perf_counter();root=Path(baseline).resolve();output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    if not isinstance(expected_baseline_manifest_sha256,str) or not re.fullmatch('[0-9a-f]{64}',expected_baseline_manifest_sha256):
+        raise ValueError('External baseline manifest pin required')
+    if math._digest_file(root/'manifest.json')!=expected_baseline_manifest_sha256:raise ValueError('Baseline manifest hash mismatch')
+    main=math._json_unique((root/'manifest.json').read_bytes())
+    if main.get('contract')!=CONTRACT or main.get('stage')!='coverage-and-aggregation':raise ValueError('Accepted universe baseline required')
+    profile=load_profile(expected_sha256=main['profile_sha256'])
+    guards={}
+    def identity(path):
+        s=_ordinary(path).stat();return (s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    def protect(path):guards[path]=identity(path)
+    def no_overlap(source):
+        if output==source or source in output.parents or output in source.parents:raise ValueError('Complement output overlaps source')
+    def authenticate(spec,contract,selected=None):
+        source=Path(spec['root']).resolve();no_overlap(source);path=source/'manifest.json'
+        if math._digest_file(path)!=spec['expected_manifest_sha256']:raise ValueError('Source manifest hash mismatch')
+        manifest=math._json_unique(path.read_bytes())
+        if manifest.get('contract')!=contract:raise ValueError('Source contract mismatch')
+        protect(path)
+        if selected is not None:
+            entries=[e for e in manifest['files'] if str(e.get('period')) in selected]
+            if len(entries)!=len(selected) or {str(e.get('period')) for e in entries}!=set(selected):raise ValueError('Missing or ambiguous native parts')
+            for entry in entries:_capture_payload(source,entry);protect(math._contained(source,entry['file']))
+        return source,manifest
+    no_overlap(root);protect(root/'manifest.json');protect(PROFILE_PATH)
+    catroot,catmanifest=authenticate(main['inputs']['catalogue'],CAT_CONTRACT)
+    catalogue=query_catalog(catroot,'select * from catalogo_variaveis')
+    for e in catmanifest['files']:protect(math._contained(catroot,e['file']))
+    profile=compile_complement_profile(profile,catalogue,datasets)
+    catalogue_keys={(canonical({k:r[k] for k in c['literal_context']}),str(p)) for c in profile['contexts'] for r in catalogue
+                    if all(type(r.get(k)) is type(v) and r.get(k)==v for k,v in c['literal_context'].items()) for p in r['periodos']}
+    horizons={m:('quarter','ttm') if m in math.COMPLEMENT_FLOW_METRICS else ('point',) for m in metrics}
+    required=sorted({n for m in metrics for n in math.COMPLEMENT_METRICS[m]}|{'AT'})
+    dependencies=sorted({p for target in periods for m in metrics for h in horizons[m] for n in math.COMPLEMENT_METRICS[m] for p in component_periods(n,target,h)}|set(periods))
+    native_periods=[p for p in dependencies if p!='200912'];sources={};inventories={}
+    for ds in datasets:
+        spec=main['inputs'][ds]
+        if catmanifest.get('inputs',{}).get(ds,{}).get('manifest_sha256')!=spec['expected_manifest_sha256']:
+            raise ValueError('Catalogue source lineage mismatch')
+        sources[ds]=authenticate(spec,NATIVE_CONTRACT,native_periods)
+        inventories[ds]=[e for e in sources[ds][1]['files'] if str(e.get('period')) in native_periods]
+    openings=None;cadres={}
+    if '200912' in dependencies:
+        spec=main.get('config',{}).get('opening')
+        if not spec:raise ValueError('Authenticated admitted opening input required')
+        # One opening package contains both perspectives, so its finite inventory
+        # is authenticated as a whole before the typed window selects each one.
+        op_root,op_manifest=math._authenticate(spec,NATIVE_CONTRACT);no_overlap(op_root)
+        policy=profile['opening_policy']
+        if (op_manifest.get('source_manifest_sha256')!=policy['raw_manifest_sha256']
+            or op_manifest.get('selection')!={'periods':['200912'],'types':['2','3'],'reports':['1','2']}
+            or main['inputs']['cadastro']['expected_manifest_sha256']!=policy['cadastro_manifest_sha256']
+            or any(e.get('source_sha256') not in {p['sha256'] for p in policy['pages']} for e in op_manifest['files'])):
+            raise ValueError('Unreviewed opening source/cadastro')
+        protect(op_root/'manifest.json')
+        for e in op_manifest['files']:protect(math._contained(op_root,e['file']))
+        openings=(op_root,op_manifest)
+        cadsource=authenticate(main['inputs']['cadastro'],CAD_CONTRACT,['200912','201003'])
+        with duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+            _window(conn,cadsource,['200912','201003'],view='cad')
+            for row in math._records(conn.execute('select * from cad')):
+                key=(row['CodInst'],row['Data'])
+                if key in cadres and cadres[key]!=row:raise ValueError('Ambiguous opening cadastro')
+                cadres[key]=row
+        sources['cadastro']=cadsource
+    unit_entries=[e for e in main['files'] if e['file']=='unit_periods.csv']
+    if len(unit_entries)!=1:raise ValueError('Missing baseline unit inventory')
+    ue=unit_entries[0];_capture_payload(root,ue);up=math._contained(root,ue['file']);protect(up)
+    units={};count=0;csv.field_size_limit(10000000)
+    with up.open(encoding='utf-8',newline='') as f:
+        for raw in csv.DictReader(f):
+            count+=1
+            if raw['dataset'] not in datasets or raw['period'] not in periods:continue
+            u=math._json_unique(raw['payload'].encode('utf-8'));ds=raw['dataset'];p=raw['period'];code=u['code'];key=(ds,code,p)
+            if key in units or u['dataset']!=ds or u['period']!=p or u['unit_id']!='|'.join((ds,TYPES[ds],code,p)):
+                raise ValueError('Ambiguous complement native unit')
+            units[key]=u
+    if count!=ue['rows'] or count!=main['tables']['unit_periods'] or not units:raise ValueError('Native population count mismatch')
+    if {(ds,p) for ds,_,p in units}!={(ds,p) for ds in datasets for p in periods}:raise ValueError('Missing selected population perspective/period')
+    for path,before in guards.items():
+        if identity(path)!=before:raise ValueError('Complement input changed during authentication')
+    output.mkdir(parents=True);files=[]
+    supplement=output/'complement-contexts.json';supplement.write_text(canonical(profile)+'\n',encoding='utf-8')
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+        writers={t:Writer(output,t,stack,formats=formats) for t in ('components','results','unit_coverage')}
+        for ds in datasets:
+            _window(conn,sources[ds],native_periods,dataset=ds)
+            if openings:_window(conn,openings,['200912'],dataset=ds,opening=True,view='opening')
+            codes=sorted({code for dataset,code,p in units if dataset==ds})
+            accounts=sorted({c['literal_context']['Conta'] for c in profile['contexts'] if c['literal_context']['dataset']==ds and c['component'] in {math.COMPONENT_NAMES[n] for n in required}})
+            columns=','.join('"'+c+'"' for c in COLUMNS)
+            for offset in range(0,len(codes),32):
+                batch=codes[offset:offset+32]
+                sql='select '+columns+' from native where CodInst in (select unnest(?)) and Conta in (select unnest(?))'
+                rows=math._records(conn.execute(sql,[batch,accounts]));indexed={};cache={};opening_rows=[]
+                for row in rows:indexed.setdefault((row['CodInst'],row['AnoMes']),[]).append(row)
+                if openings:opening_rows=math._records(conn.execute(sql.replace('from native','from opening'),[batch,accounts]))
+                def component(code,name,p):
+                    key=(code,name,p)
+                    if key not in cache:
+                        ob=(opening_observation(profile,name,ds,code,opening_rows,indexed.get((code,'201003'),[]),cadres) if p=='200912'
+                            else math.resolve_component(profile,math.COMPONENT_NAMES[name],ds,code,p,indexed.get((code,p),[])))
+                        if p!='200912' and ob['binding'] and (canonical(ob['binding']['literal_context']),p) not in catalogue_keys:
+                            ob.update(status='catalogue_context_missing',token=None)
+                        ob.update(id=hashlib.sha256(('|'.join((ds,TYPES[ds],code,p,name))).encode()).hexdigest()[:32],
+                                  component=name,dataset=ds,code=code,status=ob.get('status','ok'))
+                        cache[key]=ob;writers['components'].append(_compact_component(ob))
+                    return cache[key]
+                for code in batch:
+                    for p in sorted(periods):
+                        unit=units.get((ds,code,p))
+                        if unit is None:continue
+                        asset=component(code,'AT',p);av,ast=math._native_value(asset)
+                        if not unit.get('own_cadastro'):av,ast=None,'missing_dated_cadastro'
+                        for metric in metrics:
+                            for horizon in horizons[metric]:
+                                observations={n:[_thin(component(code,n,d)) for d in component_periods(n,p,horizon)] for n in math.COMPLEMENT_METRICS[metric]}
+                                result=math.evaluate_metric(metric,dict(period=p,components=observations,financial_statement=True),horizon)
+                                result.update(id=unit['unit_id']+'|'+metric+'|'+horizon,unit_id=unit['unit_id'],unit_key=[ds,TYPES[ds],code],dataset=ds,code=code,membership=unit['membership'])
+                                result=_normalize_temporal(result);writers['results'].append(result)
+                                covered={k:deepcopy(result.get(k)) for k in ('period','dataset','code','metric','horizon','status','applicability','applicability_evidence','value_fraction','numerator_fraction','denominator_fraction','flags','limits','annual_summary')}
+                                covered.update(id=result['id']+'|coverage',result_id=result['id'],row_kind='native_unit',unit_id=unit['unit_id'],unit_key=result['unit_key'],
+                                    membership=unit['membership'],companies=unit['companies'],asset_fraction=math._fraction_field(av) if av is not None else None,
+                                    asset_status=ast or 'ok',target_cadastro=dict(Data=p,**unit['classifications']) if unit.get('classifications') is not None else None)
+                                writers['unit_coverage'].append(covered)
+        for writer in writers.values():files.extend(writer.finish(conn))
+        counts={t:w.count for t,w in writers.items()}
+    for path,before in guards.items():
+        if identity(path)!=before:raise ValueError('Complement input changed during calculation')
+    files.append(dict(file=supplement.name,sha256=math._digest_file(supplement)))
+    manifest=dict(contract='ifdata-complement-analysis-v1',scope=dict(periods=sorted(periods),datasets=datasets,metrics=metrics,horizons=horizons),
+        baseline=dict(root=str(root),expected_manifest_sha256=expected_baseline_manifest_sha256),inputs={k:main['inputs'][k] for k in ['catalogue']+datasets},
+        opening=main.get('config',{}).get('opening') if openings else None,native_partitions=inventories,unit_periods=ue,
+        profile_sha256=main['profile_sha256'],contexts_file=supplement.name,dependency_periods=dependencies,tables=counts,files=files,
+        producer_sha256=math._digest_file(Path(__file__)),math_sha256=math._digest_file(Path(math.__file__)),elapsed_seconds=perf_counter()-started,
+        limits=['Unit contributions only; compose complete population before system aggregation','Baseline membership is retained; updated membership is a separate composition input'])
+    (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf-8')
+    return manifest
+
+
 class Writer:
-    def __init__(self,output,table,stack):
-        self.output,self.table,self.count,self.max_line=output,table,0,2*1024*1024
-        self.js=stack.enter_context((output/(table+'.json')).open('w',encoding='utf-8'))
-        self.cs=stack.enter_context((output/(table+'.csv')).open('w',encoding='utf-8',newline=''))
+    def __init__(self,output,table,stack,*,formats=('json','csv','parquet')):
+        if tuple(formats) not in (('json','csv','parquet'),('parquet',)):
+            raise ValueError('Writer supports historical formats or parquet only')
+        self.formats=tuple(formats);self.output,self.table,self.count,self.max_line=output,table,0,2*1024*1024
+        self.js=stack.enter_context((output/(table+'.json')).open('w',encoding='utf-8')) if 'json' in formats else None
+        self.csv_path=output/(table+'.csv' if 'csv' in formats else '.'+table+'-buffer.csv')
+        self.cs=stack.enter_context(self.csv_path.open('w',encoding='utf-8',newline=''))
         self.writer=csv.writer(self.cs,quoting=csv.QUOTE_NOTNULL);self.writer.writerow(math.TABLE_COLUMNS)
-        self.js.write('[')
+        if self.js:self.js.write('[')
     def append(self,row):
-        payload=canonical(row);self.js.write((',' if self.count else '')+'\n'+payload)
+        payload=canonical(row)
+        if self.js:self.js.write((',' if self.count else '')+'\n'+payload)
         self.writer.writerow([row.get(k) for k in math.TABLE_COLUMNS[:-1]]+[payload]);self.count+=1
         self.max_line=max(self.max_line,len(payload.encode('utf-8'))*4+4096)
     def finish(self,conn):
-        self.js.write('\n]\n' if self.count else ']\n');self.js.close();self.cs.close()
-        columns='{'+','.join("'"+k+"':'VARCHAR'" for k in math.TABLE_COLUMNS)+'}'
-        # The parallel scanner releases buffers on large escaped CSV streams;
-        # the configured single thread and insertion-order preservation remain.
+        if self.js:self.js.write('\n]\n' if self.count else ']\n');self.js.close()
+        self.cs.close();columns='{'+','.join("'"+k+"':'VARCHAR'" for k in math.TABLE_COLUMNS)+'}'
         conn.execute('copy (select * from read_csv($source,header=true,auto_detect=false,columns='+columns+
             ",delim=',',quote='\"',escape='\"',nullstr='',allow_quoted_nulls=false,parallel=true,max_line_size=$limit)) "+
             'to $destination (format parquet,compression zstd,row_group_size 2048)',
-            dict(source=str(self.output/(self.table+'.csv')),limit=str(self.max_line),destination=str(self.output/(self.table+'.parquet'))))
-        return [dict(file=self.table+'.'+ext,sha256=math._digest_file(self.output/(self.table+'.'+ext)),rows=self.count) for ext in ('json','csv','parquet')]
+            dict(source=str(self.csv_path),limit=str(self.max_line),destination=str(self.output/(self.table+'.parquet'))))
+        if 'csv' not in self.formats:self.csv_path.unlink()
+        return [dict(file=self.table+'.'+ext,sha256=math._digest_file(self.output/(self.table+'.'+ext)),rows=self.count) for ext in self.formats]
 
 
 def _window(conn,source,periods,dataset=None,opening=False,view="native"):
@@ -1374,3 +1961,405 @@ def admit_universe_unit_checkpoint(config,source_root,output,*,evidence,expected
             raise ValueError('Original failed root inventory changed during admission')
         if {p.name for p in output.iterdir()}!={e['file'] for e in inventory}:raise ValueError('Checkpoint output inventory changed')
     return _accept_checkpoint(output,candidate,producer,guard)
+
+
+COMPOSITION_CONTRACT='ifdata-composed-analysis-v1'
+COMPOSITION_TABLES=('unit_periods','unit_coverage','company_coverage','representation_stocks',
+                    'aggregates','distributions','segment_coverage','cohort_comparisons','joint_cells')
+COMPOSITION_AXES=SELECTIVE_AXES+('SrAnalitico',)
+
+
+def _composition_scope_allows(scope,row):
+    """Match explicit singular selective and plural additive source scopes."""
+    for singular,plural in (('period','periods'),('dataset','datasets'),('metric','metrics'),('code','codes')):
+        values=[scope[singular]] if singular in scope else scope.get(plural)
+        if values is not None and row.get(singular) not in values:return False
+    horizons=scope.get('horizons')
+    if 'horizon' in scope and row.get('horizon')!=scope['horizon']:return False
+    if isinstance(horizons,dict) and row.get('horizon') not in horizons.get(row.get('metric'),[]):return False
+    if isinstance(horizons,list) and row.get('horizon') not in horizons:return False
+    return True
+
+
+def _composition_result_signature(row):
+    return canonical({k:row.get(k) for k in ('status','applicability','applicability_evidence','value_fraction',
+        'numerator_fraction','denominator_fraction','limits','annual_summary')})
+
+
+def _composition_stock_summary(rows,role,dataset,*,stock_cache=None,eligible_cache=None):
+    native=[r for r in rows if r.get('unit_id')]
+    def amount(r):
+        return stock_cache[r['unit_id']][role] if stock_cache is not None else math._rational(r['representation_stocks'][role]['fraction'])
+    def eligible(r):return eligible_cache[r['unit_id']] if eligible_cache is not None else _eligible(r)
+    known=[r for r in native if r['representation_stocks'][role]['fraction'] is not None]
+    unknown=[r['unit_id'] for r in native if r['representation_stocks'][role]['fraction'] is None]
+    total=sum((amount(r) for r in known),Fraction())
+    selected=sum((amount(r) for r in known if eligible(r)),Fraction())
+    missing_companies=sorted({c for r in rows if not r.get('unit_id') or r['representation_stocks'][role]['fraction'] is None for c in r['companies']})
+    share=selected/total if total else None;f=math._fraction_field
+    return dict(reference='contemporaneous_own_'+dataset+'_'+role,status='own_stocks_unavailable' if dataset=='capital' else 'partial_known_stocks' if unknown or missing_companies else 'known_stocks',
+        known_stock_fraction=f(total),eligible_known_stock_fraction=f(selected),share_of_known_fraction=f(share) if share is not None else None,
+        share_of_total_fraction=f(share) if share is not None and not unknown and not missing_companies else None,
+        known_units=[r['unit_id'] for r in known],unknown_units=unknown,unknown_companies=missing_companies,
+        known_unit_count=len(known),unknown_unit_count=len(unknown),eligible_known_unit_count=sum(eligible(r) for r in known),
+        negative_known_unit_count=sum(amount(r)<0 for r in known),
+        flags=['negative_stock_weights'] if any(amount(r)<0 for r in known) else [])
+
+
+JOINT_DIMENSIONS=('Tcb','SegmentoTb','Tc','Td','Sr','SrAnalitico')
+
+
+def _composition_joint_cells(rows,*,stock_cache=None,eligible_cache=None):
+    """Observed six-dimensional disjoint cells; never a Cartesian product.
+
+    Each native contribution appears once. Missing admitted companies occupy
+    their observed missing category and never acquire a reporting unit/value.
+    All eligible fractions survive for exact Type2 quantiles after AND filters.
+    """
+    rows=list(rows);groups={};parsed={};seen=set()
+    for row in rows:
+        if row['membership'] not in COHORTS[1:]:raise ValueError('Invalid joint-cell cohort')
+        context=tuple(row[k] for k in ('period','dataset','metric','horizon'))
+        if row.get('unit_id'):
+            identity=context+(canonical(row['unit_key']),)
+            if identity in seen:raise ValueError('Duplicate joint-cell native contributor')
+            seen.add(identity)
+            if row['unit_key']!=[row['dataset'],TYPES[row['dataset']],row['code']]:raise ValueError('Joint-cell native identity mismatch')
+        elif row.get('unit_key') is not None or row.get('value_fraction') is not None or row.get('asset_fraction') is not None:
+            raise ValueError('Nominal joint-cell row cannot contribute a native value')
+        parsed[id(row)]=_summary_values(row)
+        dimensions={field:dict(zip(('state','value'),_category(row,field))) for field in JOINT_DIMENSIONS}
+        key=context+(row['membership'],canonical(dimensions))
+        groups.setdefault(key,[]).append(row)
+    output=[]
+    for key,subset in sorted(groups.items()):
+        if not any(r.get('unit_id') or r.get('companies') for r in subset):continue
+        context=dict(zip(('period','dataset','metric','horizon','cohort'),key[:5]));dimensions=json.loads(key[5])
+        context['id']='|'.join(key[:5])+'|joint|'+hashlib.sha256(key[5].encode()).hexdigest()[:24]
+        summary,distribution=_unit_summary(subset,context,parsed)
+        summary.update(dimensions=dimensions,distribution=distribution,
+            distribution_sorted_fractions=[[str(parsed[id(r)]['value'].numerator),str(parsed[id(r)]['value'].denominator)]
+                for r in sorted((r for r in subset if parsed[id(r)]['eligible']),key=lambda r:parsed[id(r)]['value'])],
+            source_counts=dict(rows=len(subset),native_units=sum(bool(r.get('unit_id')) for r in subset),
+                eligible_units=sum(parsed[id(r)]['eligible'] for r in subset),nominal_companies=len({c for r in subset if not r.get('unit_id') for c in r['companies']})),
+            partition_scope='one_observed_cell_per_native_contribution_and_admitted_missing_company')
+        summary['representation_coverage']={role:_composition_stock_summary(subset,role,context['dataset'],stock_cache=stock_cache,eligible_cache=eligible_cache) for role in ('credit','PL')}
+        at_known=[r for r in subset if r.get('unit_id') and r.get('asset_fraction') is not None]
+        summary['asset_coverage'].update(known_unit_count=len(at_known),unknown_unit_count=sum(bool(r.get('unit_id')) and r.get('asset_fraction') is None for r in subset),
+            eligible_known_unit_count=sum(parsed[id(r)]['eligible'] for r in at_known),negative_known_unit_count=sum(parsed[id(r)]['asset']<0 for r in at_known))
+        output.append(_composition_compact_summary(summary))
+    if sum(c['source_counts']['native_units'] for c in output)!=len(seen):raise ValueError('Joint-cell native partition mismatch')
+    return output
+
+
+def _composition_compact_summary(row,limit=8):
+    """Keep exact counts and all nominal companies; unit identities live in coverage."""
+    result=deepcopy(row);counts={}
+    def visit(value,path=''):
+        if not isinstance(value,dict):return
+        for key,item in value.items():
+            name=path+'.'+key if path else key
+            if isinstance(item,list) and (key.endswith('_units') or key=='eligible_intersection'):
+                counts[name]=len(item);value[key]=item[:limit]
+            elif isinstance(item,dict):visit(item,name)
+    visit(result)
+    if 'missing_reasons' in result:
+        result['missing_reason_counts']={k:len(v) for k,v in result['missing_reasons'].items()}
+        result['missing_reasons']={k:v[:limit] for k,v in result['missing_reasons'].items()}
+    result.update(unit_lists_complete=False,unit_lists_limit=limit,unit_list_counts=counts)
+    return result
+
+
+def compose_analysis(config,output):
+    """Compose pinned stored contributions, never recalculate legacy formulae.
+
+    Config requires baseline, membership and sr descriptors {root,
+    expected_manifest_sha256}, corrections/complements lists of those descriptors
+    plus their exact manifest scope, periods, datasets and complement_metrics.
+    Output selection may be a reviewed slice; every selected native contribution
+    and every declared complement must be complete. Full core runs explicitly
+    select sixty periods. Only consumed Parquet files are authenticated.
+    """
+    import duckdb
+    from time import perf_counter
+    started=perf_counter();required={'baseline','membership','sr','corrections','complements','periods','datasets','complement_metrics','analytical_company_scope'}
+    if not isinstance(config,dict) or set(config)!=required:raise ValueError('Explicit composition config required')
+    config=deepcopy(config);periods=config['periods'];datasets=config['datasets'];new_metrics=config['complement_metrics']
+    if config['analytical_company_scope']!='admitted_associations_2024':raise ValueError('Explicit admitted_associations_2024 analytical scope required')
+    if (not isinstance(periods,list) or not periods or len(set(periods))!=len(periods)
+        or any(not isinstance(p,str) or math._period_date(p) is None or not '201003'<=p<='202412' for p in periods)):
+        raise ValueError('Invalid composition periods')
+    if not isinstance(datasets,list) or not datasets or len(set(datasets))!=len(datasets) or any(d not in TYPES for d in datasets):raise ValueError('Invalid composition datasets')
+    if not isinstance(new_metrics,list) or not new_metrics or len(set(new_metrics))!=len(new_metrics) or any(m not in math.COMPLEMENT_METRICS for m in new_metrics):raise ValueError('Invalid composition complement metrics')
+    if not isinstance(config['corrections'],list) or not isinstance(config['complements'],list) or not config['complements']:raise ValueError('Explicit nonempty complement inputs required')
+    output=Path(output).resolve()
+    if output.exists():raise FileExistsError(output)
+    sources=[];guards={};consumed={}
+    def identity(path):
+        s=_ordinary(path).stat();return s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns
+    def authenticate(spec,contracts):
+        if set(spec)-{'root','expected_manifest_sha256','scope'} or not {'root','expected_manifest_sha256'}<=set(spec):raise ValueError('Explicit source pin required')
+        pin=spec['expected_manifest_sha256'];root=Path(spec['root']).resolve();path=root/'manifest.json'
+        if output==root or root in output.parents or output in root.parents:raise ValueError('Composition output overlaps source')
+        if not isinstance(pin,str) or not re.fullmatch('[a-f0-9]{64}',pin) or math._digest_file(path)!=pin:raise ValueError('Composition source manifest pin mismatch')
+        manifest=math._json_unique(path.read_bytes())
+        if manifest.get('contract') not in contracts:raise ValueError('Composition input contract mismatch')
+        entries={}
+        for e in manifest.get('files',[]):
+            if e['file'] in entries:raise ValueError('Duplicate composition input inventory')
+            entries[e['file']]=e
+        guards[path]=identity(path);consumed[path]=pin
+        result=dict(root=root,manifest=manifest,entries=entries,pin=pin,spec=spec);sources.append(result)
+        return result
+    base=authenticate(config['baseline'],{CONTRACT})
+    if base['manifest'].get('stage')!='coverage-and-aggregation' or not set(periods)<=set(base['manifest'].get('periods',[])):
+        raise ValueError('Composition requires admitted baseline periods')
+    basepin=base['pin'];membership=authenticate(config['membership'],{'ifdata-updated-membership-v1'})
+    sr=authenticate(config['sr'],{'ifdata-sr-attribution-v1'})
+    if membership['manifest'].get('baseline_manifest_sha256')!=basepin or sr['manifest'].get('baseline',{}).get('sha256')!=basepin:
+        raise ValueError('Membership/Sr baseline lineage mismatch')
+    if membership['manifest'].get('known_nominal_companies')!=55 or not set(periods)<=set(membership['manifest'].get('periods',[])):
+        raise ValueError('Complete admitted55 membership required')
+    overlays=[]
+    for kind in ('corrections','complements'):
+        for spec in config[kind]:
+            source=authenticate(spec,{'ifdata-selective-analysis-v1','ifdata-caixa-transition-analysis-v1'} if kind=='corrections' else {'ifdata-complement-analysis-v1'})
+            if source['manifest'].get('baseline',{}).get('expected_manifest_sha256')!=basepin or source['manifest'].get('scope')!=spec.get('scope'):
+                raise ValueError('Overlay scope or baseline lineage mismatch')
+            source.update(kind=kind,scope=spec['scope']);overlays.append(source)
+    def consume(source,name):
+        if name not in source['entries']:raise ValueError('Missing consumed composition input: '+name)
+        entry=source['entries'][name];path=math._contained(source['root'],name)
+        _capture_payload(source['root'],entry);guards[path]=identity(path);consumed[path]=entry['sha256']
+        return path
+    def origin(source,row,kind):
+        return dict(kind=kind,root=str(source['root']),expected_manifest_sha256=source['pin'],table='unit_coverage',result_id=row.get('result_id'),coverage_id=row['id'])
+    def rowkey(row):return tuple(row.get(k) for k in ('dataset','code','period','metric','horizon'))
+    immutable_count=patched_count=nominal_analytical_count=0;joint_totals=dict(rows=0,native_units=0,eligible_units=0,nominal_companies=0);output.mkdir(parents=True)
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'512MiB','temp_directory':str(output/'.duckdb-temp')}) as conn:
+        for source,names,prefix in [(base,('unit_periods','unit_coverage','components'),'base'),(membership,('companies','company_quarter_map','unit_membership'),'member'),(sr,('attributes',),'sr')]:
+            for name in names:
+                path=consume(source,name+'.parquet');conn.from_parquet(str(path)).create_view(prefix+'_'+name)
+        for i,source in enumerate(overlays):
+            source['view']='overlay_'+str(i);conn.from_parquet(str(consume(source,'unit_coverage.parquet'))).create_view(source['view'])
+        def rows(view,where='',params=()):
+            return [math._json_unique(row[0].encode('utf-8')) for row in conn.execute('select payload from '+view+(' where '+where if where else ''),params).fetchall()]
+        companies=rows('member_companies');ids=[r['company_cnpj14'] for r in companies]
+        if len(ids)!=55 or len(set(ids))!=55:raise ValueError('Membership nominal55 identity mismatch')
+        company_by_id={c['company_cnpj14']:c for c in companies}
+        analytical_ids={c['company_cnpj14'] for c in companies if c.get('principal_state')=='admitted_association'}
+        if len(analytical_ids)!=32 or sum(c.get('principal_state')=='no_admitted_principal' for c in companies)!=23:
+            raise ValueError('Analytical scope requires32 admitted/23 no principal registry identities')
+        writers={t:Writer(output,t,stack,formats=('parquet',)) for t in COMPOSITION_TABLES}
+        # Count and scope checks cover every overlay row, even those outside the
+        # selected review slice. No undeclared correction can hide in a file.
+        overlay_counts={}
+        for source in overlays:
+            view=source['view'];count=0
+            if conn.execute('select count(*) from (select dataset,code,period,metric,horizon,count(*) as n from '+view+' group by all having n>1)').fetchone()[0]:
+                raise ValueError('Duplicate overlay native contribution')
+            cursor=conn.execute('select payload from '+view)
+            while batch:=cursor.fetchmany(4096):
+                for item in batch:
+                    r=math._json_unique(item[0].encode('utf-8'));key=rowkey(r);count+=1
+                    if not r.get('unit_id') or not _composition_scope_allows(source['scope'],r):raise ValueError('Overlay row outside scope')
+            expected=source['manifest'].get('tables',{}).get('unit_coverage')
+            if count!=expected:raise ValueError('Overlay consumed row count mismatch')
+            overlay_counts[view]=count
+        for period in sorted(periods):
+            maps=rows('member_company_quarter_map',"json_extract_string(payload,'$.period')=?",[period])
+            if len(maps)!=55 or {r['company_cnpj14'] for r in maps}!=set(ids):raise ValueError('Company quarter map incomplete or duplicate')
+            for dataset in datasets:
+                where="json_extract_string(payload,'$.period')=? and json_extract_string(payload,'$.dataset')=?"
+                units=rows('base_unit_periods',where,[period,dataset]);updated=rows('member_unit_membership',where,[period,dataset]);attributes=rows('sr_attributes',where,[period,dataset])
+                def keyed(items,key):
+                    result={}
+                    for r in items:
+                        k=r[key]
+                        if k in result:raise ValueError('Duplicate composition '+key)
+                        result[k]=r
+                    return result
+                native=keyed(units,'unit_id');members=keyed(updated,'unit_id');attrs=keyed(attributes,'unit_id')
+                if set(native)!=set(members) or set(native)!=set(attrs):raise ValueError('Membership/Sr native population mismatch')
+                by_code={};stock_by_code={};stock_cache={}
+                if len({r['code'] for r in units})!=len(units):raise ValueError('Duplicate native code within composition window')
+                selected_stocks=rows('base_components',"period=? and dataset=? and json_extract_string(payload,'$.analysis_period')=? and json_extract_string(payload,'$.component') in ('AT','credit','PL')",[period,dataset,period]) if dataset!='capital' else []
+                obs={}
+                for ob in selected_stocks:
+                    key=(ob['code'],ob['component'])
+                    if key in obs:raise ValueError('Ambiguous contemporaneous representation stock')
+                    if ob.get('unit_key')!=[dataset,TYPES[dataset],ob['code']] or ob.get('analysis_period')!=period or ob.get('period')!=period:raise ValueError('Representation stock identity mismatch')
+                    obs[key]=ob
+                for uid,unit in native.items():
+                    updated=members[uid];attribute=attrs[uid];code=unit['code']
+                    if uid!='|'.join((dataset,TYPES[dataset],code,period)):raise ValueError('Native unit identity mismatch')
+                    signature=lambda r:canonical({k:r.get(k) for k in ('unit_id','dataset','code','period','classifications','own_cadastro')})
+                    if signature(unit)!=signature(updated):raise ValueError('Membership changed original native attributes')
+                    cad=unit.get('classifications');original=(cad or {}).get('Sr')
+                    if any(attribute.get(k)!=unit.get(k) for k in ('unit_id','dataset','code','period')) or attribute.get('sr_original')!=original:
+                        raise ValueError('Sr original or native identity mismatch')
+                    if 'native_cadastro' in attribute and attribute['native_cadastro']!=unit.get('own_cadastro'):raise ValueError('Sr dated cadastro mismatch')
+                    if original not in (None,'') and attribute.get('sr_analitico')!=original:raise ValueError('Sr analytical override of observed original')
+                    if not set(updated['companies'])<=set(ids) or updated['membership'] not in COHORTS[1:]:raise ValueError('Unrecognized nominal membership')
+                    item=deepcopy(updated);item['sr_attribute']=dict(root=str(sr['root']),expected_manifest_sha256=sr['pin'],attribute_id=uid,
+                        sr_original=attribute['sr_original'],sr_analitico=attribute.get('sr_analitico'),status=attribute['status'],method=attribute.get('method'))
+                    item['sr_analytic_status']=attribute['status']
+                    if cad is not None or attribute['status'] in ('derived','conflict'):item['classifications']=dict(cad or {},SrAnalitico=attribute.get('sr_analitico'))
+                    writers['unit_periods'].append(item);by_code[code]=(unit,updated,attribute)
+                    values={};stock_cache[uid]={}
+                    for role in ('AT','credit','PL'):
+                        ob=obs.get((code,role));value,status=math._native_value(ob) if ob else (None,'component_missing')
+                        if ob and ob.get('scale')!='BRL':value,status=None,'invalid_scale'
+                        elif ob and ob.get('window_rule')!='stock':value,status=None,'incompatible_window'
+                        elif ob and (not (ob.get('binding_ref') or ob.get('binding')) or not ob.get('sources')):value,status=None,'unverified_stock_source'
+                        if dataset=='capital':value,status=None,'own_stocks_unavailable'
+                        elif not unit.get('own_cadastro') or unit['own_cadastro'].get('Data')!=period or unit['own_cadastro'].get('CodInst')!=code:
+                            value,status=None,'missing_dated_cadastro'
+                        stock_cache[uid][role]=value
+                        values[role]=dict(fraction=math._fraction_field(value) if value is not None else None,status=status or 'ok',component_ref=ob.get('id') if ob else None)
+                    stock_by_code[code]=values
+                    writers['representation_stocks'].append(dict(id=uid+'|representation',unit_id=uid,unit_key=[dataset,TYPES[dataset],code],dataset=dataset,code=code,period=period,
+                        membership=updated['membership'],companies=updated['companies'],stocks=values,origin=dict(root=str(base['root']),expected_manifest_sha256=basepin,table='components')))
+                metrics=[m for m in math.METRICS if (m in ('C3','C4'))==(dataset=='capital')]+(new_metrics if dataset!='capital' else [])
+                for metric in metrics:
+                    for horizon in (('quarter','ttm') if metric in math.FLOW_METRICS|math.COMPLEMENT_FLOW_METRICS else ('point',)):
+                        params=[period,dataset,metric,horizon];pred='period=? and dataset=? and metric=? and horizon=?'
+                        originals=rows('base_unit_coverage',pred,params) if metric in math.METRICS else []
+                        original_by_code={}
+                        for r in originals:
+                            if not r.get('unit_id'):continue
+                            if any(r[k]!=v for k,v in zip(('period','dataset','metric','horizon'),params)):raise ValueError('Baseline typed columns/payload mismatch')
+                            if r['code'] in original_by_code:raise ValueError('Duplicate baseline native contribution')
+                            original_by_code[r['code']]=r
+                        expected_codes=set(by_code)
+                        if metric in math.METRICS and set(original_by_code)!=expected_codes:raise ValueError('Incomplete baseline native metric coverage')
+                        chosen={code:(r,base,'baseline') for code,r in original_by_code.items()};replaced=set()
+                        for source in overlays:
+                            # A singular code scope is checked on each row, so a
+                            # context match must ignore only that code selector.
+                            context_scope={k:v for k,v in source['scope'].items() if k not in ('code','codes')}
+                            if not _composition_scope_allows(context_scope,dict(period=period,dataset=dataset,metric=metric,horizon=horizon)):continue
+                            patch_rows=rows(source['view'],pred,params);patch_codes=set()
+                            for r in patch_rows:
+                                if any(r[k]!=v for k,v in zip(('period','dataset','metric','horizon'),params)):raise ValueError('Overlay typed columns/payload mismatch')
+                                code=r['code']
+                                if code not in by_code or code in patch_codes or code in replaced:raise ValueError('Overlay collision or unknown native unit')
+                                patch_codes.add(code);replaced.add(code)
+                                if source['kind']=='corrections' and (metric not in math.METRICS or code not in original_by_code):raise ValueError('Correction cannot introduce a metric/unit')
+                                if source['kind']=='complements' and metric not in new_metrics:raise ValueError('Complement may not replace legacy metric')
+                                chosen[code]=(r,source,source['kind'])
+                            scope_codes=set(source['scope'].get('codes',[source['scope']['code']] if 'code' in source['scope'] else expected_codes))&expected_codes
+                            if patch_codes!=scope_codes:raise ValueError('Incomplete declared overlay metric coverage')
+                        if set(chosen)!=expected_codes:raise ValueError('Missing complete complement/native contribution')
+                        projected=[]
+                        for code,(original,source,kind) in chosen.items():
+                            unit,updated,attribute=by_code[code];row=deepcopy(original);uid=unit['unit_id']
+                            if row.get('unit_id')!=uid or row.get('unit_key')!=[dataset,TYPES[dataset],code]:raise ValueError('Contribution identity mismatch')
+                            expected_cad=dict(Data=period,**unit['classifications']) if unit.get('classifications') is not None else None
+                            if row.get('target_cadastro')!=expected_cad:raise ValueError('Contribution original cadastro mismatch')
+                            if 'result_id' not in row:
+                                expected_result_id=uid+'|'+metric+'|'+horizon
+                                if source['manifest']['contract']!='ifdata-selective-analysis-v1' or row.get('id')!=expected_result_id:
+                                    raise ValueError('Missing result reference outside exact legacy selective coverage identity')
+                                row.update(result_id=expected_result_id,row_kind='native_unit')
+                            if not isinstance(row['result_id'],str) or not row['result_id']:
+                                raise ValueError('Invalid stored result reference')
+                            signature=_composition_result_signature(row)
+                            row.update(membership=updated['membership'],companies=updated['companies'],membership_reason=updated.get('membership_reason'),origin=origin(source,row,kind),representation_stocks=stock_by_code[code])
+                            if row['target_cadastro'] is None and attribute['status'] in ('derived','conflict'):
+                                states=row.setdefault('classification_states',{})
+                                for field in SELECTIVE_AXES:states[field]='missing_dated_cadastro'
+                            if attribute['status'] in ('before_regime','unknown'):
+                                row.setdefault('classification_states',{})['SrAnalitico']=attribute['status']
+                            if row['target_cadastro'] is not None or attribute['status'] in ('derived','conflict'):
+                                row['target_cadastro']=dict(row['target_cadastro'] or {},Data=period,SrAnalitico=attribute.get('sr_analitico'))
+                            if attribute['status']=='conflict':
+                                row.setdefault('classification_states',{})['SrAnalitico']='conflict';row['flags']=sorted(set(row.get('flags',[])+['sr_link_conflict']))
+                            if attribute['status']=='derived':row['flags']=sorted(set(row.get('flags',[])+['sr_from_dated_link']))
+                            row['sr_provenance']=dict(root=str(sr['root']),expected_manifest_sha256=sr['pin'],attribute_id=uid,method=attribute.get('method'),status=attribute['status'])
+                            stock=stock_by_code[code]['AT'];row.update(asset_fraction=stock['fraction'],asset_status=stock['status'])
+                            if _composition_result_signature(row)!=signature:raise ValueError('Composition changed stored economic result')
+                            if kind=='baseline':immutable_count+=1
+                            elif kind=='corrections':patched_count+=1
+                            row['preservation']=dict(status='exact_stored_economic_fields',signature_sha256=hashlib.sha256(signature.encode()).hexdigest())
+                            projected.append(row);writers['unit_coverage'].append(row)
+                        for cid in ids:
+                            linked=[r for r in projected if cid in r['companies']]
+                            status='ok' if any(r['status']=='ok' for r in linked) else 'missing_native_unit' if not linked else 'native_results_unavailable'
+                            companyrow=dict(id='|'.join((period,dataset,metric,horizon,cid)),period=period,dataset=dataset,metric=metric,horizon=horizon,
+                                company_cnpj14=cid,company=company_by_id[cid],analytical_included=cid in analytical_ids,status=status,unit_ids=sorted(r['unit_id'] for r in linked),
+                                result_refs=[dict(unit_id=r['unit_id'],result_id=r['result_id'],status=r['status'],origin=r['origin']) for r in linked],
+                                relation=next(m for m in maps if m['company_cnpj14']==cid),method='nominal_links_not_additive_company_financial_values')
+                            writers['company_coverage'].append(companyrow)
+                            if not linked and cid in analytical_ids:
+                                nominal_analytical_count+=1
+                                projected.append(dict(id=companyrow['id']+'|nominal',row_kind='nominal_company',unit_id=None,unit_key=None,result_id=None,
+                                period=period,dataset=dataset,metric=metric,horizon=horizon,code=None,membership='sample',companies=[cid],status='missing_native_unit',
+                                applicability='unknown',value_fraction=None,numerator_fraction=None,denominator_fraction=None,asset_fraction=None,asset_status='no_native_unit',
+                                target_cadastro=None,flags=[],limits=['nominal_company_without_admitted_native_reporting_unit']))
+                        analytical_rows=[]
+                        for row in projected:
+                            analytical=deepcopy(row);analytical['companies']=[c for c in row['companies'] if c in analytical_ids]
+                            if analytical.get('unit_id') and analytical['membership']=='sample' and not analytical['companies']:
+                                raise ValueError('Sample unit has no admitted analytical company link')
+                            analytical_rows.append(analytical)
+                        projected=analytical_rows
+                        eligible_cache={r['unit_id']:_eligible(r) for r in projected if r.get('unit_id')}
+                        derived=aggregate_unit_results(projected,fields=COMPOSITION_AXES)
+                        for cell in _composition_joint_cells(projected,stock_cache=stock_cache,eligible_cache=eligible_cache):
+                            for key in joint_totals:joint_totals[key]+=cell['source_counts'][key]
+                            writers['joint_cells'].append(cell)
+                        for table,values in derived.items():
+                            for value in values:
+                                if table in ('aggregates','segment_coverage'):
+                                    subset=[r for r in projected if value['cohort']=='total' or r['membership']==value['cohort']]
+                                    if value.get('field') is not None:subset=[r for r in subset if _category(r,value['field'])==(value['category_state'],value['category'])]
+                                    value['representation_coverage']={role:_composition_stock_summary(subset,role,dataset,stock_cache=stock_cache,eligible_cache=eligible_cache) for role in ('credit','PL')}
+                                writers[table].append(_composition_compact_summary(value))
+        files=[]
+        for writer in writers.values():files.extend(writer.finish(conn))
+        tables={t:w.count for t,w in writers.items()}
+        if joint_totals['native_units']!=tables['unit_coverage'] or joint_totals['nominal_companies']!=nominal_analytical_count:
+            raise ValueError('Joint-cell full native/nominal partition reconciliation failed')
+    temp=output/'.duckdb-temp'
+    if temp.exists():
+        # DuckDB owns its spill files; no recursive filesystem deletion.
+        for child in temp.iterdir():
+            if child.is_file():child.unlink()
+        temp.rmdir()
+    for path,pin in consumed.items():
+        if identity(path)!=guards[path] or math._digest_file(path)!=pin:raise ValueError('Consumed composition input changed')
+    manifest=dict(contract=COMPOSITION_CONTRACT,config=config,periods=sorted(periods),datasets=datasets,segmentation_fields=list(COMPOSITION_AXES),joint_cell_dimensions=list(JOINT_DIMENSIONS),registry_company_count=55,analytical_company_count=32,tables=tables,files=files,
+        joint_partition_checks=dict(status='exact',native_contributions=tables['unit_coverage'],nominal_admitted_missing_companies=nominal_analytical_count,joint_source_counts=joint_totals,identity='Each native contribution and missing admitted company occurs in exactly one observed cohort/dimension cell'),
+        monetary_scale_info=dict(currency='BRL',native_scale='1',source_note='docs/engineering/ifdata-indicator-pilot-20261011.md:14',rule='Official Olinda Saldo in R$; no portal thousands factor'),
+        consumed_files=[dict(file=str(p),sha256=h) for p,h in sorted(consumed.items(),key=lambda x:str(x[0]))],
+        preservation=dict(unchanged_legacy_contributions=immutable_count,corrected_legacy_contributions=patched_count,status='exact_stored_economic_fields',legacy_formula_evaluations=0),
+        producer_sha256=math._digest_file(Path(__file__)),elapsed_seconds=perf_counter()-started,
+        limits=['Observed native perimeters; no economic exposure elimination','Membership relative to admitted known associations; nominal gaps retained','Descriptive statistics only; no causal inference or composite index'])
+    (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf-8')
+    return manifest
+
+
+def query_composition(output,expected_manifest_sha256,sql):
+    """Read at most10000 rows through SELECT-only authenticated stored tables."""
+    import duckdb
+    import tempfile
+    settings={'threads':1,'memory_limit':'512MiB','autoload_known_extensions':False,'autoinstall_known_extensions':False}
+    with duckdb.connect(config=dict(settings,enable_external_access=False)) as parser:
+        statements=parser.extract_statements(sql)
+        if len(statements)!=1 or statements[0].type!=duckdb.StatementType.SELECT:raise ValueError('Composition query must be one SELECT')
+        selected={name.lower() for name in parser.get_table_names(sql,qualified=True)}
+    if not selected<=set(COMPOSITION_TABLES):raise ValueError('Composition query references unavailable table')
+    root=Path(output).resolve();path=root/'manifest.json'
+    if not isinstance(expected_manifest_sha256,str) or not re.fullmatch('[a-f0-9]{64}',expected_manifest_sha256) or math._digest_file(path)!=expected_manifest_sha256:
+        raise ValueError('Composition manifest pin mismatch')
+    manifest=math._json_unique(path.read_bytes())
+    if manifest.get('contract')!=COMPOSITION_CONTRACT:raise ValueError('Composition query contract mismatch')
+    entries={e['file']:e for e in manifest['files']}
+    with tempfile.TemporaryDirectory(prefix='ifdata-composition-query-') as temporary,duckdb.connect(str(Path(temporary)/'query.duckdb'),config=settings) as conn:
+        for table in selected:
+            copy=Path(temporary)/(table+'.parquet');_capture_payload(root,entries[copy.name],copy)
+            conn.execute('create table '+table+' as select * from read_parquet(?)',[str(copy)])
+        conn.execute('set enable_external_access=false');cursor=conn.execute(sql);names=[c[0] for c in cursor.description];rows=cursor.fetchmany(10001)
+        if len(rows)>10000:raise ValueError('Composition query row limit exceeded')
+        return [dict(zip(names,r)) for r in rows]

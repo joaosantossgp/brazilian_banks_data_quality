@@ -26,6 +26,70 @@ def stock(period, token, **changes):
                        window_rule='stock', **changes)
 
 
+class ComplementMetricTests(unittest.TestCase):
+    def setUp(self):
+        from bank_quality import ifdata_analysis
+        self.api=ifdata_analysis
+
+    def point(self,metric,changes=None):
+        tokens=dict(cash='5',interfinancial='10',AT='100',credit='60',deposits='40',
+                    repos='10',issuances='20',loans_transfers='30',funding='100')
+        tokens.update(changes or {})
+        rows={name:[observation('202412',token,definition_id=name,window_rule='stock')] for name,token in tokens.items()}
+        return self.api.evaluate_metric(metric,dict(period='202412',components=rows,financial_statement=True),'point')
+
+    def test_point_complements_and_four_nonoverlapping_funding_shares(self):
+        expected={'LA':'0.15','LC':'0.6','LF-DEP':'0.4','LF-OC':'0.1','LF-EM':'0.2','LF-REP':'0.3'}
+        for metric,value in expected.items():
+            with self.subTest(metric=metric):
+                r=self.point(metric);self.assertEqual((r['status'],r['value'],r['applicability']),('ok',value,'applicable'))
+        self.assertIn('not_certified_available_liquidity',self.point('LA')['limits'])
+        self.assertIn('not_total_balance_sheet_funding',self.point('LF-DEP')['limits'])
+
+    def test_funding_reconciliation_is_not_forced_and_zero_null_negative_differ(self):
+        self.assertEqual(self.point('LF-DEP',{'funding':'101'})['status'],'funding_identity_mismatch')
+        zero={k:'0' for k in ('funding','deposits','repos','issuances','loans_transfers')}
+        self.assertEqual(self.point('LF-DEP',zero)['status'],'zero_denominator')
+        self.assertEqual(self.point('LF-DEP',{'repos':None})['status'],'native_null')
+        r=self.point('LA',{'AT':'-100'});self.assertEqual(r['value'],'-0.15');self.assertIn('negative_denominator',r['flags'])
+        r=self.point('LC',{'credit':'0'});self.assertEqual(r['value'],'0')
+
+    def flow(self,metric,change=None,horizon='quarter'):
+        values={'RBIF':('50','110'),'provision_flow':('-2','-6'),'services':('5','15'),
+                'fees':('2','6'),'personnel':('-3','-9'),'administration':('-1','-3'),'credit_income':('10','30')}
+        rows={name:[observation(p,t,definition_id=name) for p,t in zip(('202409','202412'),tokens)] for name,tokens in values.items()}
+        rows.update({name:[observation(p,t,definition_id=name,window_rule='stock') for p,t in zip(('202409','202412'),tokens)]
+                     for name,tokens in {'AT':('100','120'),'credit':('50','60')}.items()})
+        if change:change(rows)
+        return self.api.evaluate_metric(metric,dict(period='202412',components=rows,financial_statement=True),horizon)
+
+    def test_flow_complements_use_genuine_quarters_and_mean_stocks(self):
+        from fractions import Fraction
+        expected={'RS':Fraction(7,39),'E3':Fraction(4,55),'R4':Fraction(6,11),'R5':Fraction(4,11)}
+        for metric,value in expected.items():
+            with self.subTest(metric=metric):
+                r=self.flow(metric);self.assertEqual(r['status'],'ok');self.assertEqual(self.api._rational(r['value_fraction']),value)
+        self.assertIn('not_NIM_or_contractual_spread',self.flow('R4')['limits'])
+
+    def test_new_formulas_preserve_guards_signs_and_missing_history(self):
+        def missing_opening(rows):rows['credit']=rows['credit'][1:]
+        self.assertEqual(self.flow('R5',missing_opening)['status'],'missing_opening')
+        def reversal(rows):rows['personnel'][1]['token']='3';rows['administration'][1]['token']='1'
+        r=self.flow('E3',reversal);self.assertEqual(r['status'],'ok');self.assertIn('signed_cost_reversal',r['flags'])
+        def other_unit(rows):rows['credit_income'][-1]['unit_key']=('individual','3','001')
+        self.assertEqual(self.flow('R5',other_unit)['status'],'incompatible_unit')
+        def all_negative_income(rows):rows['RBIF'][-1]['token']='-100'
+        r=self.flow('RS',all_negative_income);self.assertEqual(r['status'],'ok');self.assertIn('negative_denominator',r['flags'])
+        def negative_numerator_and_denominator(rows):
+            for name,tokens in {'RBIF':('0','-20'),'services':('0','-10'),'fees':('0','0'),'provision_flow':('0','0')}.items():
+                for row,token in zip(rows[name],tokens):row['token']=token
+        r=self.flow('RS',negative_numerator_and_denominator)
+        self.assertEqual(self.api._rational(r['value_fraction']),self.api.Fraction(1,3))
+        self.assertIn('negative_denominator',r['flags']);self.assertNotIn('non_convex_income_share',r['flags'])
+        self.assertEqual(self.flow('RS',horizon='point')['status'],'invalid_horizon')
+        self.assertEqual(self.flow('R5',horizon='ttm')['status'],'missing_component')
+
+
 class MetricTests(unittest.TestCase):
     def setUp(self):
         from bank_quality import ifdata_analysis
