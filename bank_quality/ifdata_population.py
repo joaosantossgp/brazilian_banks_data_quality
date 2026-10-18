@@ -97,7 +97,61 @@ def parse_approved_universe(note: Path, expected_sha256: str) -> list[dict]:
     return rows
 
 
-def update_membership_rows(companies, prior_maps, cadastro, native_rows, period):
+def _historical_claims(claims):
+    """Finite reviewed Oliveira claims, not a general identity inference rule."""
+    indexed = {}
+    for claim in claims or []:
+        if (claim.get('company_cnpj14') != '21110778000123' or
+                claim.get('cvm_code') != '026417' or
+                claim.get('operator_base8') != '36113876' or
+                claim.get('operator_cnpj14') != '36113876000191' or
+                claim.get('relation') != 'indirect_control_at_quarter_end' or
+                not isinstance(claim.get('period'),str) or
+                _period_date(claim['period']) is None or
+                not '202103' <= claim['period'] <= '202412'):
+            raise ValueError('Unreviewed historical identity or period')
+        sources = claim.get('sources')
+        if not isinstance(sources,list) or not sources:
+            raise ValueError('Historical evidence requires sources')
+        for source in sources:
+            if (not isinstance(source,dict) or not isinstance(source.get('file'),str) or
+                    not source['file'] or not re.fullmatch('[a-f0-9]{64}',source.get('sha256','')) or
+                    not str(source.get('url','')).startswith('https://') or
+                    type(source.get('pdf_page')) is not int or source['pdf_page'] < 1):
+                raise ValueError('Invalid historical evidence source locator')
+        key = (claim['company_cnpj14'],claim['period'])
+        if key in indexed:
+            raise ValueError('Duplicate historical claim')
+        indexed[key] = claim
+    return indexed
+
+
+def load_historical_evidence(descriptor):
+    """Authenticate a pinned claim file and each private captured document."""
+    if descriptor is None:
+        return [], {}
+    if set(descriptor) != {'file','expected_sha256'}:
+        raise ValueError('Explicit historical evidence file and pin required')
+    path = Path(descriptor['file']).resolve()
+    pin = descriptor['expected_sha256']
+    if not isinstance(pin,str) or not re.fullmatch('[a-f0-9]{64}',pin) or _digest_file(path) != pin:
+        raise ValueError('Historical evidence pin mismatch')
+    document = _json_unique(path.read_bytes())
+    if set(document) != {'contract','claims'} or document['contract'] != 'ifdata-historical-control-evidence-v1':
+        raise ValueError('Historical evidence contract mismatch')
+    claims = document['claims']
+    _historical_claims(claims)
+    consumed = {str(path):pin}
+    for claim in claims:
+        for source in claim['sources']:
+            pdf = _contained(path.parent,source['file'])
+            if _digest_file(pdf) != source['sha256']:
+                raise ValueError('Historical documentary source hash mismatch')
+            consumed[str(pdf)] = source['sha256']
+    return claims, consumed
+
+
+def update_membership_rows(companies, prior_maps, cadastro, native_rows, period, *, historical_evidence=None):
     """Pure one-quarter update; retain every original native attribute.
 
     Prior125 maps are authoritative for the original24. Added associations
@@ -106,6 +160,7 @@ def update_membership_rows(companies, prior_maps, cadastro, native_rows, period)
     """
     if _period_date(period) is None:
         raise ValueError('Invalid membership period')
+    claims = _historical_claims(historical_evidence)
     if any(r.get('Data') != period or r.get('CodInst') != code for code,r in cadastro.items()):
         raise ValueError('Cadastro must be dated to the selected quarter')
     old = {}
@@ -119,6 +174,7 @@ def update_membership_rows(companies, prior_maps, cadastro, native_rows, period)
     unresolved_oliveira = defaultdict(set)
     for company in companies:
         cid, cvm = company['company_cnpj14'], company['cvm_code']
+        proof = claims.get((cid,period))
         op, target, state, previous = None, None, 'no_admitted_principal', old.get(cid)
         if previous is not None:
             op, target = previous['operator_base8'], previous['native_target_code']
@@ -128,7 +184,7 @@ def update_membership_rows(companies, prior_maps, cadastro, native_rows, period)
             own = cadastro.get(op)
             parent = own.get('CodConglomeradoFinanceiro') if own else None
             state = 'operator_cadastro_missing' if own is None else 'dated_operator_association'
-            if cvm == '026417' and period < '202412':
+            if cvm == '026417' and period < '202412' and proof is None:
                 state = 'historical_holding_control_unknown'
                 for ds in ('financial','individual'):
                     unresolved_oliveira[ds].add(op)
@@ -187,6 +243,10 @@ def update_membership_rows(companies, prior_maps, cadastro, native_rows, period)
                                                              for r in native_rows) if target else False,
                          issuer_balance_equivalence_certified=False,
                          overlap_flag='shared_control_cielo_bb_bradesco' if cvm in ('021733','001023','000906') else None))
+        if proof is not None:
+            maps[-1]['historical_evidence'] = proof
+            maps[-1]['limits'] = ['quarter_end_control_not_whole_ttm',
+                                  'operator_not_issuer_consolidated_balance']
     result, seen, native_keys = [], set(), set()
     for row in native_rows:
         uid = row['unit_id']
@@ -227,6 +287,11 @@ def update_membership_rows(companies, prior_maps, cadastro, native_rows, period)
                            selection_reason=reason,
                            complement_scope='relative_to_known_admitted_associations',
                            economic_overlap_eliminated=False))
+        proofs = [claims[(cid,period)] for cid in sorted(companies_for_unit) if (cid,period) in claims]
+        if proofs:
+            result[-1]['historical_evidence'] = proofs
+            result[-1]['membership_limits'] = ['quarter_end_control_not_whole_ttm',
+                                                'operator_not_issuer_consolidated_balance']
     return maps, result
 
 
@@ -444,7 +509,7 @@ def _membership_manifest(root, pin):
     return root, manifest, indexed
 
 
-def build_updated_membership(baseline, pin, universe_note, note_pin, output):
+def build_updated_membership(baseline, pin, universe_note, note_pin, output, *, historical_evidence=None):
     """Materialize Issue152B membership only, without recomputing any value.
 
     Inputs are explicit externally pinned baseline and research142 paths.
@@ -458,6 +523,7 @@ def build_updated_membership(baseline, pin, universe_note, note_pin, output):
     if output.exists():
         raise FileExistsError(output)
     companies = parse_approved_universe(Path(universe_note),note_pin)
+    claims, documentary_sources = load_historical_evidence(historical_evidence)
     base, manifest, inventory = _membership_manifest(baseline,pin)
     if manifest.get('contract') != 'ifdata-universe-analysis-v1':
         raise ValueError('Updated membership requires admitted universe baseline')
@@ -465,6 +531,9 @@ def build_updated_membership(baseline, pin, universe_note, note_pin, output):
     if manifest.get('periods') != periods:
         raise ValueError('Updated membership requires all60 core quarters')
     consumed = {str(base/'manifest.json'):pin, str(Path(universe_note).resolve()):note_pin}
+    consumed.update(documentary_sources)
+    if any(Path(p) == output or output in Path(p).parents for p in consumed):
+        raise ValueError('Membership output overlaps documentary input')
 
     def consume(root, index, name):
         if name not in index:
@@ -522,6 +591,8 @@ def build_updated_membership(baseline, pin, universe_note, note_pin, output):
                   aggregate_policy='deduplicate_native_dataset_code_quarter_not_economic_consolidation',
                   overlap_policy='cielo_bb_bradesco_shared_control_no_balance_elimination',
                   working_set='one_quarter', consumed_files=[])
+    if historical_evidence is not None:
+        result['historical_evidence'] = dict(historical_evidence)
     output.mkdir(parents=True,exist_ok=False)
     with ExitStack() as stack, duckdb.connect(config={'memory_limit':'512MiB','threads':1}) as conn:
         conn.from_parquet(str(native_file)).create_view('baseline_units')
@@ -544,7 +615,8 @@ def build_updated_membership(baseline, pin, universe_note, note_pin, output):
             cadastro = {r['CodInst']:r for r in cadrows}
             native_rows = [json.loads(row[0]) for row in conn.execute(
                 'select payload from bounded_units where period=? order by payload',[period]).fetchall()]
-            maps,units = update_membership_rows(companies,by_period[period],cadastro,native_rows,period)
+            maps,units = update_membership_rows(companies,by_period[period],cadastro,native_rows,period,
+                                              historical_evidence=claims)
             if period == '202412':
                 targets = {r['company_cnpj14']:r['native_target_code'] for r in maps}
                 if any(targets[c['company_cnpj14']] != c['financial_code_2024'] for c in companies):

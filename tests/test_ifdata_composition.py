@@ -89,9 +89,54 @@ class CompositionTests(unittest.TestCase):
         manifest['tables'][table]=len(rows);path.write_text(json.dumps(manifest),encoding='utf-8')
         spec['expected_manifest_sha256']=math._digest_file(path)
 
+    def test_membership_recomposition_preserves_economics_and_reduces_nominal_gaps(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);cfg=self.fixture(root);old=root/'old';u.compose_analysis(cfg,old)
+            def change(rows):
+                rows[1].update(membership='sample',companies=[f'{2:014d}'])
+            self.rewrite(cfg['membership'],'unit_membership',change)
+            def mapping(rows):
+                rows[2].update(native_target_code='B')
+            self.rewrite(cfg['membership'],'company_quarter_map',mapping)
+            out=root/'new'
+            with patch.object(math,'evaluate_metric',side_effect=AssertionError('No formulas')):
+                result=u.recompose_membership_changes(old,math._digest_file(old/'manifest.json'),
+                    cfg['membership']['root'],cfg['membership']['expected_manifest_sha256'],out)
+            before=self.rows(old,'unit_coverage');after=self.rows(out,'unit_coverage')
+            self.assertEqual({r['id']:u._composition_result_signature(r) for r in before},
+                             {r['id']:u._composition_result_signature(r) for r in after})
+            self.assertEqual(result['derivation']['formula_evaluations'],0)
+            a=[r for r in self.rows(old,'aggregates') if r['cohort']=='total']
+            b=[r for r in self.rows(out,'aggregates') if r['cohort']=='total']
+            self.assertEqual({r['id']:r['value_fraction'] for r in a},{r['id']:r['value_fraction'] for r in b})
+            self.assertTrue(all(r['membership']=='sample' for r in after if r['code']=='B'))
+            self.assertTrue(all(r['status']=='ok' for r in self.rows(out,'company_coverage') if r['company_cnpj14']==f'{2:014d}' and r['dataset']=='financial'))
+            with self.assertRaises(FileExistsError):
+                u.recompose_membership_changes(old,math._digest_file(old/'manifest.json'),cfg['membership']['root'],cfg['membership']['expected_manifest_sha256'],out)
+
     def test_missing_api_red(self):
         self.assertTrue(callable(getattr(u,'compose_analysis',None)))
         self.assertTrue(callable(getattr(u,'query_composition',None)))
+
+    def test_membership_recomposition_refuses_duplicate_nominal_proof(self):
+        for name in ('companies','company_quarter_map'):
+            with self.subTest(table=name),tempfile.TemporaryDirectory() as temp:
+                root=Path(temp);cfg=self.fixture(root);old=root/'old';u.compose_analysis(cfg,old)
+                self.rewrite(cfg['membership'],'unit_membership',lambda rows:rows[1].update(membership='sample',companies=[f'{2:014d}']))
+                self.rewrite(cfg['membership'],name,lambda rows:rows.append(dict(rows[2],native_target_code='WRONG')))
+                with self.assertRaisesRegex(ValueError,'Duplicate'):
+                    u.recompose_membership_changes(old,math._digest_file(old/'manifest.json'),cfg['membership']['root'],cfg['membership']['expected_manifest_sha256'],root/'bad')
+                self.assertFalse((root/'bad'/'manifest.json').exists())
+
+    def test_exporter_retains_terra_notice_through_membership_derivation(self):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('explorer_export',Path(__file__).resolve().parents[1]/'scripts/export-ifdata-explorer.py')
+        exporter=importlib.util.module_from_spec(spec);spec.loader.exec_module(exporter)
+        terra=dict(rule='terra-individual-history-financial-202412-v1',patch={'root':'patch','expected_manifest_sha256':'p'})
+        parent=dict(contract=u.COMPOSITION_CONTRACT,derivation=terra)
+        child=dict(contract=u.COMPOSITION_CONTRACT,derivation=dict(rule='dated_historical_membership_v1',composition={'root':'old','expected_manifest_sha256':'s'}))
+        self.assertEqual(exporter.prior_correction_derivation(child,lambda root,pin:parent),terra)
 
     def test_nominal55_native_dedup_stocks_sr_and_exact_original_values(self):
         from unittest.mock import patch

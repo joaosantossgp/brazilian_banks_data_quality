@@ -35,6 +35,11 @@ def main():
     membership=commands.add_parser('update-universe-membership',help='Update dated company membership without financial recalculation')
     for option in ('baseline','expected-baseline-manifest-sha256','universe-note','expected-universe-note-sha256','output'):
         membership.add_argument('--'+option,required=True)
+    membership.add_argument('--historical-evidence',help='Pinned documentary claim JSON file')
+    membership.add_argument('--expected-historical-evidence-sha256')
+    recompose=commands.add_parser('recompose-membership',help='Reassign stored results and reduce only dated membership changes')
+    for option in ('composition','composition-pin','membership','membership-pin','output'):
+        recompose.add_argument('--'+option,required=True)
     complements=commands.add_parser('calculate-complements',help='Calculate only the selected additive metrics from pinned native inputs')
     for option in ('baseline','expected-baseline-manifest-sha256','output'):
         complements.add_argument('--'+option,required=True)
@@ -72,10 +77,16 @@ def main():
     elif args.command=='apply-terra':
         from bank_quality.ifdata_universe_analysis import apply_terra_history
         result=apply_terra_history(args.composition,args.composition_pin,args.patch,args.patch_pin,args.output)
+    elif args.command=='recompose-membership':
+        from bank_quality.ifdata_universe_analysis import recompose_membership_changes
+        result=recompose_membership_changes(args.composition,args.composition_pin,args.membership,args.membership_pin,args.output)
     elif args.command=='update-universe-membership':
         from bank_quality.ifdata_population import build_updated_membership
+        if bool(args.historical_evidence) != bool(args.expected_historical_evidence_sha256):
+            raise ValueError('Historical evidence file and external pin must be supplied together')
         result=build_updated_membership(args.baseline,args.expected_baseline_manifest_sha256,
-                                       args.universe_note,args.expected_universe_note_sha256,args.output)
+                                       args.universe_note,args.expected_universe_note_sha256,args.output,
+                                       historical_evidence=dict(file=args.historical_evidence,expected_sha256=args.expected_historical_evidence_sha256) if args.historical_evidence else None)
     elif args.command=='calculate-complements':
         from bank_quality.ifdata_universe_analysis import calculate_complements
         result=calculate_complements(args.baseline,args.expected_baseline_manifest_sha256,args.output,

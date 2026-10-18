@@ -2645,6 +2645,147 @@ def apply_terra_history(composition,composition_pin,patch,patch_pin,output):
         return manifest
 
 
+def recompose_membership_changes(composition, composition_pin, membership, membership_pin, output):
+    """Reassign stored contributions and reduce only dated membership changes.
+
+    Financial fractions/status/perimeters never enter an evaluator. Accepted
+    source files are immutable; original payload strings survive outside the
+    explicit unit/context delta. Nominal gaps are rebuilt, not silently dropped.
+    """
+    import duckdb
+    from time import perf_counter
+    import sys
+    started=perf_counter();output=Path(output).resolve();consumed={}
+    if output.exists():raise FileExistsError(output)
+    def package(value,pin,contract):
+        root=Path(value).resolve();path=root/'manifest.json'
+        if root==output or root in output.parents or output in root.parents:
+            raise ValueError('Membership recomposition output overlaps source')
+        if not isinstance(pin,str) or not re.fullmatch('[a-f0-9]{64}',pin) or math._digest_file(path)!=pin:
+            raise ValueError('Membership recomposition manifest pin mismatch')
+        manifest=math._json_unique(path.read_bytes())
+        if manifest.get('contract')!=contract:raise ValueError('Membership recomposition contract mismatch')
+        consumed[path]=pin;return root,manifest
+    root,full=package(composition,composition_pin,COMPOSITION_CONTRACT)
+    mr,mm=package(membership,membership_pin,'ifdata-updated-membership-v1')
+    if mm.get('baseline_manifest_sha256')!=full['config']['baseline']['expected_manifest_sha256']:
+        raise ValueError('Membership recomposition baseline lineage mismatch')
+    def table(base,manifest,name):
+        entries=[e for e in manifest['files'] if e['file']==name+'.parquet']
+        if len(entries)!=1:raise ValueError('Membership recomposition table inventory mismatch')
+        _capture_payload(base,entries[0]);path=math._contained(base,entries[0]['file']);consumed[path]=entries[0]['sha256']
+        return path
+    with duckdb.connect(config={'threads':1,'memory_limit':'512MiB'}) as conn:
+        paths={n:table(root,full,n) for n in COMPOSITION_TABLES}
+        for name,path in paths.items():
+            conn.from_parquet(str(path)).create_view('raw_'+name)
+            conn.execute("create view old_"+name+" as select *,json_extract_string(payload,'$.unit_id') as unit_id from raw_"+name)
+        for name in ('companies','company_quarter_map','unit_membership'):
+            conn.from_parquet(str(table(mr,mm,name))).create_view('new_'+name)
+        def rows(view,where='',params=()):
+            return [math._json_unique(p.encode()) for p, in conn.execute('select payload from '+view+(' where '+where if where else ''),params).fetchall()]
+        def unique_company(items):
+            result={}
+            for row in items:
+                cid=row['company_cnpj14']
+                if cid in result:raise ValueError('Duplicate nominal company proof')
+                result[cid]=row
+            return result
+        companies=rows('new_companies');by_company=unique_company(companies)
+        admitted={c for c,r in by_company.items() if r.get('principal_state')=='admitted_association'}
+        if len(by_company)!=55 or len(admitted)!=32:raise ValueError('Membership recomposition requires fixed55/32 identities')
+        conn.execute("create temp table member_keys as select json_extract_string(payload,'$.unit_id') as unit_id,dataset,period,payload,json_extract_string(payload,'$.membership') as state,json_extract(payload,'$.companies') as companies from new_unit_membership")
+        if conn.execute('select count(*) from (select unit_id from member_keys group by all having count(*)>1)').fetchone()[0]:raise ValueError('Duplicate new membership unit')
+        if conn.execute('select count(*) from old_unit_periods o full join member_keys n using(unit_id) where o.unit_id is null or n.unit_id is null').fetchone()[0]:
+            raise ValueError('Membership recomposition native population mismatch')
+        changed=conn.execute("select o.unit_id,o.dataset,o.period,n.payload,o.payload from old_unit_periods o join member_keys n using(unit_id) where json_extract_string(o.payload,'$.membership') is distinct from n.state or json_extract(o.payload,'$.companies') is distinct from n.companies order by o.period,o.dataset,o.unit_id").fetchall()
+        changes={};structural=[]
+        for uid,ds,period,new,old in changed:
+            new=json.loads(new);old=json.loads(old)
+            if any(old.get(k)!=new.get(k) for k in ('unit_id','dataset','code','period','own_cadastro')):
+                raise ValueError('Membership recomposition changed native attributes')
+            if new['membership'] not in COHORTS[1:] or not set(new['companies'])<=set(by_company):
+                raise ValueError('Unrecognized new membership')
+            changes[uid]=new;structural.append((uid,ds,period))
+        if not changes:raise ValueError('No dated membership changes to recompose')
+        conn.execute('create temp table changed_units(unit_id varchar,dataset varchar,period varchar)')
+        conn.executemany('insert into changed_units values (?,?,?)',structural)
+        contexts=conn.execute('select distinct o.period,o.dataset,o.metric,o.horizon from old_unit_coverage o join changed_units n using(unit_id) order by all').fetchall()
+        print(f'Membership recomposition: {len(changes)} native units, {len(contexts)} stored contexts',file=sys.stderr,flush=True)
+        output.mkdir(parents=True)
+        with ExitStack() as stack:
+            writers={n:Writer(output,'replacement_'+n,stack,formats=('parquet',)) for n in COMPOSITION_TABLES}
+            def project(row):
+                member=changes.get(row.get('unit_id'))
+                if member is None:return row
+                result=deepcopy(row)
+                for field in ('membership','companies','membership_reason','historical_evidence','membership_limits'):
+                    if field in member:result[field]=deepcopy(member[field])
+                return result
+            for name in ('unit_periods','representation_stocks'):
+                for row in rows('old_'+name,'unit_id in (select unit_id from changed_units)'):
+                    writers[name].append(project(row))
+            first_context_seconds=None
+            for index,(period,dataset,metric,horizon) in enumerate(contexts):
+                tick=perf_counter();pred='period=? and dataset=? and metric=? and horizon=?';args=[period,dataset,metric,horizon]
+                original=rows('old_unit_coverage',pred,args);projected=[project(r) for r in original]
+                for old,new in zip(original,projected):
+                    if _composition_result_signature(old)!=_composition_result_signature(new):raise ValueError('Membership changed stored economic result')
+                    if old['unit_id'] in changes:writers['unit_coverage'].append(new)
+                maps=unique_company(rows('new_company_quarter_map',"json_extract_string(payload,'$.period')=?",[period]))
+                if set(maps)!=set(by_company):raise ValueError('Incomplete nominal company map')
+                old_companies=rows('old_company_coverage',pred,args)
+                unique_company(old_companies)
+                if {r['company_cnpj14'] for r in old_companies}!=set(by_company):raise ValueError('Old company context incomplete')
+                for old in old_companies:
+                    cid=old['company_cnpj14'];linked=[r for r in projected if cid in r['companies']]
+                    status='ok' if any(r['status']=='ok' for r in linked) else 'missing_native_unit' if not linked else 'native_results_unavailable'
+                    new=dict(old,status=status,unit_ids=sorted(r['unit_id'] for r in linked),relation=maps[cid],
+                             result_refs=[dict(unit_id=r['unit_id'],result_id=r['result_id'],status=r['status'],origin=r['origin']) for r in linked])
+                    writers['company_coverage'].append(new)
+                    if not linked and cid in admitted:
+                        projected.append(dict(id=old['id']+'|nominal',row_kind='nominal_company',unit_id=None,unit_key=None,result_id=None,
+                            period=period,dataset=dataset,metric=metric,horizon=horizon,code=None,membership='sample',companies=[cid],status='missing_native_unit',
+                            applicability='unknown',value_fraction=None,numerator_fraction=None,denominator_fraction=None,asset_fraction=None,asset_status='no_native_unit',
+                            target_cadastro=None,flags=[],limits=['nominal_company_without_admitted_native_reporting_unit']))
+                analytical=[dict(r,companies=[c for c in r['companies'] if c in admitted]) for r in projected]
+                derived=aggregate_unit_results(analytical,fields=COMPOSITION_AXES)
+                for name,items in derived.items():
+                    for value in items:
+                        if name in ('aggregates','segment_coverage'):
+                            subset=[r for r in analytical if value['cohort']=='total' or r['membership']==value['cohort']]
+                            if value.get('field') is not None:subset=[r for r in subset if _category(r,value['field'])==(value['category_state'],value['category'])]
+                            value['representation_coverage']={role:_composition_stock_summary(subset,role,dataset) for role in ('credit','PL')}
+                        writers[name].append(_composition_compact_summary(value))
+                for value in _composition_joint_cells(analytical):writers['joint_cells'].append(value)
+                if index==0:first_context_seconds=perf_counter()-tick
+                if index==0 or index%100==99:
+                    print(f'Membership contexts {index+1}/{len(contexts)}; latest {perf_counter()-tick:.3f}s',file=sys.stderr,flush=True)
+            conn.execute('create temp table affected_contexts(period varchar,dataset varchar,metric varchar,horizon varchar)')
+            conn.executemany('insert into affected_contexts values (?,?,?,?)',contexts)
+            files=[];counts={}
+            for name,writer in writers.items():
+                entry=writer.finish(conn)[0];replacement=output/entry['file'];target=output/(name+'.parquet')
+                unit_only=name in ('unit_periods','representation_stocks','unit_coverage')
+                scope='changed_units' if unit_only else 'affected_contexts'
+                condition="json_extract_string(o.payload,'$.unit_id')=s.unit_id" if unit_only else ' and '.join('o.'+k+'=s.'+k for k in ('period','dataset','metric','horizon'))
+                conn.execute('copy (select o.* from read_parquet($base) o anti join '+scope+' s on '+condition+' union all select * from read_parquet($replacement)) to $target (format parquet,compression zstd,row_group_size 2048)',dict(base=str(paths[name]),replacement=str(replacement),target=str(target)))
+                replacement.unlink();counts[name]=conn.execute('select count(*) from read_parquet(?)',[str(target)]).fetchone()[0]
+                files.append(dict(file=target.name,rows=counts[name],sha256=math._digest_file(target)))
+            sums=conn.execute("select sum(cast(json_extract_string(payload,'$.source_counts.native_units') as bigint)),sum(cast(json_extract_string(payload,'$.source_counts.nominal_companies') as bigint)),sum(cast(json_extract_string(payload,'$.source_counts.eligible_units') as bigint)) from read_parquet(?)",[str(output/'joint_cells.parquet')]).fetchone()
+            if sums[0]!=counts['unit_coverage']:raise ValueError('Membership joint partition mismatch')
+        for path,pin in consumed.items():
+            if math._digest_file(path)!=pin:raise ValueError('Membership input changed before acceptance')
+        manifest=deepcopy(full);manifest.update(files=files,tables=counts,
+            derivation=dict(rule='dated_historical_membership_v1',composition=dict(root=str(root),expected_manifest_sha256=composition_pin),membership=dict(root=str(mr),expected_manifest_sha256=membership_pin),changed_native_units=len(changes),reduced_contexts=len(contexts),formula_evaluations=0,first_context_seconds=first_context_seconds),
+            consumed_files=[dict(file=str(p),sha256=h) for p,h in sorted(consumed.items(),key=lambda x:str(x[0]))],producer_sha256=math._digest_file(Path(__file__)),elapsed_seconds=perf_counter()-started)
+        manifest['config']['membership']=dict(root=str(mr),expected_manifest_sha256=membership_pin)
+        manifest['joint_partition_checks'].update(nominal_admitted_missing_companies=sums[1],joint_source_counts=dict(native_units=sums[0],nominal_companies=sums[1],eligible_units=sums[2],rows=sums[0]+sums[1]))
+        manifest['preservation']=dict(status='exact_stored_economic_fields',legacy_formula_evaluations=0,original_composition_preserved=True)
+        (output/'manifest.json').write_text(canonical(manifest)+'\n',encoding='utf8')
+        return manifest
+
+
 def query_composition(output,expected_manifest_sha256,sql):
     """Read at most10000 rows through SELECT-only authenticated stored tables."""
     import duckdb

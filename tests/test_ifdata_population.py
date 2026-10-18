@@ -15,6 +15,59 @@ from bank_quality.ifdata_odata import COLUMNS, CONTRACT as DATA_CONTRACT
 
 
 class UpdatedMembershipTests(unittest.TestCase):
+    def oliveira_claim(self, period='202103'):
+        return dict(company_cnpj14='21110778000123', cvm_code='026417',
+                    operator_base8='36113876', operator_cnpj14='36113876000191',
+                    period=period, relation='indirect_control_at_quarter_end',
+                    sources=[dict(file='source.pdf', sha256='a'*64,
+                                  url='https://example.org/itr.pdf', pdf_page=28)])
+
+    def test_oliveira_dated_proof_selects_only_proven_quarter_and_retains_limits(self):
+        api = self.api()
+        company = dict(company_cnpj14='21110778000123', cvm_code='026417',financial_code_2024='36113876')
+        cad = {c:dict(cadastro(c,c),Data='202103') for c in ('36113876',)}
+        unit = dict(unit_id='f', dataset='financial', code='36113876', period='202103', membership='remaining',companies=[])
+        maps, units = api.update_membership_rows([company],[],cad,[unit],'202103',historical_evidence=[self.oliveira_claim()])
+        self.assertEqual(maps[0]['native_target_code'],'36113876')
+        self.assertEqual(units[0]['membership'],'sample')
+        self.assertEqual(maps[0]['historical_evidence']['sources'][0]['sha256'],'a'*64)
+        self.assertIn('quarter_end_control_not_whole_ttm',maps[0]['limits'])
+        self.assertEqual(unit['membership'],'remaining')
+        cad['36113876']['CodConglomeradoFinanceiro']='OTHER'
+        maps,units=api.update_membership_rows([company],[],cad,[unit],'202103',historical_evidence=[self.oliveira_claim()])
+        self.assertIsNone(maps[0]['native_target_code'])
+        self.assertNotEqual(units[0]['membership'],'sample')
+
+    def test_oliveira_proof_rejects_wrong_identity_period_duplicates_and_missing_locator(self):
+        api=self.api()
+        company=dict(company_cnpj14='21110778000123',cvm_code='026417',financial_code_2024='36113876')
+        claim=self.oliveira_claim()
+        bad=[dict(claim,company_cnpj14='05310054000177'),dict(claim,period='202012'),
+             dict(claim,operator_cnpj14='36113876000100'),dict(claim,sources=[])]
+        for row in bad:
+            with self.subTest(row=row), self.assertRaises(ValueError):
+                api.update_membership_rows([company],[],{},[],'202103',historical_evidence=[row])
+        with self.assertRaisesRegex(ValueError,'Duplicate'):
+            api.update_membership_rows([company],[],{},[],'202103',historical_evidence=[claim,claim])
+        cad={'36113876':dict(cadastro('36113876','36113876'),Data='202012')}
+        maps,_=api.update_membership_rows([company],[],cad,[],'202012',historical_evidence=[claim])
+        self.assertIsNone(maps[0]['native_target_code'])
+
+    def test_historical_source_loader_authenticates_claim_and_pdf_before_use(self):
+        api=self.api()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);pdf=root/'source.pdf';pdf.write_bytes(b'captured documentary source')
+            claim=self.oliveira_claim();claim['sources'][0]['sha256']=digest(pdf)
+            proof=root/'claims.json';dump(proof,dict(contract='ifdata-historical-control-evidence-v1',claims=[claim]))
+            descriptor=dict(file=str(proof),expected_sha256=digest(proof))
+            claims,consumed=api.load_historical_evidence(descriptor)
+            self.assertEqual(claims,[claim]);self.assertEqual(len(consumed),2)
+            with self.assertRaisesRegex(ValueError,'pin'):
+                api.load_historical_evidence(dict(descriptor,expected_sha256='0'*64))
+            pdf.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'hash'):
+                api.load_historical_evidence(descriptor)
+
     def api(self):
         from bank_quality import ifdata_population as api
         self.assertTrue(hasattr(api, 'update_membership_rows'), 'Missing Issue152 membership API')
