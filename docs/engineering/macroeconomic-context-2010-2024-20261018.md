@@ -66,4 +66,3 @@ Preparação privada: `.scratch/macro-context/recommended-series.json`, com IDs,
 ## Revisão independente
 
 PASS factual da nota e45recibos/corpos, com IDs, escalas, alinhamento trimestral e limitações conferidos. Ajustado o link oficial da PNAD por recomendação editorial. A revisão certifica a pesquisa e as amostras, semcertificar coleta2010–2024 completa ou integração de juros.
-
