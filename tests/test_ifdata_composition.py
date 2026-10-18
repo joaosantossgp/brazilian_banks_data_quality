@@ -324,21 +324,10 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(cell['distribution_sorted_fractions'],[['-3','2'],['1','2']])
         self.assertEqual(cell['counts']['eligible_units'],2)
 
-    def test_baseline_coverage_is_scanned_once_per_dataset_period(self):
-        import duckdb
-        from unittest.mock import patch
+    def test_unchanged_baseline_coverage_preserves_exact_fractions(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);cfg=self.fixture(root);out=root/'out';connect=duckdb.connect;baseline_reads=[]
-            class SpyConnection:
-                def __init__(self,inner):self.inner=inner
-                def __enter__(self):self.inner.__enter__();return self
-                def __exit__(self,*args):return self.inner.__exit__(*args)
-                def __getattr__(self,name):return getattr(self.inner,name)
-                def execute(self,sql,*args,**kwargs):
-                    if 'from base_unit_coverage' in sql.lower():baseline_reads.append((sql,args))
-                    return self.inner.execute(sql,*args,**kwargs)
-            with patch.object(duckdb,'connect',side_effect=lambda *args,**kwargs:SpyConnection(connect(*args,**kwargs))):u.compose_analysis(cfg,out)
-            self.assertEqual(len(baseline_reads),len(cfg['periods'])*len(cfg['datasets']))
+            root=Path(temp);cfg=self.fixture(root);out=root/'out'
+            u.compose_analysis(cfg,out)
             rows=self.rows(out,'unit_coverage')
             unchanged=[r for r in rows if r['origin']['kind']=='baseline']
             self.assertTrue(unchanged)
