@@ -19,6 +19,49 @@ CONTEXT = 'https://was-p.bcnet.bcb.gov.br/olinda/servico/IFDATA/versao/v1/odata$
 CONTRACT = 'ifdata-cadastro-parquet-v1'
 
 
+def derive_sr_by_links(original,evidence,*,dataset,code,period):
+    """Separate analytical SR from its native observation; never impute by time.
+
+    Evidence must come from authenticated, dated declared links. A unique label
+    among observed members is sufficient; missing labels remain in the proof.
+    This is a derived attribute, not an official classification recovered for
+    the target. Financial and prudential units remain separate contributors.
+    """
+    from copy import deepcopy
+    if dataset not in ('financial','capital','individual') or not re.fullmatch(r'\d{4}(03|06|09|12)',period):
+        raise ValueError('Invalid SR attribution context')
+    result=dict(sr_original=original,sr_vinculo=None,sr_analitico=original,
+                method='native' if original not in (None,'') else 'none',
+                status='native' if original not in (None,'') else 'unknown',
+                labels=[],prudential_parents=[],linked_records=len(evidence),records_with_sr=0,evidence=deepcopy(evidence))
+    allowed={'own_prudential_parent'}
+    if dataset=='financial':allowed.add('financial_members')
+    if dataset=='capital':allowed.add('prudential_members')
+    seen=set()
+    for row in evidence:
+        key=(row.get('link_kind'),row.get('evidence_code'))
+        if (any(row.get(k)!=v for k,v in dict(dataset=dataset,code=code,period=period).items())
+            or row.get('link_kind') not in allowed or not row.get('evidence_code') or row['evidence_code']==code
+            or key in seen or not row.get('source_file') or not row.get('source_row')
+            or not re.fullmatch('[0-9a-f]{64}',row.get('source_sha256',''))):
+            raise ValueError('Ambiguous, undated or unproven SR evidence')
+        seen.add(key)
+    labels=sorted({r['evidence_sr'] for r in evidence if r.get('evidence_sr') not in (None,'')})
+    parents=sorted({r['evidence_parent'] for r in evidence if r.get('evidence_parent') not in (None,'')})
+    result.update(labels=labels,prudential_parents=parents,
+                  records_with_sr=sum(r.get('evidence_sr') not in (None,'') for r in evidence))
+    if original not in (None,''):return result
+    if period<'201703':result['status']='before_regime';return result
+    if not labels:return result
+    if any(label not in ('S1','S2','S3','S4','S5') for label in labels):result['status']='unrecognized_label';return result
+    if len(labels)>1:result['status']='conflict';return result
+    if (len(parents)!=1 or any(r.get('evidence_parent') in (None,'') for r in evidence)
+        or any(r['link_kind']=='prudential_members' and r['evidence_parent']!=code for r in evidence)):
+        result['status']='unproven_perimeter';return result
+    result.update(sr_vinculo=labels[0],sr_analitico=labels[0],method='dated_link',status='derived')
+    return result
+
+
 def _unique(conn):
     if conn.execute('select count(*) from cadastro where CodInst is null or CodInst = ? or Data is null', ['']).fetchone()[0]:
         raise ValueError('Missing temporal cadastro key')

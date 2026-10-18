@@ -360,7 +360,27 @@ METRICS = {
     'L3': ('credit', 'deposits'),
     'E2-B': ('personnel', 'administration', 'RBIF', 'provision_flow', 'services', 'fees'),
 }
-FLOW_COMPONENTS = {'LL', 'provision_flow', 'RBIF', 'services', 'fees', 'personnel', 'administration'}
+# Additive registry: historical installed profiles keep their ten-metric scope.
+COMPLEMENT_METRICS = {
+    'LA':('cash','interfinancial','AT'),'LC':('credit','AT'),
+    **{name:('deposits','repos','issuances','loans_transfers','funding')
+       for name in ('LF-DEP','LF-OC','LF-EM','LF-REP')},
+    'RS':('RBIF','provision_flow','services','fees'),
+    'E3':('personnel','administration','AT'),'R4':('RBIF','AT'),
+    'R5':('credit_income','credit'),
+}
+COMPLEMENT_LIMITS = {
+    'LA':['not_certified_available_liquidity','not_LCR_or_HQLA'],
+    'LC':['credit_composition_not_quality_or_maturity'],
+    **{name:['not_total_balance_sheet_funding','no_maturity_or_stability_measure']
+       for name in ('LF-DEP','LF-OC','LF-EM','LF-REP')},
+    'RS':['selected_income_only','not_total_operating_revenue'],
+    'E3':['asset_intensity_not_technical_efficiency','business_model_comparability_required'],
+    'R4':['includes_credit_provision','not_NIM_or_contractual_spread'],
+    'R5':['gross_credit_income_not_net_spread','credit_portfolio_scope_requires_review'],
+}
+COMPLEMENT_FLOW_METRICS={'RS','E3','R4','R5'}
+FLOW_COMPONENTS = {'LL', 'provision_flow', 'RBIF', 'services', 'fees', 'personnel', 'administration','credit_income'}
 FLOW_METRICS = {'R1', 'R2', 'Q2', 'E2-B'}
 # Public names are deliberately independent of native account numbers.
 COMPONENT_NAMES = {
@@ -371,6 +391,8 @@ COMPONENT_NAMES = {
     'RBIF':'intermediation_result', 'services':'services', 'fees':'tariffs',
     'personnel':'personnel_signed', 'administration':'admin_signed',
     'PR':'PR', 'RWA':'RWA', 'CP':'CP',
+    'credit_income':'credit_income','repos':'repurchase_agreements',
+    'issuances':'debt_issuance','loans_transfers':'borrowings_transfers','funding':'funding',
 }
 
 
@@ -492,15 +514,17 @@ def evaluate_metric(metric, inputs, horizon):
                         ['native_prudential_perimeter_only','published_index_scale_unverified'] if metric in ('C3','C4') else
                         ['native_accounting_question_only']),
                 applicability='unknown',economic_representativeness='not_certified' if metric=='E2-B' else 'native_accounting_question')
-    if metric not in METRICS:return dict(result,status='unknown_metric')
-    if horizon not in (('quarter','ttm') if metric in FLOW_METRICS else ('point',)):
+    formula=METRICS.get(metric,COMPLEMENT_METRICS.get(metric))
+    if formula is None:return dict(result,status='unknown_metric')
+    if metric in COMPLEMENT_LIMITS:result['limits']=list(COMPLEMENT_LIMITS[metric])
+    if horizon not in (('quarter','ttm') if metric in FLOW_METRICS|COMPLEMENT_FLOW_METRICS else ('point',)):
         return dict(result,status='invalid_horizon')
     if not isinstance(inputs,dict) or _period_date(inputs.get('period')) is None:
         return dict(result,status='invalid_period')
     period=inputs['period'];result['period']=period
     result['annual_summary']=period.endswith('12') and horizon in ('point','ttm')
     components=inputs.get('components',{})
-    for name in METRICS[metric]:
+    for name in formula:
         rows=components.get(name,[])
         if not isinstance(rows,list) or any(_contract_status(r) for r in rows):
             return dict(result,status='invalid_observation')
@@ -512,14 +536,14 @@ def evaluate_metric(metric, inputs, horizon):
                     and r.get('status','ok') not in ('binding_missing','binding_unverified','ambiguous_binding','ambiguous_occurrence')
                     for r in components.get(name,[])) for name in METRICS[metric]):
             result['applicability']='applicable'
-    elif metric in ('R1','R2','C1','E2-B'):
+    elif metric in ('R1','R2','C1','E2-B') or metric in COMPLEMENT_METRICS and metric!='R5':
         if inputs.get('financial_statement') and all(
                 any(r['period']==period and r.get('binding') and r.get('sources')
                     and r.get('status','ok') not in ('binding_missing','binding_unverified','ambiguous_binding','ambiguous_occurrence')
-                    for r in components.get(name,[])) for name in METRICS[metric]):
+                    for r in components.get(name,[])) for name in formula):
             result['applicability']='applicable'
     else:
-        activity='credit' if metric in ('Q1','Q2') else 'sight_deposits' if metric=='L2' else 'deposits'
+        activity='credit' if metric in ('Q1','Q2','R5') else 'sight_deposits' if metric=='L2' else 'deposits'
         row=next((r for r in components.get(activity,[]) if r['period']==period),None)
         value,status=_native_value(row) if row else (None,'missing')
         if status is None and value>0:
@@ -535,13 +559,26 @@ def evaluate_metric(metric, inputs, horizon):
     if metric=='E2-B':
         numerator=-(values['personnel']+values['administration'])
         denominator=values['RBIF']-values['provision_flow']+values['services']+values['fees']
-    elif metric=='L2': numerator=values['cash']+values['interfinancial'];denominator=values['sight_deposits']
+    elif metric in ('L2','LA'):
+        numerator=values['cash']+values['interfinancial'];denominator=values['sight_deposits' if metric=='L2' else 'AT']
+    elif metric=='RS':
+        numerator=values['services']+values['fees']
+        denominator=values['RBIF']-values['provision_flow']+numerator
+    elif metric=='E3':numerator=-(values['personnel']+values['administration']);denominator=values['AT']
+    elif metric.startswith('LF-'):
+        observed=sum(values[k] for k in ('deposits','repos','issuances','loans_transfers'))
+        residual=values['funding']-observed
+        result['funding_reconciliation']=dict(status='exact' if residual==0 else 'mismatch',residual_fraction=_fraction_field(residual))
+        if residual:return dict(result,status='funding_identity_mismatch')
+        numerator=values[{'LF-DEP':'deposits','LF-OC':'repos','LF-EM':'issuances','LF-REP':'loans_transfers'}[metric]]
+        denominator=values['funding']
     else:
-        a,b=METRICS[metric];numerator=values[a]*(-1 if metric in ('Q1','Q2') else 1);denominator=values[b]
+        a,b=formula;numerator=values[a]*(-1 if metric in ('Q1','Q2') else 1);denominator=values[b]
     result['numerator_fraction']=_fraction_field(numerator);result['denominator_fraction']=_fraction_field(denominator)
     if denominator==0:return dict(result,status='zero_denominator')
     if denominator<0:result['flags'].append('negative_denominator')
-    if metric in ('Q2','E2-B') and numerator<0:result['flags'].append('signed_cost_reversal')
+    if metric in ('Q2','E2-B','E3') and numerator<0:result['flags'].append('signed_cost_reversal')
+    if metric=='RS' and not 0<=numerator/denominator<=1:result['flags'].append('non_convex_income_share')
     for r in derived:result['flags']=sorted(set(result['flags']+r['flags']))
     result=_valued(result,numerator/denominator)
     result['percentage_display']=_valued({},numerator/denominator*100)['value']
