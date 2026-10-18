@@ -8,6 +8,12 @@ Este repositório apoia a monografia de Ciências Econômicas/UNICAMP de João V
 
 O texto autoral orienta contexto e objetivos; hipóteses e propostas não viram decisões só por constarem do manuscrito. Alterações sob direção de João são permitidas, com fontes/citações verificáveis e transparência institucional aplicável. Consulte [README](README.md), [GLOSSARY](GLOSSARY.md), [REFERENCES](REFERENCES.md) e a [nota metodológica](docs/engineering/institution-type-indicator-methodology-20261012.md). Materiais privados no Drive não devem ser copiados ao Git público.
 
+## Base de indicadores neste computador
+
+Antes de consultar indicadores, localizar a raiz de dados compartilhada e ler **`data/curated/current-indicators.json`** pelo [comando verificado](docs/engineering/local-queries-20261013.md#base-de-indicadores-vigente-entre-tasks). Validar o SHA-256 completo de `manifest.json` contra o ponteiro e registrar caminho/hash como entrada fixa da tarefa. Nunca escolher pela data/nome de pasta, por este chat ou pela Release antiga. Ponteiro ausente, pacote ausente ou hash divergente impedem afirmar que a base vigente foi encontrada.
+
+O ponteiro é privado e comum aos worktrees deste repositório no computador; o clone distribui as instruções, não o pacote calculado. Novas versões são gravadas em destinos novos; só promover o ponteiro após aceite. Tarefas em andamento mantêm o pin inicial e decidem explicitamente se migram. Uma task que altera dados escreve seu próprio destino e não modifica o pacote aceito.
+
 ## Autoridade e entrada obrigatória
 
 O [workflow de Issues](docs/agents/workflow.md) é o contrato operacional detalhado; o [tracker](docs/agents/issue-tracker.md) define a autoridade das superfícies. Issue guarda tarefa/dependências/aceite; repositório guarda contratos/evidência. **Project /3 permanece com Zec.** O [histórico preservado](docs/agents/operational-history-20261013.md) não substitui regras vigentes ou a Issue real.
