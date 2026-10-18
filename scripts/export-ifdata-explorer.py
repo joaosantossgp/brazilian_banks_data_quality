@@ -50,6 +50,17 @@ ADEQUACY = {
 }
 
 
+def prior_correction_derivation(manifest, package):
+    """Membership-only children retain the authenticated correction ancestry."""
+    seen=set()
+    while manifest.get('derivation',{}).get('rule')=='dated_historical_membership_v1':
+        source=manifest['derivation']['composition'];key=(source['root'],source['expected_manifest_sha256'])
+        if key in seen:raise ValueError('Cyclic presentation correction ancestry')
+        seen.add(key);manifest=package(*key)
+        if manifest.get('contract')!='ifdata-composed-analysis-v1':raise ValueError('Unexpected correction ancestry contract')
+    return manifest.get('derivation',{})
+
+
 def export(root, pin, output, template):
     root, output, template = Path(root).resolve(), Path(output).resolve(), Path(template).resolve()
     if output.exists() or output.with_suffix('.receipt.json').exists():
@@ -189,7 +200,7 @@ def export(root, pin, output, template):
             issue = 138 if scope['dataset'] == 'individual' else 137 if scope['metric'] == 'R2' else 133 if scope['period'] == '201903' else 134
             corrections.append(dict(issue=issue, scope=[scope[k] for k in ('period','dataset','metric','horizon')],
                                     manifest=spec['expected_manifest_sha256'], note='Ponte nativa delimitada de 2019; exceções e perímetros preservados.'))
-    derivation=manifest.get('derivation',{})
+    derivation=prior_correction_derivation(manifest,lambda root,pin:package(Path(root).resolve(),pin))
     if derivation.get('rule')=='terra-individual-history-financial-202412-v1':
         spec=derivation['patch'];source=package(Path(spec['root']).resolve(),spec['expected_manifest_sha256'])
         corrections.append(dict(issue=154,scope=['202412','financial','Terra','quarter/ttm'],manifest=spec['expected_manifest_sha256'],
@@ -197,6 +208,7 @@ def export(root, pin, output, template):
     data = dict(cells=records, cell_contract="joint-cells-compact-v1", monetary_unit="BRL", monetary_scale=1, names=names, companies=companies, formulas=formulas, metric_info=METRIC_INFO,
                 adequacy=ADEQUACY, manifest=pin, periods=manifest['periods'], source_counts=manifest['tables'],
                 corrections=corrections,
+                historical_membership=manifest.get('derivation',{}).get('rule')=='dated_historical_membership_v1',
                 caixa=dict(periods=['202109', '202112', '202203', '202206']),
                 sr_linkage=dict(coverage=sr_coverage, attributes_manifest=manifest['config']['sr']['expected_manifest_sha256'],
                                 segmentation_manifest=pin),
