@@ -8,6 +8,7 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 from pathlib import Path
 import sys
 import time
@@ -50,6 +51,85 @@ ADEQUACY = {
 }
 
 
+def macro_view(row):
+    """Labels describe the persisted window; never derive another statistic."""
+    s, v, c, method = (row[k] for k in ('series', 'variable', 'category', 'method'))
+    source, url = 'IBGE · SIDRA', 'https://sidra.ibge.gov.br/'
+    note = 'Contexto Brasil; associação temporal não demonstra causalidade.'
+    if s == 'gdp_current_brl_million' and v == '585' and c == '90707' and method in ('official_quarter','sum_four_quarters'):
+        label, unit = 'PIB nominal · ' + ('12 meses' if method == 'sum_four_quarters' else 'trimestre'), 'BRL_million'
+        note += ' Fluxo em milhões de reais correntes; não é estoque nem PIB real.'
+    elif s == 'gdp_official_rates' and c == '90707' and method == 'official_quarter':
+        label, unit = 'PIB · ' + {'6561':'variação sobre mesmo trimestre do ano anterior','6562':'variação de quatro trimestres sobre os quatro anteriores','6564':'variação trimestral com ajuste sazonal'}[v], 'percent'
+    elif s in ('gdp_volume_and_sectors','gdp_volume_sa') and method == 'official_quarter' and v == ('584' if s == 'gdp_volume_sa' else '583'):
+        sector = {'90707':'PIB','90687':'Agropecuária','90691':'Indústria','90696':'Serviços','90697':'Comércio','90700':'Atividades financeiras, seguros e relacionadas'}[c]
+        if s == 'gdp_volume_sa' and c != '90707':
+            raise ValueError('Unsupported adjusted GDP category')
+        label, unit = sector+' · volume'+(' com ajuste sazonal' if s == 'gdp_volume_sa' else ' sem ajuste sazonal'), 'index_1995_mean100'
+        note += ' Índice encadeado, média de 1995 = 100; índices setoriais não são aditivos nem lucro bancário.'
+    elif s == 'industrial_production' and c == '129314' and method == 'mean_three_months':
+        label, unit = 'Produção industrial · média trimestral '+{'12606':'sem ajuste sazonal','12607':'com ajuste sazonal'}[v], 'index_2022_mean100'
+        note += ' Média dos três índices mensais; média de 2022 = 100.'
+    elif s == 'ipca' and c == 'total' and (v,method) in [('2263','quarter_end_month'),('2265','quarter_end_month'),('2266','quarter_end_month'),('63','compound_three_months')]:
+        label = 'IPCA · '+{'2263':'acumulado oficial em 3 meses','2265':'acumulado oficial em 12 meses','2266':'índice no fim do trimestre','63':'3 meses recompostos das taxas mensais'}[v]
+        unit = 'index_1993dec100' if v == '2266' else 'percent'
+        note += ' Referência: último mês do trimestre. A recomposição pode diferir da taxa oficial pela precisão publicada.'
+    elif s == 'labor_income' and c == 'total' and method == 'official_quarter':
+        label, unit = {'5929':('Renda média habitual · nominal','BRL_nominal'),'5933':('Renda média habitual · real','BRL_at_latest_quarter_prices')}[v]
+        note += ' PNAD trimestral, disponível desde 2012. Renda real aos preços médios do último trimestre divulgado na captura (2026T2), não reais constantes de 2024; não deflacionar novamente.'
+    elif s == 'unemployment' and v == '4099' and c == 'total' and method == 'official_quarter':
+        label, unit = 'Taxa de desocupação · trimestre civil', 'percent'
+        note += ' PNAD disponível desde 2012; 2010–2011 permanecem sem observação, sem emenda com a PME.'
+    elif c == 'total' and ((s == 'real_policy_rate_expost' and v == 'Fisher_Selic_IPCA' and method in ('fisher_three_months','fisher_twelve_months')) or (s == 'selic_effective_monthly' and v == 'BM12_TJOVER12' and method in ('compound_three_months','compound_twelve_months'))):
+        real = s == 'real_policy_rate_expost'
+        label, unit = ('Juro real ex post · Fisher' if real else 'Selic Over efetiva')+' · '+('12 meses' if 'twelve' in method else '3 meses'), 'percent_period'
+        source, url = ('Ipeadata/BCB + IBGE · derivado Fisher' if real else 'Ipeadata · fonte BCB/Boletim'), 'https://www.ipeadata.gov.br/api/odata4/Metadados(%27BM12_TJOVER12%27)'
+        note += ' Retorno acumulado no período, antes de tributos/custos; não é meta Selic anualizada, custo do crédito, taxa neutra ou expectativa.'
+    else:
+        raise ValueError('Unsupported macro presentation view')
+    if source == 'IBGE · SIDRA':
+        url='https://sidra.ibge.gov.br/tabela/'+{'gdp_current_brl_million':'1846','gdp_official_rates':'5932','gdp_volume_and_sectors':'1620','gdp_volume_sa':'1621','industrial_production':'8888','ipca':'1737','labor_income':'6472','unemployment':'6468'}[s]
+    if row['unit'] != unit:
+        raise ValueError('Macro presentation unit mismatch')
+    return dict(key='|'.join((s,v,c,method)), label=label, unit=unit, source=source, url=url, note=note)
+
+
+def presentation_macro(root, pin, authenticate=None):
+    root = Path(root).resolve()
+    def auth(path, expected):
+        if authenticate is not None:
+            authenticate(path, expected)
+        elif math._digest_file(path) != expected:
+            raise ValueError('Macro presentation input hash mismatch')
+    auth(root/'manifest.json',pin)
+    manifest = math._json_unique((root/'manifest.json').read_bytes())
+    if manifest.get('contract') != 'macro-context-v1':
+        raise ValueError('Pinned macro-context-v1 required')
+    entries=[e for e in manifest['files'] if e['file']=='quarterly.parquet']
+    if len(entries)!=1:
+        raise ValueError('Exactly one quarterly macro table required')
+    file=math._contained(root,entries[0]['file']);auth(file,entries[0]['sha256'])
+    with duckdb.connect(config={'threads':1,'memory_limit':'128MiB'}) as con:
+        rows=[math._json_unique(r[0].encode('utf-8')) for r in con.execute('select payload from read_parquet(?)',[str(file)]).fetchall()]
+    if len(rows)!=entries[0]['rows']:
+        raise ValueError('Macro row count mismatch')
+    views,seen={},set()
+    for row in rows:
+        view=macro_view(row);key=(view['key'],row['period'])
+        if key in seen:
+            raise ValueError('Duplicate macro period/view')
+        seen.add(key);views[view['key']]=view
+        if not re.fullmatch(r'20(?:1[0-9]|2[0-4])(?:03|06|09|12)',row['period']):
+            raise ValueError('Macro period outside quarterly 2010–2024 window')
+        f=row['value_fraction']
+        if row['status']=='ok':
+            if not isinstance(f,list) or len(f)!=2 or any(not isinstance(x,str) or not re.fullmatch(r'-?\d+',x) for x in f) or int(f[1])<=0:
+                raise ValueError('Invalid exact macro fraction')
+        elif f is not None:
+            raise ValueError('Unavailable macro observation has a value')
+    return dict(contract='explorer-macro-v1',manifest=pin,series=list(views.values()),rows=rows)
+
+
 def prior_correction_derivation(manifest, package):
     """Membership-only children retain the authenticated correction ancestry."""
     seen=set()
@@ -61,7 +141,7 @@ def prior_correction_derivation(manifest, package):
     return manifest.get('derivation',{})
 
 
-def export(root, pin, output, template):
+def export(root, pin, output, template, macro_root=None, macro_pin=None):
     root, output, template = Path(root).resolve(), Path(output).resolve(), Path(template).resolve()
     if output.exists() or output.with_suffix('.receipt.json').exists():
         raise FileExistsError(output)
@@ -104,6 +184,12 @@ def export(root, pin, output, template):
                 guard_sources(nested)
     guard_sources(manifest['config'])
     guard_sources(manifest.get('derivation',{}))
+    if (macro_root is None) != (macro_pin is None):
+        raise ValueError('Macro package and manifest pin must be supplied together')
+    macro = None
+    if macro_root is not None:
+        macro_root=Path(macro_root).resolve();no_overlap(macro_root)
+        macro=presentation_macro(macro_root,macro_pin,authenticate)
     connection = duckdb.connect(config={'threads': 1, 'memory_limit': '256MiB'})
 
     def table(path, source_manifest, name):
@@ -213,6 +299,8 @@ def export(root, pin, output, template):
                 sr_linkage=dict(coverage=sr_coverage, attributes_manifest=manifest['config']['sr']['expected_manifest_sha256'],
                                 segmentation_manifest=pin),
                 monetary_scale_info=monetary, notes='Presentation recomposes exact persisted joint cells; no indicator recalculation. Company lists are complete.')
+    if macro is not None:
+        data['macro']=macro
     packed = base64.b64encode(gzip.compress(json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)).decode('ascii')
     html = template.read_text(encoding='utf-8')
     if html.count('__PACKED_DATA__') != 1:
@@ -227,6 +315,9 @@ def export(root, pin, output, template):
                    composition_manifest_sha256=pin, template_sha256=template_pin,
                    exporter_sha256=math._digest_file(Path(__file__)), rows=len(records), companies=len(companies),
                    elapsed_seconds=time.perf_counter()-started)
+    if macro is not None:
+        receipt['macro_manifest_sha256']=macro_pin
+        receipt['macro_rows']=len(macro['rows'])
     output.with_suffix('.receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     connection.close()
     return receipt
@@ -238,5 +329,7 @@ if __name__ == '__main__':
     parser.add_argument('--expected-manifest-sha256', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--template', default=str(Path(__file__).with_name('ifdata-explorer-template.html')))
+    parser.add_argument('--macro-context')
+    parser.add_argument('--macro-manifest-sha256')
     args = parser.parse_args()
-    print(json.dumps(export(args.composition, args.expected_manifest_sha256, args.output, args.template), ensure_ascii=False))
+    print(json.dumps(export(args.composition, args.expected_manifest_sha256, args.output, args.template,args.macro_context,args.macro_manifest_sha256), ensure_ascii=False))
