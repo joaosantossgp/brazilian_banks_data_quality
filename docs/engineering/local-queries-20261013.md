@@ -2,6 +2,34 @@
 
 Guia operacional separado do [README](../../README.md) na [Issue 109](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/109), em 2026-10-13. Comandos e evidências migrados da versão de 2026-10-12, sem mudança das CLIs. Não se afirma nova execução de consultas/replays nesta revisão documental.
 
+## Base de indicadores vigente entre tasks
+
+A referência única neste computador é `data/curated/current-indicators.json` no checkout principal compartilhado. Em um worktree, sua própria pasta `data/` pode estar ausente; descubra o checkout principal pelo diretório Git comum. O ponteiro contém `contract=ifdata-current-indicators-v1`, `package` relativo ao checkout principal, `manifest_sha256`, `validation=accepted_local`, `code_commit` e as referências de publicação. O estado local aceito não implica integração do código na main.
+
+Este comando PowerShell funciona tanto no checkout principal quanto em seus worktrees, sem instalar dependências. Ele confere o caminho, o contrato e o pin antes de apresentar a seleção:
+
+```powershell
+$primaryRoot = [IO.Path]::GetFullPath((Split-Path -Parent (git rev-parse --path-format=absolute --git-common-dir)))
+$pointer = Join-Path $primaryRoot 'data/curated/current-indicators.json'
+$selection = Get-Content -LiteralPath $pointer -Raw -ErrorAction Stop | ConvertFrom-Json
+if ($selection.contract -ne 'ifdata-current-indicators-v1' -or $selection.validation -ne 'accepted_local' -or $selection.manifest_sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Ponteiro de indicadores inválido ou não aceito' }
+$packageRoot = [IO.Path]::GetFullPath((Join-Path $primaryRoot $selection.package))
+$curatedRoot = [IO.Path]::GetFullPath((Join-Path $primaryRoot 'data/curated')) + [IO.Path]::DirectorySeparatorChar
+if (-not $packageRoot.StartsWith($curatedRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Pacote fora de data/curated' }
+$manifest = Join-Path $packageRoot 'manifest.json'
+$hash = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+if ($hash -cne $selection.manifest_sha256) { throw 'Hash da base diverge do ponteiro; não consultar' }
+$packageMetadata = Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop | ConvertFrom-Json
+if ($packageMetadata.contract -ne 'ifdata-composed-analysis-v1') { throw 'Contrato de indicadores inesperado' }
+[pscustomobject]@{ Package=$packageRoot; ManifestSHA256=$hash; Validation=$selection.validation; CodeCommit=$selection.code_commit }
+```
+
+A saída identifica a pasta das tabelas Parquet, consultáveis por DuckDB/Python; `payload` conserva os campos e frações exatas. A verificação acima autentica o manifest, não revalida todos os arquivos ou a metodologia. Ao iniciar uma consulta importante, conferir também os hashes das tabelas consumidas contra o inventário desse manifest, como exigem os leitores autenticados existentes. Registrar o pin inicial na tarefa e mantê-lo mesmo se outra entrega atualizar o ponteiro.
+
+Se o ponteiro não existir em outro computador, os dados não foram configurados ali: não procurar automaticamente uma pasta parecida nem presumir que a Release antiga seja a versão do explorador. Copiar/restaurar o pacote em escopo autorizado, validar e só então configurar sua referência local.
+
+Para publicar uma nova seleção local, o integrador registra primeiro a nova pasta imutável, hash do manifest, evidência de aceite e código/PR de origem. Só depois atualiza o ponteiro, preservando a versão anterior para tarefas já fixadas. Saída em construção, tentativa parcial ou pasta mais recente não é versão vigente. O arquivo privado não entra no Git; estas instruções são versionadas para descoberta por outras tasks.
+
 ## Antes de executar
 
 Execute na raiz do checkout que contém os dados e a `.venv` configurada, não na pasta deste documento. O clone distribui código/contratos, não os dados locais. Os exemplos dependem dos artefatos identificados pelos ledgers; consulte as instruções e validações da [Release IF.data](https://github.com/joaosantossgp/brazilian_banks_data_quality/releases/tag/snapshot-ifdata-20261012) quando precisar restaurá-los. A Release é datada, não uma promessa de sincronização com qualquer outra frente.
