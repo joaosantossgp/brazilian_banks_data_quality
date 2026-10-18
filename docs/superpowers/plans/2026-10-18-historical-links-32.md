@@ -41,14 +41,14 @@ A divisão evita tickets horizontais de código/dados/UI isolados. A ordem respe
 **Interfaces:** manter APIs atuais; acrescentar evidência opcional `historical_evidence` às funções de vínculo/build. Formato finito versionado de claims por identidade/data/hash/página. Nova operação adjacente `recompose_membership_changes(composition, pin, membership, membership_pin, output)` consome resultados persistidos e gera derivação com allowlist explícita. Sem framework geral ou alteração de fórmulas.
 
 - [x] Pesquisar16fechamentos/60estados e obter revisão independente factual (16PDFs/pins/páginas conferidos).
-- [ ] Escrever e observar RED para prova válida1T2021 e recusa4T2020/identidade divergente/cadastro conflitante;202412permaneceigual.
-- [ ] Implementar admissão finita dos claims, autenticação e registro de origem; executar testes da função pura até GREEN.
-- [ ] Testar builder/CLI em fixture autenticada: mesmos universos/valores, novos vínculos comprovados, claims duplicados/conflitantes recusados, destinos aceitos protegidos.
-- [ ] Implementar delta de membership e recomposição seletiva com o redutor existente; teste proíbe `evaluate_metric`, mantém frações totais, deduplica e preserva payloads fora do recorte.
-- [ ] Medir um contexto real com inputs fixados antes de rodar todas as datas afetadas; se o custo for desproporcional, resolver o gargalo demonstrado, sem reescrever o motor.
-- [ ] Revisão independente de código antes do lote; depois pacote novo e revisão factual/temporal e econômica independente do lote, incluindo estatística de cobertura e total financeiro inalterado.
-- [ ] Registrar3T2014–4T2020nãoadmitidos e18datasanteriores àconstituição sem preenchimento artificial. Não transformar proxy de operadora em consolidado da holding.
-- [ ] Commit da fatia verificada, sem promoção do ponteiro enquanto o pacote não tiver aceite.
+- [x] Escrever e observar RED para prova válida1T2021 e recusa4T2020/identidade divergente/cadastro conflitante;202412permaneceigual.
+- [x] Implementar admissão finita dos claims, autenticação e registro de origem; executar testes da função pura até GREEN.
+- [x] Testar builder/CLI em fixture autenticada: mesmos universos/valores, novos vínculos comprovados, claims duplicados/conflitantes recusados, destinos aceitos protegidos.
+- [x] Implementar delta de membership e recomposição seletiva com o redutor existente; teste proíbe `evaluate_metric`, mantém frações totais, deduplica e preserva payloads fora do recorte.
+- [x] Medir um contexto real com inputs fixados antes de rodar todas as datas afetadas; se o custo for desproporcional, resolver o gargalo demonstrado, sem reescrever o motor.
+- [x] Revisão independente de código antes do lote; depois pacote novo e revisão factual/temporal e econômica independente do lote, incluindo estatística de cobertura e total financeiro inalterado.
+- [x] Registrar3T2014–4T2020nãoadmitidos e18datasanteriores àconstituição sem preenchimento artificial. Não transformar proxy de operadora em consolidado da holding.
+- [x] Commit da fatia verificada, sem promoção do ponteiro enquanto o pacote não tiver aceite.
 
 ## Task2 — Asdemais31 e fechamento
 
@@ -57,14 +57,17 @@ A divisão evita tickets horizontais de código/dados/UI isolados. A ordem respe
 **Interfaces:** consumir claims/mapas daTask1 e auditoria32×60; preservar os32CNPJ e seus códigosCVM. Cada correção declara fonte temporal e allowlist própria; caso semprova permanece diagnosticado.
 
 - [x] Inventariar deterministamente os1.920mapas existentes e seus estados sem calcular indicadores.
-- [ ] Revalidar proveniência dos28casos com60/60unidades e os eventosPAN/DM/Daycoval/BRPartners. Conferir Cielo e Nacional na janela inteira; não chamar ausência de reporte de inexistência econômica.
-- [ ] Para cada diferença comprovada, adicionar caso causal RED, implementar mudança mínima e conferir GREEN; separar conflitos/falta deprova do que é corrigível. Não exigir documento novo por trimestre quando a regra de intervalo tiver prova suficiente, nem criar regra desse tipo sem explicitá-la.
-- [ ] Executar somente metadados e recortes atingidos, preservando a base aceita e as correçõesTerra/Caixa jáincorporadas. Medir antes de ampliar e registrar impacto real.
-- [ ] Revisão independente porfatias de correções; comparar integralmente contribuições/foraescopo e N/D/coortes/companhias/cobertura, sem refazer fórmulas.
-- [ ] Exportar HTMLnovo e conferir dados/filtros/proveniência; copiar privadamente aoDrive se aplicável, mantendo anterior.
-- [ ] Revisão final de inventário/allowlist/SHA, testes pertinentes, PR e CI. Não apresentar resultado local como integração.
-- [ ] Após aceite, atualizar explicitamente current-indicators.json; tarefas paralelas mantêm seus pins. AtualizarIssue156/mapa2 e comunicar versão vigente.
+- [x] Revalidar proveniência dos28casos com60/60unidades e os eventosPAN/DM/Daycoval/BRPartners. Conferir Cielo e Nacional na janela inteira; não chamar ausência de reporte de inexistência econômica.
+- [x] Nenhuma outra diferença de alvo foi comprovada. Para eventual diferença comprovada, adicionar caso causal RED, implementar mudança mínima e conferir GREEN; separar conflitos/falta deprova do que é corrigível. Não exigir documento novo por trimestre quando a regra de intervalo tiver prova suficiente, nem criar regra desse tipo sem explicitá-la.
+- [x] Executar somente metadados e recortes atingidos, preservando a base aceita e as correçõesTerra/Caixa jáincorporadas. Medir antes de ampliar e registrar impacto real.
+- [x] Revisão independente porfatias de correções; comparar integralmente contribuições/foraescopo e N/D/coortes/companhias/cobertura, sem refazer fórmulas.
+- [x] Exportar HTMLnovo e conferir dados/filtros/proveniência; copiar privadamente aoDrive se aplicável, mantendo anterior.
+- [ ] Revisão final de inventário/allowlist/SHA e testes concluídos; PR/CI/integração em acompanhamento. Não apresentar resultado local como integração.
+- [ ] Após aceite local, promover explicitamente current-indicators.json e registrar no mapa2; tarefas paralelas mantêm seus pins. Integração/CI remota em acompanhamento.
 
 ## Self-review e handoff
 
 O plano cobre os requisitos da spec, usa uma fronteira de vínculo/composição existente e sóduasfatias completas. Não houve código de produto ou promoção. Proposta de execução: **nativa pelo integrador, com revisões independentes nas duas fatias**, para reduzir releitura/custo; alternativa é implementar por subagentes. A escolha e revisão do plano são de João, conforme writing-plans/to-tickets solicitados. Aprovação recebida em18/10/2026; execução nativa com revisão independente por fatia, conforme Issue156.
+## Checkpoint de entrega local
+
+Fatia160 e161 com revisão independente PASS; commit inicial b41d862. HTML novo exportado e conferido:305.296células/4.300.156frações,54recortes exatos,13kagregados comparados. SHA HTML903b77a302a46b30af206d608fba6277f9064cf54148a46548755672eff5892d. Nova cópia privada estática noDrive,98.315.714bytes e pastaMono2confirmados porreadback, anterior preservada. Não se alega nova inspeção visual humana: o aceite visual anterior referia-se à versão anterior. A primeira execução doQA falhou na guarda do destino dooráculo; helpers foram copiados ao workspace próprio e a segunda execução concluiu PASS, preservando o log anterior.
