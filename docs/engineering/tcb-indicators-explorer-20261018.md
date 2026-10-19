@@ -1,6 +1,31 @@
 # Explorador dos indicadores por Tcb
 
-Entrega da [Issue #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193), dependente da [composição #192](tcb-indicators-delivery-20261018.md). **Candidato local gerado e piloto econômico/offline aprovado; inspeção visual e QA ampliada pendentes. Nenhum ponteiro promovido.** O explorador reutiliza exportador e template existentes, com valores persistidos do sistema IF.data observado inteiro de 2010–2024.
+Entrega da [Issue #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193), dependente da [composição #192](tcb-indicators-delivery-20261018.md). **Reconstrução de19/10/2026 gerada com dados e código revisados; inspeção visual/operacional real pendente. Nenhum ponteiro promovido.** O explorador reutiliza exportador e template existentes, com valores persistidos do sistema IF.data observado inteiro de 2010–2024.
+
+## Reconstrução para iniciar a análise —19/10/2026
+
+O pedido de João amplia a interface para cinco áreas: **Indicadores**, **Balanço do sistema**, **Crédito**, **Macro** e **Guia por Tcb**, além de **Base e limites**. Design claro com frontend-design: navegação por pergunta, filtros principais compactos, recortes avançados recolhidos, gráfico antes das fichas extensas e guia das oito famílias. O guia lista as27métricas adotadas por dimensão, com fórmulas, condições, fontes e lacunas; o botão leva ao indicador na perspectiva adequada. Não afirma que todas as medidas atendem indistintamente toda unidade do Tcb.
+
+Indicadores conservam Tcb/SegmentoTb/Tc/Td/Sr original ou analítico e recomposição exata das células. Balanço e crédito usam **Financeiro**, com população e Tcb próprios, explicitamente identificados; os filtros avançados dos indicadores não são aplicados silenciosamente às novas áreas. A macro conserva seu calendário e escala, com comparação financeira eCSV existentes. Estoques nativos dos relatórios2/3 somam uma variável literal de cada vez; DRE nativa não é somada como trimestre efetivo. Não houve indicador novo ou recálculo.
+
+Crédito incorpora as oito aberturas7–14 da [ingestão196](ifdata-credit-openings-temporal-gaps-20261019.md), com seletor de relatório, grupo e variável. Totais e componentes permanecem séries distintas. Contagens de clientes/operações não são pessoas únicas; vencido15+ não viraNPL90+. A ausência de2010–2013 e de região em201406 permanece lacuna. Saldos SCR não são emendados ao crédito contábil. O explorador conserva sinais e valores ausentes e não cria percentuais de composição somando linhas que podem se sobrepor.
+
+O helper adjacente `scripts/ifdata-explorer-contexts.py` é uma redução descritiva de apresentação, sem nova camada ou ingestão. Autentica manifest/partes e cadastro da composição; códigos sem correspondência exata não são inferidos. Exportador exige o SHA-256 doJSON de contextos e o mesmo pin da composição dos indicadores. As somas usamFraction; o navegador usaBigInt e só converte para apresentação. Os CSVs das novas áreas conservam fração exata, contexto, filtros e pin.
+
+| Contextos exportados | Literais | Células | Calendário |
+|---|---:|---:|---|
+| Ativo ePassivo |42|28.298|60trimestres,201003–202412|
+| Crédito |269|141.992|43trimestres,201406–202412|
+
+Há504linhas contábeis e3.350decrédito sem código, preservadas no diagnóstico e fora da soma institucional; zero linhas identificadas sem correspondência exata ao cadastro. São linhas de várias contas/períodos, não instituições distintas. A contagem de nulos em cada série se refere às linhas presentes naquele contexto, não mede a ausência de uma conta inteira. Totais conhecidos não certificam cobertura completa ou consolidação econômica doSFN.
+
+**Artefato concreto atual:** `explorer-analysis-20261019-v1.html`, na raiz privada devisualizações desta tarefa. SHA-256 `d7a3007c86bc8632bbd8e56583ef6d8cc3fc94a9b86ae8af64b52909d45a8804`;119.315.403bytes;355.632células deindicadores e1.476linhas macro;69,816sdeexportação. Contextos: `explorer-contexts-20261019-full.json`, SHA-256 `9316ef2329e1da1b43827aa8f38577d1f8de65dfb885bfb7c0dd9433f96aa029`. Orecibo `.receipt.json` adjacente fixa hashes deexportador/template, composição, macro econtextos. A [entrada de análise198](analysis-start-20261019.md) é o handoff canônico e inclui a auditoria econômica dos níveis.
+
+**Revisões concluídas:** economic_review_198 aprovou instrumentos/dados e gateA/B, piloto eexpansãoC1, e código/JSONC neste snapshot. Recompôs integralmente1.534células de balanço e10.268decrédito dopiloto; conferiu sua preservação na expansão e calendário/catálogo/chaves completos.17testes pertinentes passaram, incluindo precisão, null/zero/negativo, duplicatas, filtros/coortes e rejeição dedrift de pin; o códigoCSV foi revisado, mas seu acionamento real permanece pendente. A verificação estrutural doHTML conferiu27IDs,355.632células, igualdade integral doscontextos,1.476macro,74IDsestáticos únicos, ausência derecursos externos carregados e sintaxeJavaScript. Nenhuma dessas verificações é inspeção visual.
+
+A abertura do novo arquivo no painel retornou somente `queued`. A validação manual do arquivo concreto foi solicitada aJoão; resposta pendente não é aceite. O bloqueio de navegador local já registrado continua respeitado, sem servidor, outro navegador ou rota indireta para contorná-lo. **193 permanece aberta até o gate visual/operacional**, incluindo cinco abas, gráfico/filtros/empty state, guia→indicador, fontes eCSV. Publicar/integrar o código revisado não promove o artefato nem muda o ponteiro. A revisão final doSHA e os checks remotos têm registro naIssue.
+
+Reprodução: usar os pins da entrada198; executar o helper com `--composition`, `--composition-pin`, `--balance`, `--balance-pin`, pares `--credit ROOT SHA256` para core/early e `--output` emdestino novo. Depois exportar com aCLI existente, acrescentando `--context-summaries` e `--context-sha256`, preservando os parâmetros macro. Os instrumentos/recibos privados da198 registram os comandos concretos; não é necessário reinstalar runtime ou recolher fontes.
 
 ## Conteúdo e leitura
 
@@ -30,7 +55,7 @@ A ferramenta de navegador disponível rejeitou URL local `file://` por política
 
 A promoção de `current-indicators.json` só ocorrerá após aceite dos dados e do artefato. Deve preservar backup byte a byte, pins anteriores, metadados macro e política de migração explícita, validar os hashes por nova descoberta e não reutilizar o link Drive do artefato anterior. Upload, deploy e nova coleta não fazem parte desta entrega.
 
-## Candidato de 19/10/2026
+## Candidato anterior — histórico preservado, substituído pela reconstrução acima
 
 Após revisão independente estática e correção de uma comparação incorreta entre hashes de perfil de universo e de perfil legado, os 33 perfis reais foram autenticados. TDD: 12 testes pertinentes aprovados. A correção preserva separadamente as duas âncoras e os bytes do arquivo efetivamente consumido; não flexibiliza a validação.
 

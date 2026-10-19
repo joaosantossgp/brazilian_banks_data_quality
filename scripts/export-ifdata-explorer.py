@@ -242,7 +242,31 @@ def prior_correction_derivation(manifest, package):
     return manifest.get('derivation',{})
 
 
-def export(root, pin, output, template, macro_root=None, macro_pin=None):
+def presentation_contexts(path, pin, composition_pin):
+    path=Path(path).resolve()
+    if math._digest_file(path)!=pin:
+        raise ValueError('Context presentation hash mismatch')
+    data=math._json_unique(path.read_bytes())
+    if data.get('composition_manifest')!=composition_pin:
+        raise ValueError('Context composition pin differs from indicators')
+    if data.get('perspective')!='financial' or data.get('dimension_scope')!=['Tcb','membership']:
+        raise ValueError('Unsupported context perspective/dimensions')
+    for kind in ('balance','credit'):
+        catalog=data[kind]['catalog'];seen=set()
+        for row in data[kind]['rows']:
+            if len(row)!=8 or row[1] not in ('sample','remaining','unknown') or not 0<=row[3]<len(catalog):
+                raise ValueError('Invalid native context cell')
+            key=tuple(row[:4])
+            if key in seen:raise ValueError('Duplicate native context cell')
+            seen.add(key)
+            if row[4] is not None and (len(row[4])!=2 or int(row[4][1])<=0):
+                raise ValueError('Invalid exact context sum')
+            if any(type(n)is not int or n<0 for n in [row[5],row[7],*row[6].values()]):
+                raise ValueError('Invalid context counts')
+    return data
+
+
+def export(root, pin, output, template, macro_root=None, macro_pin=None, context_path=None, context_pin=None):
     root, output, template = Path(root).resolve(), Path(output).resolve(), Path(template).resolve()
     if output.exists() or output.with_suffix('.receipt.json').exists():
         raise FileExistsError(output)
@@ -412,6 +436,12 @@ def export(root, pin, output, template, macro_root=None, macro_pin=None):
                 monetary_scale_info=monetary, notes='Presentation recomposes exact persisted joint cells; no indicator recalculation. Company lists are complete.')
     if macro is not None:
         data['macro']=macro
+    if (context_path is None)!=(context_pin is None):
+        raise ValueError('Both context file and SHA-256 required')
+    if context_path is not None:
+        authenticate(Path(context_path).resolve(),context_pin)
+        data['contexts']=presentation_contexts(context_path,context_pin,pin)
+        data['contexts_manifest']=context_pin
     packed = base64.b64encode(gzip.compress(json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)).decode('ascii')
     html = template.read_text(encoding='utf-8')
     if html.count('__PACKED_DATA__') != 1:
@@ -429,6 +459,9 @@ def export(root, pin, output, template, macro_root=None, macro_pin=None):
     if macro is not None:
         receipt['macro_manifest_sha256']=macro_pin
         receipt['macro_rows']=len(macro['rows'])
+    if context_path is not None:
+        receipt['contexts_sha256']=context_pin
+        receipt['context_rows']={k:len(data['contexts'][k]['rows']) for k in ('balance','credit')}
     output.with_suffix('.receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     connection.close()
     return receipt
@@ -442,5 +475,7 @@ if __name__ == '__main__':
     parser.add_argument('--template', default=str(Path(__file__).with_name('ifdata-explorer-template.html')))
     parser.add_argument('--macro-context')
     parser.add_argument('--macro-manifest-sha256')
+    parser.add_argument('--context-summaries')
+    parser.add_argument('--context-sha256')
     args = parser.parse_args()
-    print(json.dumps(export(args.composition, args.expected_manifest_sha256, args.output, args.template,args.macro_context,args.macro_manifest_sha256), ensure_ascii=False))
+    print(json.dumps(export(args.composition, args.expected_manifest_sha256, args.output, args.template,args.macro_context,args.macro_manifest_sha256,args.context_summaries,args.context_sha256), ensure_ascii=False))

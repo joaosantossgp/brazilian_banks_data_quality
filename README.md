@@ -1,5 +1,7 @@
 # Dados bancários para a monografia
 
+**Começar a análise:** [base fixada, períodos, lacunas e composição](docs/engineering/analysis-start-20261019.md) · [auditoria econômica dos níveis](docs/engineering/indicator-economic-plausibility-20261019.md) · [indicadores e condições por Tcb](docs/engineering/tcb-indicators-delivery-20261018.md). A entrada fixada distingue a composição aceita de27métricas do ponteiro corrente de cada computador.
+
 Este projeto apoia a monografia de Ciências Econômicas de João Victor Santos Gonçalves Pereira, na UNICAMP, sobre a evolução do **desempenho econômico-financeiro dos negócios financeiros no Brasil**. O desenho compara o sistema observado IF.data, as unidades vinculadas às companhias abertas selecionadas, o restante e os vínculos desconhecidos. O sistema observado não é um censo de toda atividade financeira brasileira.
 
 O núcleo acadêmico é **2010–2024**. **2025–2026** é complemento separado, condicionado às mudanças contábeis, de perímetro e de disponibilidade. A infraestrutura guarda observações nativas e sua proveniência; decisões adotadas, implementações e novas propostas têm estados próprios, apresentados abaixo.

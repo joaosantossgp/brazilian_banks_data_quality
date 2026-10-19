@@ -30,6 +30,10 @@ Se o ponteiro não existir em outro computador, os dados não foram configurados
 
 Para publicar uma nova seleção local, o integrador registra primeiro a nova pasta imutável, hash do manifest, evidência de aceite e código/PR de origem. Só depois atualiza o ponteiro, preservando a versão anterior para tarefas já fixadas. Saída em construção, tentativa parcial ou pasta mais recente não é versão vigente. O arquivo privado não entra no Git; estas instruções são versionadas para descoberta por outras tasks.
 
+## Entrada fixada para a análise acadêmica
+
+A [entrada de19/10/2026](analysis-start-20261019.md) identifica a composição de27métricas, macro, crédito, calendários e auditoria econômica. Contém comando de autenticação do pin explícito, independente do ponteiro corrente. A [verificação de níveis](indicator-economic-plausibility-20261019.md) separa extremos explicáveis e casos economicamente inconclusivos; não institui exclusões.
+
 ## Antes de executar
 
 Execute na raiz do checkout que contém os dados e a `.venv` configurada, não na pasta deste documento. O clone distribui código/contratos, não os dados locais. Os exemplos dependem dos artefatos identificados pelos ledgers; consulte as instruções e validações da [Release IF.data](https://github.com/joaosantossgp/brazilian_banks_data_quality/releases/tag/snapshot-ifdata-20261012) quando precisar restaurá-los. A Release é datada, não uma promessa de sincronização com qualquer outra frente.
