@@ -34,6 +34,44 @@ def complement_catalogue(datasets=('financial','individual')):
     return rows
 
 
+class ScopedComplementCompositionTests(unittest.TestCase):
+    def test_financial_complement_does_not_fabricate_individual_scope(self):
+        from test_ifdata_composition import CompositionTests
+        from unittest.mock import patch
+        helper=CompositionTests()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);cfg=helper.fixture(root)
+            def individual(row):
+                return json.loads(json.dumps(row).replace('financial|2|','individual|3|')
+                    .replace('"financial"','"individual"').replace('["individual", "2",','["individual", "3",'))
+            for table in ('unit_periods','components','unit_coverage'):
+                helper.rewrite(cfg['baseline'],table,lambda rows:rows.extend(
+                    individual(r) for r in list(rows) if r.get('dataset')=='financial' and r.get('code')=='B'))
+            for spec,table in ((cfg['membership'],'unit_membership'),(cfg['sr'],'attributes')):
+                helper.rewrite(spec,table,lambda rows:rows.extend(
+                    dict(individual(r),status='unknown',sr_analitico=None) if table=='attributes' else individual(r)
+                    for r in list(rows) if r.get('dataset')=='financial' and r.get('code')=='B'))
+            for spec in (cfg['membership'],cfg['sr'],*cfg['corrections'],*cfg['complements']):
+                path=Path(spec['root'])/'manifest.json';manifest=json.loads(path.read_text(encoding='utf8'))
+                if manifest['contract']=='ifdata-updated-membership-v1':manifest['baseline_manifest_sha256']=cfg['baseline']['expected_manifest_sha256']
+                elif manifest['contract']=='ifdata-sr-attribution-v1':manifest['baseline']['sha256']=cfg['baseline']['expected_manifest_sha256']
+                else:manifest['baseline']=deepcopy(cfg['baseline'])
+                path.write_text(json.dumps(manifest),encoding='utf8');spec['expected_manifest_sha256']=math._digest_file(path)
+            cfg['datasets'].append('individual');out=root/'composed'
+            with patch.object(math,'evaluate_metric',side_effect=AssertionError('Stored composition must not calculate formulas')):
+                universe.compose_analysis(cfg,out)
+            rows=helper.rows(out,'unit_coverage')
+            self.assertEqual(len([r for r in rows if r['dataset']=='financial' and r['metric']=='LA']),2)
+            self.assertFalse(any(r['dataset']=='individual' and r['metric']=='LA' for r in rows))
+            originals=helper.rows(Path(cfg['baseline']['root']),'unit_coverage')
+            old={r['id']:r for r in originals if r['dataset']=='individual'}
+            current={r['id']:r for r in rows if r['dataset']=='individual'}
+            self.assertEqual(set(current),set(old))
+            for key in old:
+                for field in ('status','value_fraction','numerator_fraction','denominator_fraction','flags'):
+                    self.assertEqual(current[key][field],old[key][field])
+
+
 class ComplementProfileTests(unittest.TestCase):
     def compile(self,rows=None):
         fn=getattr(universe,'compile_complement_profile',None)

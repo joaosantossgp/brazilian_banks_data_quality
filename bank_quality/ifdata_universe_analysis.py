@@ -2316,6 +2316,22 @@ def compose_analysis(config,output):
             if source['manifest'].get('baseline',{}).get('expected_manifest_sha256')!=basepin or source['manifest'].get('scope')!=spec.get('scope'):
                 raise ValueError('Overlay scope or baseline lineage mismatch')
             source.update(kind=kind,scope=spec['scope']);overlays.append(source)
+    # A complement belongs only to its authenticated reporting perspectives.
+    # Requiring it in every non-capital dataset would silently widen adoption.
+    complement_datasets={metric:set() for metric in new_metrics}
+    for source in overlays:
+        if source['kind']!='complements':continue
+        scope=source['scope']
+        scoped_metrics=[scope['metric']] if 'metric' in scope else scope.get('metrics')
+        scoped_datasets=[scope['dataset']] if 'dataset' in scope else scope.get('datasets')
+        if not isinstance(scoped_metrics,list) or not scoped_metrics or not isinstance(scoped_datasets,list) or not scoped_datasets:
+            raise ValueError('Explicit complement metric and perspective scopes required')
+        if any(dataset not in ('financial','individual') for dataset in scoped_datasets):
+            raise ValueError('Unapproved complement reporting perspective')
+        for metric in new_metrics:
+            if metric in scoped_metrics:complement_datasets[metric].update(scoped_datasets)
+    if any(not (perspectives & set(datasets)) for perspectives in complement_datasets.values()):
+        raise ValueError('Declared complement lacks a source in the selected perspectives')
     def consume(source,name):
         if name not in source['entries']:raise ValueError('Missing consumed composition input: '+name)
         entry=source['entries'][name];path=math._contained(source['root'],name)
@@ -2409,7 +2425,8 @@ def compose_analysis(config,output):
                     stock_by_code[code]=values
                     writers['representation_stocks'].append(dict(id=uid+'|representation',unit_id=uid,unit_key=[dataset,TYPES[dataset],code],dataset=dataset,code=code,period=period,
                         membership=updated['membership'],companies=updated['companies'],stocks=values,origin=dict(root=str(base['root']),expected_manifest_sha256=basepin,table='components')))
-                metrics=[m for m in math.METRICS if (m in ('C3','C4'))==(dataset=='capital')]+(new_metrics if dataset!='capital' else [])
+                metrics=[m for m in math.METRICS if (m in ('C3','C4'))==(dataset=='capital')]+[
+                    metric for metric in new_metrics if dataset in complement_datasets[metric]]
                 for metric in metrics:
                     for horizon in (('quarter','ttm') if metric in math.FLOW_METRICS|math.COMPLEMENT_FLOW_METRICS else ('point',)):
                         params=[period,dataset,metric,horizon];pred='period=? and dataset=? and metric=? and horizon=?'
@@ -2518,7 +2535,9 @@ def compose_analysis(config,output):
         temp.rmdir()
     for path,pin in consumed.items():
         if identity(path)!=guards[path] or math._digest_file(path)!=pin:raise ValueError('Consumed composition input changed')
-    manifest=dict(contract=COMPOSITION_CONTRACT,config=config,periods=sorted(periods),datasets=datasets,segmentation_fields=list(COMPOSITION_AXES),joint_cell_dimensions=list(JOINT_DIMENSIONS),registry_company_count=55,analytical_company_count=32,tables=tables,files=files,
+    manifest=dict(contract=COMPOSITION_CONTRACT,config=config,periods=sorted(periods),datasets=datasets,
+        complement_perspectives={metric:sorted(perspectives & set(datasets)) for metric,perspectives in complement_datasets.items()},
+        segmentation_fields=list(COMPOSITION_AXES),joint_cell_dimensions=list(JOINT_DIMENSIONS),registry_company_count=55,analytical_company_count=32,tables=tables,files=files,
         joint_partition_checks=dict(status='exact',native_contributions=tables['unit_coverage'],nominal_admitted_missing_companies=nominal_analytical_count,joint_source_counts=joint_totals,identity='Each native contribution and missing admitted company occurs in exactly one observed cohort/dimension cell'),
         monetary_scale_info=dict(currency='BRL',native_scale='1',source_note='docs/engineering/ifdata-indicator-pilot-20261011.md:14',rule='Official Olinda Saldo in R$; no portal thousands factor'),
         consumed_files=[dict(file=str(p),sha256=h) for p,h in sorted(consumed.items(),key=lambda x:str(x[0]))],
