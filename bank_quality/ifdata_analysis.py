@@ -370,6 +370,8 @@ COMPLEMENT_METRICS = {
     'R5':('credit_income','credit'),
     'L1':('cash','sight_deposits'),'PL_DEP':('PL','deposits'),
     'R3':('LL','RIF'),'RIF_AT':('RIF','AT'),
+    'E2-W':('personnel','administration','RBIF','provision_flow','services','fees','other_income'),
+    'E2-WP':('personnel','administration','RBIF','provision_flow','services','fees','other_income','participations'),
 }
 COMPLEMENT_LIMITS = {
     'LA':['not_certified_available_liquidity','not_LCR_or_HQLA'],
@@ -384,9 +386,11 @@ COMPLEMENT_LIMITS = {
     'PL_DEP':['deposit_funding_question_only','not_regulatory_capital_ratio'],
     'R3':['intermediation_income_only','not_total_operating_margin'],
     'RIF_AT':['gross_intermediation_income_not_net_spread','business_model_comparability_required'],
+    'E2-W':['restricted_personnel_administration_cost','not_total_operating_revenue_or_IMF_FSI'],
+    'E2-WP':['restricted_personnel_administration_cost','not_total_operating_revenue_or_IMF_FSI','participation_cost_perimeter_differs'],
 }
-COMPLEMENT_FLOW_METRICS={'RS','E3','R4','R5','R3','RIF_AT'}
-FLOW_COMPONENTS = {'LL', 'provision_flow', 'RBIF', 'services', 'fees', 'personnel', 'administration','credit_income','RIF'}
+COMPLEMENT_FLOW_METRICS={'RS','E3','R4','R5','R3','RIF_AT','E2-W','E2-WP'}
+FLOW_COMPONENTS = {'LL', 'provision_flow', 'RBIF', 'services', 'fees', 'personnel', 'administration','credit_income','RIF','other_income','participations'}
 FLOW_METRICS = {'R1', 'R2', 'Q2', 'E2-B'}
 # Public names are deliberately independent of native account numbers.
 COMPONENT_NAMES = {
@@ -400,6 +404,7 @@ COMPONENT_NAMES = {
     'credit_income':'credit_income','repos':'repurchase_agreements',
     'issuances':'debt_issuance','loans_transfers':'borrowings_transfers','funding':'funding',
     'RIF':'intermediation_income',
+    'other_income':'other_operating_income','participations':'participation_result',
 }
 
 
@@ -520,7 +525,7 @@ def evaluate_metric(metric, inputs, horizon):
                         ['selected_income_only','economic_representativeness_not_certified'] if metric=='E2-B' else
                         ['native_prudential_perimeter_only','published_index_scale_unverified'] if metric in ('C3','C4') else
                         ['native_accounting_question_only']),
-                applicability='unknown',economic_representativeness='not_certified' if metric=='E2-B' else 'native_accounting_question')
+                applicability='unknown',economic_representativeness='not_certified' if metric in ('E2-B','E2-W','E2-WP') else 'native_accounting_question')
     formula=METRICS.get(metric,COMPLEMENT_METRICS.get(metric))
     if formula is None:return dict(result,status='unknown_metric')
     if metric in COMPLEMENT_LIMITS:result['limits']=list(COMPLEMENT_LIMITS[metric])
@@ -563,9 +568,11 @@ def evaluate_metric(metric, inputs, horizon):
     if any(r['unit_key']!=derived[0]['unit_key'] for r in derived):return dict(result,status='incompatible_unit')
     if any(r['scale']!=derived[0]['scale'] for r in derived):return dict(result,status='incompatible_scale')
     values={name:Fraction(int(r['value_fraction']['numerator']),int(r['value_fraction']['denominator'])) for name,r in result['components'].items()}
-    if metric=='E2-B':
+    if metric in ('E2-B','E2-W','E2-WP'):
         numerator=-(values['personnel']+values['administration'])
         denominator=values['RBIF']-values['provision_flow']+values['services']+values['fees']
+        if metric in ('E2-W','E2-WP'):denominator+=values['other_income']
+        if metric=='E2-WP':denominator+=values['participations']
     elif metric in ('L2','LA'):
         numerator=values['cash']+values['interfinancial'];denominator=values['sight_deposits' if metric=='L2' else 'AT']
     elif metric=='RS':
@@ -585,7 +592,7 @@ def evaluate_metric(metric, inputs, horizon):
     if denominator==0:return dict(result,status='zero_denominator')
     if denominator<0:result['flags'].append('negative_denominator')
     if metric=='PL_DEP' and numerator<0:result['flags'].append('negative_equity')
-    if metric in ('Q2','E2-B','E3') and numerator<0:result['flags'].append('signed_cost_reversal')
+    if metric in ('Q2','E2-B','E3','E2-W','E2-WP') and numerator<0:result['flags'].append('signed_cost_reversal')
     if metric=='RS' and not 0<=numerator/denominator<=1:result['flags'].append('non_convex_income_share')
     for r in derived:result['flags']=sorted(set(result['flags']+r['flags']))
     result=_valued(result,numerator/denominator)

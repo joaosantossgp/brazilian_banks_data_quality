@@ -21,7 +21,9 @@ def complement_catalogue(datasets=('financial','individual')):
            ('repos','3','78288','[42000006]'),('issuances','3','78294','[43000005]'),
            ('loans_transfers','3','78295','[46000002]'),
            ('credit_income','4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]'),
-           ('RIF','4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias')]
+           ('RIF','4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias'),
+           ('other_income','4','78222','[71900005]-[71910002]-[71915007]-[71920009]-[71925004]-[71930006]-[71940003]-[71945008]-[71947006]-[71950000]-[71955005]-[71960007]-[71965002]-[71970004]-[71980001]-[71990053]-[71990101][71990125]-[71990156]-[71990204]-[71990266]-[71990307]-[71990352]-[71990400]-[71990503]-[71990606]-[71990709]-[71990802]-[71990905]'),
+           ('participations','4','78221','[71800002]+[71990802]+[71990905]+[71990709]+[81600003]+[81830804]+[81830907]+[81830701]')]
     rows=[]
     for ds in datasets:
         for name,report,account,description in roles:
@@ -39,7 +41,7 @@ class ComplementProfileTests(unittest.TestCase):
     def test_additive_profile_keeps_frozen_contexts_and_own_individual_bindings(self):
         original=universe.load_profile();profile=self.compile()
         self.assertEqual(profile['contexts'][:len(original['contexts'])],original['contexts'])
-        self.assertEqual(len(profile['contexts'])-len(original['contexts']),12)
+        self.assertEqual(len(profile['contexts'])-len(original['contexts']),16)
         for c in profile['contexts'][len(original['contexts']):]:
             self.assertEqual(len(c['periods']),60)
             self.assertEqual(c['literal_context']['TipoInstituicao'],universe.TYPES[c['literal_context']['dataset']])
@@ -69,8 +71,28 @@ class ComplementProfileTests(unittest.TestCase):
         rows=complement_catalogue();rows.append(deepcopy(next(r for r in rows if r['Conta']=='78208')))
         with self.assertRaises(ValueError):self.compile(rows)
 
+    def test_wide_income_has_two_distinct_own_flow_bindings(self):
+        contexts=self.compile()['contexts']
+        for name in ('other_operating_income','participation_result'):
+            bindings=[c for c in contexts if c['component']==name]
+            self.assertEqual(len(bindings),2)
+            self.assertTrue(all(c['window_rule']=='native-semester-analysis-v2' for c in bindings))
+
 
 class ComplementProducerTests(unittest.TestCase):
+    def test_income_selection_keeps_adopted_denominators_separate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);base,pin=self.fixture(root,['202312','202403','202406','202409','202412'])
+            out=root/'income'
+            manifest=universe.calculate_complements(base,pin,out,periods=['202412'],metrics=['E2-W','E2-WP'])
+            rows=json.loads((out/'results.json').read_text(encoding='utf8'))
+            self.assertEqual(manifest['tables']['results'],24)
+            for metric,expected in [('E2-W',Fraction(-2,3)),('E2-WP',Fraction(-1,2))]:
+                r=next(r for r in rows if r['code']=='BNDES' and r['metric']==metric and r['horizon']=='quarter')
+                self.assertEqual(r['status'],'ok');self.assertEqual(math._rational(r['value_fraction']),expected)
+                self.assertIn('signed_cost_reversal',r['flags'])
+            self.assertEqual(math._digest_file(base/'manifest.json'),pin)
+
     def test_assaf_selection_preserves_native_windows_states_and_cohorts(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);base,pin=self.fixture(root,['202312','202403','202406','202409','202412'])
@@ -99,7 +121,7 @@ class ComplementProducerTests(unittest.TestCase):
         catalogue.extend(dict(c['literal_context'],periodos=c['periods']) for c in universe.load_profile()['contexts'] if c['literal_context']['dataset']==dataset)
         tokens=dict(cash='10',interfinancial='20',credit='40',deposits='10',repos='20',issuances='30',loans_transfers='40',funding='100',
                     RBIF='12',provision_flow='-2',services='2',fees='1',personnel='-2',administration='-1',credit_income='20',
-                    LL='3',RIF='12',PL='40',sight_deposits='20')
+                    LL='3',RIF='12',PL='40',sight_deposits='20',other_income='6',participations='3')
         codes=('BNDES','IP','COOP','UNKNOWN','NULL','ZERO');files=[];units=[]
         with duckdb.connect() as conn:
             for i,p in enumerate(periods):

@@ -819,6 +819,8 @@ COMPLEMENT_BINDINGS={
     'loans_transfers':('3','78295','[46000002]'),
     'credit_income':('4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]'),
     'RIF':('4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias'),
+    'other_income':('4','78222','[71900005]-[71910002]-[71915007]-[71920009]-[71925004]-[71930006]-[71940003]-[71945008]-[71947006]-[71950000]-[71955005]-[71960007]-[71965002]-[71970004]-[71980001]-[71990053]-[71990101][71990125]-[71990156]-[71990204]-[71990266]-[71990307]-[71990352]-[71990400]-[71990503]-[71990606]-[71990709]-[71990802]-[71990905]'),
+    'participations':('4','78221','[71800002]+[71990802]+[71990905]+[71990709]+[81600003]+[81830804]+[81830907]+[81830701]'),
 }
 
 
@@ -847,7 +849,7 @@ def compile_complement_profile(profile,catalogue,datasets):
             literal={k:row[k] for k in DIMENSIONS}
             digest=hashlib.sha256(json.dumps(literal,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             result['contexts'].append(dict(component=math.COMPONENT_NAMES[role],literal_context=literal,context_sha256=digest,
-                compatibility=digest,periods=periods,window_rule='native-semester-analysis-v2' if role in ('credit_income','RIF') else 'stock',
+                compatibility=digest,periods=periods,window_rule='native-semester-analysis-v2' if role in ('credit_income','RIF','other_income','participations') else 'stock',
                 sign_rule='native_signed_no_abs',proof_rule='literal_catalogue_60_core_references',
                 proof='Issue152 / research143; own dataset and TipoInstituicao, unchanged literal accounts; no cross-perimeter equivalence'))
     return result
@@ -964,7 +966,9 @@ def calculate_complements(baseline,expected_baseline_manifest_sha256,output,*,pe
         if identity(path)!=before:raise ValueError('Complement input changed during authentication')
     output.mkdir(parents=True);files=[]
     supplement=output/'complement-contexts.json';supplement.write_text(canonical(profile)+'\n',encoding='utf-8')
-    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'256MiB'}) as conn:
+    # Wide-income provenance exceeds the CSV writer's 256MiB working set;
+    # the measured three-date pilot fits 512MiB without changing row contents.
+    with ExitStack() as stack,duckdb.connect(config={'threads':1,'memory_limit':'512MiB'}) as conn:
         writers={t:Writer(output,t,stack,formats=formats) for t in ('components','results','unit_coverage')}
         for ds in datasets:
             _window(conn,sources[ds],native_periods,dataset=ds)

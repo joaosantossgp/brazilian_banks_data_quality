@@ -100,7 +100,8 @@ class ComplementMetricTests(unittest.TestCase):
 
     def flow(self,metric,change=None,horizon='quarter'):
         values={'RBIF':('50','110'),'provision_flow':('-2','-6'),'services':('5','15'),
-                'fees':('2','6'),'personnel':('-3','-9'),'administration':('-1','-3'),'credit_income':('10','30')}
+                'fees':('2','6'),'personnel':('-3','-9'),'administration':('-1','-3'),'credit_income':('10','30'),
+                'other_income':('2','8'),'participations':('1','4')}
         rows={name:[observation(p,t,definition_id=name) for p,t in zip(('202409','202412'),tokens)] for name,tokens in values.items()}
         rows.update({name:[observation(p,t,definition_id=name,window_rule='stock') for p,t in zip(('202409','202412'),tokens)]
                      for name,tokens in {'AT':('100','120'),'credit':('50','60')}.items()})
@@ -114,6 +115,35 @@ class ComplementMetricTests(unittest.TestCase):
             with self.subTest(metric=metric):
                 r=self.flow(metric);self.assertEqual(r['status'],'ok');self.assertEqual(self.api._rational(r['value_fraction']),value)
         self.assertIn('not_NIM_or_contractual_spread',self.flow('R4')['limits'])
+
+    def test_income_extensions_keep_costs_and_provisions_separate(self):
+        from fractions import Fraction
+        # C=8; S=60-(-4)+10+4=78; other income=6; participations=3.
+        for metric,value in {'E2-W':Fraction(2,21),'E2-WP':Fraction(8,87)}.items():
+            with self.subTest(metric=metric):
+                r=self.flow(metric);self.assertEqual(r['status'],'ok')
+                self.assertEqual(self.api._rational(r['value_fraction']),value)
+                self.assertEqual(self.api._rational(r['numerator_fraction']),8)
+        def reversed_provision(rows):rows['provision_flow'][-1]['token']='2'
+        r=self.flow('E2-W',reversed_provision)
+        self.assertEqual(r['status'],'ok')
+        self.assertEqual(self.api._rational(r['value_fraction']),Fraction(2,19))
+        # Heterogeneous expense and net operating-result fields are not denominator terms.
+        def unrelated(rows):
+            rows['other_expenses']=[observation('202412','-999999')]
+            rows['operating_result']=[observation('202412','-888888')]
+        self.assertEqual(self.flow('E2-W',unrelated)['value_fraction'],self.flow('E2-W')['value_fraction'])
+
+    def test_income_extensions_do_not_impute_or_hide_signed_income(self):
+        def other(value):return lambda rows:rows['other_income'][-1].update(token=value)
+        self.assertEqual(self.flow('E2-W',other('-76'))['status'],'zero_denominator')
+        r=self.flow('E2-W',other('-100'));self.assertIn('negative_denominator',r['flags'])
+        self.assertEqual(r['value_fraction'],{'numerator':'-1','denominator':'3'})
+        self.assertEqual(self.flow('E2-W',other(None))['status'],'native_null')
+        def reversed_cost(rows):
+            rows['personnel'][-1]['token']='3';rows['administration'][-1]['token']='1'
+        self.assertIn('signed_cost_reversal',self.flow('E2-WP',reversed_cost)['flags'])
+        self.assertEqual(self.flow('E2-W',horizon='point')['status'],'invalid_horizon')
 
     def test_new_formulas_preserve_guards_signs_and_missing_history(self):
         def missing_opening(rows):rows['credit']=rows['credit'][1:]
