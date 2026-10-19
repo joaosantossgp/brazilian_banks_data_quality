@@ -76,3 +76,7 @@ Pedido de João após o candidato3: disponibilizar os demais recortes emBalanço
 CI3checks dohead2ee05f7PASS. Suíte localanterior globalfalha(1177testes,1failure/1error/4skip):encoding de subprocesso epath8.3/longonotestebenchmark. Preservarlog e distinguir conferências ambientais posteriores; não reclassificar o run.
 
 Expansão/compactação integral e instrumento streaming revisados; candidato4gerado30,688s comprefixoindicadores/macrointacto.20testes pertinentesPASS. ISIZE484.849.208bytes verificadoantesHTML. Artefato/recibo/SHAfinal/CI dodelta eQAvisual ainda têm estados próprios.
+
+## Aceite operacional e encerramento
+
+João confirmou em19/10/2026 a operação das cinco abas/filtros/Macro/CSV doarquivo4, hash7ed5e5811dc46692877881ccf90aba126326955f53e34470c435146f73db53e9. O bloqueio de inspeção pela ferramenta foi suprido por validação manual real, preservada emrecibo privado. Integração/promoção seguem condicionadas aoschecks doSHA final, revisão, CIpós-merge, backup e redescoberta. O registro final nasIssues193/198 e mapa2 é a autoridade de execução; oscheckpoints anteriores continuam históricos.

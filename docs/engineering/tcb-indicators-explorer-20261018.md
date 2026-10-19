@@ -1,6 +1,14 @@
 # Explorador dos indicadores por Tcb
 
-Entrega da [Issue #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193), dependente da [composição #192](tcb-indicators-delivery-20261018.md). **Reconstrução de19/10/2026 gerada com dados e código revisados; inspeção visual/operacional real pendente. Nenhum ponteiro promovido.** O explorador reutiliza exportador e template existentes, com valores persistidos do sistema IF.data observado inteiro de 2010–2024.
+Entrega da [Issue #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193), dependente da [composição #192](tcb-indicators-delivery-20261018.md). **Artefato4 conferido manualmente por João em19/10/2026, após revisão independente dos dados/código/arquivo. A integração e a seleção corrente têm registro naIssue193 e no ponteiro autenticado.** O explorador reutiliza exportador e template existentes, com valores persistidos do sistema IF.data observado inteiro de 2010–2024.
+
+## Aceite operacional do arquivo final
+
+Em19/10/2026, João confirmou que abriu o arquivo `explorer-analysis-20261019-v4-recuts.html` e conferiu as cinco abas, filtros deBalanço/Crédito, Macro com controles próprios e pelo menos uma exportaçãoCSV: “Sim, conferi esses pontos e funcionam”. O aceite refere-se ao SHA-256 `7ed5e5811dc46692877881ccf90aba126326955f53e34470c435146f73db53e9`. Não foi uma confirmação inferida da ausência de resposta ou de testesoffline.
+
+O recibo privado `data/curated/indicator-economic-audit-20261019-full2/explorer-v4-user-acceptance.json` preserva escopo eUTC. Os pareceres independentes conferem componentes, cálculos/cobertura, compactação, código, template, prefixo preservado eSHA. A validação operacional humana complementa essas verificações; não certifica que todo token financeiro é economicamente plausível nem fecha o método acadêmico.
+
+Os trechos abaixo que registram inspeção/promoção pendentes são **checkpoints históricos da construção**, preservados com seus hashes e tentativas. Para saber a seleção vigente, leia `current-indicators.json` pelo comando canônico e confira aIssue193. Promoção exige backup, integridade e descoberta posterior; integração exige os checks doSHA final, ancestralidade eCIpós-merge. Não tratar o estado de uma etapa anterior como situação corrente.
 
 ## Continuação dos controles e organização —19/10/2026
 
