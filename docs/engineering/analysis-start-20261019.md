@@ -2,6 +2,52 @@
 
 Contrato: [Pesquisa #198](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/198), articulada à [Entrega #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193). Plano operacional: [fatias e verificações](../superpowers/plans/2026-10-19-analysis-ready-explorer.md). Este documento propõe a sequência de análise; o fechamento acadêmico final cabe a João/orientador. A base é o universo observado inteiro, com seleção vinculada, restante e vínculo desconhecido separados.
 
+## Onde estão os dados e qual versão usar
+
+Não há um único banco de dados servidor por trás do explorador. A base local é organizada em pacotes imutáveis, consultados porDuckDB, e oHTML é uma projeção autocontida. A entrada operacional única para esta análise é este documento: não escolher a última pasta por data, nem tratar umJSON de interface como fonte contábil.
+
+```text
+IF.data bruto preservado / macro bruto
+    → importações nativas Parquet, com tokens e proveniência
+    → resultados dos indicadores e composição aceita de27métricas
+        → joint_cells: filtros e agregados do painel Indicadores
+        → unit_periods: cadastro datado, vínculos e categorias
+    → Ativo/Passivo nativos + crédito SCR + cadastro datado
+        → JSON de contextos conjuntos para Balanço/Crédito
+    → quarterly.parquet macro, em pacote separado
+        → exportador + template → HTML privado + recibo
+```
+
+| Responsabilidade | Local no checkout principal | Leitura correta |
+|---|---|---|
+| Originais IF.data | `data/raw/ifdata-odata-20261011/` | Respostas originais; não sobrescrever/reclassificar tokens. Manifesto bruto autentica captura, não comparabilidade econômica. |
+| Ativo/Passivo/Resumo/DRE importados | `data/curated/ifdata-odata-20261011/financial/` | Relatórios1–4 nativos; o exploradorBalanço seleciona2/3. Fluxo DRE nativo não é automaticamente trimestre efetivo. Manifest `f0b5a836effbb7fe058513e8e13b6f8cff9d781827f16a4dfa1be9df17302095`. |
+| Indicadores e recortes de análise | Composição27f374 indicada abaixo | Resultados, coberturas e células observadas; não recalcular fórmulas para abrir o explorador. |
+| Cadastro e vínculos usados na interface | `unit_periods.parquet` da mesma composição | Unidade/código/período exatos; categorias e Sr derivado datados. CVM/B3 fornecem metadados/vínculos, não os saldos financeiros. |
+| Crédito SCR | Pacotes `core/` e `early/` da196 indicados abaixo | Oito relatórios7–14, com contexto literal. Separado do crédito contábil dos indicadores. |
+| Macro | Pacote `macro-context-20261018-run2/` indicado abaixo | `quarterly.parquet`,25séries/1.476observações; períodos, unidades e janelas próprios. |
+| Auditoria e retomada | `data/curated/indicator-economic-audit-20261019-full2/` | `handoff.json` fixa evidência econômica. `analysis-ready-handoff.json` fixa a entrega v3; recibos posteriores são novos arquivos e não o substituem silenciosamente. |
+| Código de apresentação | `scripts/export-ifdata-explorer.py`, `scripts/ifdata-explorer-contexts.py`, `scripts/ifdata-explorer-template.html` | Redução/filtragem de valores persistidos, sem indicador novo. Código é versionado noGit; dados privados não são distribuídos pelo clone. |
+| HTML eJSON de apresentação | Diretório privado de visualizações da tarefa | Cópias de leitura, com recibos e hashes próprios. Arquivo mais novo não significa aceite; a [nota193](tcb-indicators-explorer-20261018.md) distingue a última candidata da versão aceita. |
+
+A composição aceita contém nove tabelas. Seus manifests inventariam caminhos, hashes e quantidades; os valores exatos e estados permanecem no campo `payload` dosParquets.
+
+| Tabela | Linhas neste pin | Granularidade / finalidade |
+|---|---:|---|
+| `unit_periods` |244.001| Unidade reportante × período × perspectiva; presença, vínculo e classificações datadas. |
+| `unit_coverage` |6.005.286| Unidade × indicador × janela × período; resultado/estado, N/D, aplicabilidade e origem. |
+| `company_coverage` |214.500| Companhia esperada e seu vínculo/resultado; não multiplicar saldos por companhias que compartilham unidade. |
+| `representation_stocks` |244.001| Estoques próprios conhecidos de AT/crédito/PL para representatividade, separados da elegibilidade da razão. |
+| `aggregates` |15.600| Razões agregadas por contexto e coorte; somaN/somaD da mesma interseção elegível. |
+| `distributions` |15.600| Distribuições institucionais por contexto; mediana/quartis não equivalem à razão agregada. |
+| `segment_coverage` |719.860| Cobertura e resultados por eixo/categoria/estado, preservando desconhecidos. |
+| `cohort_comparisons` |551.595| Comparações entre coortes e recortes conforme o contrato persistido; não certificam causalidade. |
+| `joint_cells` |355.632| Células conjuntas observadas dos seis eixos e coortes disjuntas, usadas para recompor filtrosAND sem inventar cruzamentos. |
+
+**Versões e autoridade:** `current-indicators.json` aponta para a seleção vigente aceita no computador, atualmente20métricas/d47. A entrada explícita desta análise é27métricas/f374, aceita localmente na192 e pinada abaixo. A última candidata do explorador é identificada na nota193, por caminho/hash/recibo; enquanto a193não registrar seu aceite, não é a referência aceita do ponteiro. PRpublicada, CIaprovada, dado aceito, artefato visual aceito e integração emmain são estados distintos. Não alterar a seleção de uma tarefa já iniciada sem migração explícita.
+
+A próxima tarefa deve: resolver o checkout principal peloGit comum; ler o ponteiro; autenticar a entrada explícita desta análise e as tabelas consumidas; ler a nota193 para o recibo do candidato corrente. Se estiver em outro computador e o pacote privado faltar, parar nesse ponto e obter a cópia autorizada, em vez de reconstruir dados pela idade das pastas. A Release antiga não é promessa de sincronização com27métricas ou crédito196.
+
 ## A mesma entrada na próxima tarefa
 
 Descobrir o checkout principal pelo diretório Git comum e autenticar o ponteiro conforme o [comando canônico](local-queries-20261013.md#base-de-indicadores-vigente-entre-tasks). Não escolher pasta por nome/data, não reconstruir a seleção pelo chat e não confundir o HEAD do checkout principal com o do worktree de entrega. Registrar o pin inicial e conferir os hashes das tabelas consumidas.

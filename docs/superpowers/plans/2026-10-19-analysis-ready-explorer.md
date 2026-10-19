@@ -63,3 +63,14 @@ Dados aceitos e originais são imutáveis. Verificar caminhos/hashes, precisão,
 GatesA/B ehelperC1 aprovados por economic_review_198; expansão decontextos/código revisada.17testes pertinentesPASS, exportaçãov1 eestrutura conferidas. Inspeção visual/manual doarquivo concreto pendente: abertura enfileirada, sem render confirmado.193não concluída nem ponteiro promovido. Oschecksainda marcadospendentes são necessáriospara aceite doartefato, mesmo que ocódigo seja integrado.
 
 Decisão técnica: gerar a exportação completa como **candidato reviewável**, pois o piloto visual estava bloqueado e o usuário precisa de um arquivo concreto para validar. Isso não amplia o aceite visual, não libera QA visual por inferência, não promove ponteiro nem conclui193. Os dados/código já haviam passado por revisão própria; a fronteira de aceite permanece explícita.
+
+## Continuação: controles por assunto e organização da base
+
+Pedido de João após o candidato3: disponibilizar os demais recortes emBalanço/Crédito; retirar controles institucionais daMacro; tornar explícitas organização eúltima versão. Reusar6dimensões/cadastro datado da composição, sem Atividade, nova coleta ou recálculo de indicadores. Mesmos paths193/198; Root integra parágrafo emarquitetura compontepara entrada canônica. Fontes f374/macro/crédito preservadas, ponteirod47reauthenticado.
+
+- [ ] Testes RED/GREEN e piloto de3datas para contextos conjuntos(Tcb,SegmentoTb,Tc,Td,Sr,SrAnalitico), comestados observados/desconhecidos/conflitantes ecoortes disjuntas. Revisão independente antesdefull.
+- [ ] Expandir contextos emdestino novo; conservar totais porTcb anteriores. UI Tcb/Sr visíveis, outrosrecortes disponíveis. Macro comsérie/período/referência próprios eCSVsomente macro.
+- [ ] Entrada canônica commapa fontes→Parquets→projeções→HTML, granularidade, última candidata vsaceita, recibos/comandos. Atualizar ponteiros documentaisREADME/arquitetura/guialocal semnovo catálogo concorrente.
+- [ ] Exportar candidato novo, conferir dados/metadados/recibos e revisarSHA, checkspertinentes/CI; nãoinferiraceitevisual dechecksoffline.
+
+CI3checks dohead2ee05f7PASS. Suíte localanterior globalfalha(1177testes,1failure/1error/4skip):encoding de subprocesso epath8.3/longonotestebenchmark. Preservarlog e distinguir conferências ambientais posteriores; não reclassificar o run.

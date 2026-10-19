@@ -32,7 +32,7 @@ Para publicar uma nova seleção local, o integrador registra primeiro a nova pa
 
 ## Entrada fixada para a análise acadêmica
 
-A [entrada de19/10/2026](analysis-start-20261019.md) identifica a composição de27métricas, macro, crédito, calendários e auditoria econômica. Contém comando de autenticação do pin explícito, independente do ponteiro corrente. A [verificação de níveis](indicator-economic-plausibility-20261019.md) separa extremos explicáveis e casos economicamente inconclusivos; não institui exclusões.
+A [entrada de19/10/2026](analysis-start-20261019.md) identifica a composição de27métricas, macro, crédito, calendários e auditoria econômica. Contém [mapa de dados, granularidade das nove tabelas e autoridade das versões](analysis-start-20261019.md#onde-estão-os-dados-e-qual-versão-usar), além do comando de autenticação do pin explícito, independente do ponteiro corrente. A [verificação de níveis](indicator-economic-plausibility-20261019.md) separa extremos explicáveis e casos economicamente inconclusivos; não institui exclusões.
 
 ## Antes de executar
 
