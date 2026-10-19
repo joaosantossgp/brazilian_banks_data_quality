@@ -68,9 +68,11 @@ Decisão técnica: gerar a exportação completa como **candidato reviewável**,
 
 Pedido de João após o candidato3: disponibilizar os demais recortes emBalanço/Crédito; retirar controles institucionais daMacro; tornar explícitas organização eúltima versão. Reusar6dimensões/cadastro datado da composição, sem Atividade, nova coleta ou recálculo de indicadores. Mesmos paths193/198; Root integra parágrafo emarquitetura compontepara entrada canônica. Fontes f374/macro/crédito preservadas, ponteirod47reauthenticado.
 
-- [ ] Testes RED/GREEN e piloto de3datas para contextos conjuntos(Tcb,SegmentoTb,Tc,Td,Sr,SrAnalitico), comestados observados/desconhecidos/conflitantes ecoortes disjuntas. Revisão independente antesdefull.
-- [ ] Expandir contextos emdestino novo; conservar totais porTcb anteriores. UI Tcb/Sr visíveis, outrosrecortes disponíveis. Macro comsérie/período/referência próprios eCSVsomente macro.
-- [ ] Entrada canônica commapa fontes→Parquets→projeções→HTML, granularidade, última candidata vsaceita, recibos/comandos. Atualizar ponteiros documentaisREADME/arquitetura/guialocal semnovo catálogo concorrente.
+- [x] Testes RED/GREEN e piloto de3datas para contextos conjuntos(Tcb,SegmentoTb,Tc,Td,Sr,SrAnalitico), comestados observados/desconhecidos/conflitantes ecoortes disjuntas. Revisão independente antesdefull.
+- [x] Expandir contextos emdestino novo; conservar totais porTcb anteriores. UI Tcb/Sr visíveis, outrosrecortes disponíveis. Macro comsérie/período/referência próprios eCSVsomente macro.
+- [x] Entrada canônica commapa fontes→Parquets→projeções→HTML, granularidade, última candidata vsaceita, recibos/comandos. Atualizar ponteiros documentaisREADME/arquitetura/guialocal semnovo catálogo concorrente.
 - [ ] Exportar candidato novo, conferir dados/metadados/recibos e revisarSHA, checkspertinentes/CI; nãoinferiraceitevisual dechecksoffline.
 
 CI3checks dohead2ee05f7PASS. Suíte localanterior globalfalha(1177testes,1failure/1error/4skip):encoding de subprocesso epath8.3/longonotestebenchmark. Preservarlog e distinguir conferências ambientais posteriores; não reclassificar o run.
+
+Expansão/compactação integral e instrumento streaming revisados; candidato4gerado30,688s comprefixoindicadores/macrointacto.20testes pertinentesPASS. ISIZE484.849.208bytes verificadoantesHTML. Artefato/recibo/SHAfinal/CI dodelta eQAvisual ainda têm estados próprios.

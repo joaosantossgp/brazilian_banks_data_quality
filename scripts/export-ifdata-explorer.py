@@ -249,14 +249,24 @@ def presentation_contexts(path, pin, composition_pin):
     data=math._json_unique(path.read_bytes())
     if data.get('composition_manifest')!=composition_pin:
         raise ValueError('Context composition pin differs from indicators')
-    if data.get('perspective')!='financial' or data.get('dimension_scope')!=['Tcb','membership']:
+    joint=data.get('context_contract')=='native-contexts-joint-v2'
+    axes=['Tcb','SegmentoTb','Tc','Td','Sr','SrAnalitico']
+    expected_scope=axes+['membership'] if joint else ['Tcb','membership']
+    if data.get('perspective')!='financial' or data.get('dimension_scope')!=expected_scope:
         raise ValueError('Unsupported context perspective/dimensions')
     for kind in ('balance','credit'):
         catalog=data[kind]['catalog'];seen=set()
         for row in data[kind]['rows']:
-            if len(row)!=8 or row[1] not in ('sample','remaining','unknown') or not 0<=row[3]<len(catalog):
+            if len(row)!=(9 if joint else 8) or row[1] not in ('sample','remaining','unknown') or not 0<=row[3]<len(catalog):
                 raise ValueError('Invalid native context cell')
-            key=tuple(row[:4])
+            dim=row[8] if joint else None
+            if joint and 'dimension_dictionary' in data[kind]:
+                dictionary=data[kind]['dimension_dictionary']
+                if type(dim)is not int or not 0<=dim<len(dictionary):raise ValueError('Invalid dimension reference')
+                dim=dictionary[dim]
+            if joint and (set(dim)!=set(axes) or any(set(v)!={'state','value'} for v in dim.values())):
+                raise ValueError('Invalid typed context dimensions')
+            key=tuple(row[:4])+(json.dumps(dim,sort_keys=True),) if joint else tuple(row[:4])
             if key in seen:raise ValueError('Duplicate native context cell')
             seen.add(key)
             if row[4] is not None and (len(row[4])!=2 or int(row[4][1])<=0):

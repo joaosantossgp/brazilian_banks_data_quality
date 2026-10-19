@@ -28,6 +28,24 @@ class ContextTests(unittest.TestCase):
   self.assertEqual(r[4],['-5','2']);self.assertEqual(r[5],2);self.assertEqual(r[7],1);self.assertEqual(r[6],{'native_empty':1,'native_NA':1,'native_NI':1})
 
 
+
+ def test_joint_dimensions_keep_control_and_sr_origins_separate(self):
+  m=self.load();self.assertTrue(hasattr(m,'unit_dimensions'),'Dated joint dimensions absent')
+  base={'period':'202412','own_cadastro':{'Data':'202412'},'classifications':{'Tcb':'B1','Tc':'1','Td':'C','SegmentoTb':'Banco','Sr':None,'SrAnalitico':'S2'},'sr_analytic_status':'derived'}
+  dims=m.unit_dimensions(base);self.assertEqual(dims['Sr'],{'state':'null','value':None});self.assertEqual(dims['SrAnalitico'],{'state':'value','value':'S2'})
+  other=m.unit_dimensions(dict(base,classifications=dict(base['classifications'],Tc='2')))
+  data=m.summarize([self.row('01','1'),self.row('02','2')],{('202412','01'):('remaining','B1',dims),('202412','02'):('remaining','B1',other)},'credit')
+  self.assertEqual(len(data['rows']),2);self.assertEqual(data['rows'][0][8],dims)
+  conflict=m.unit_dimensions(dict(base,sr_analytic_status='conflict'));self.assertEqual(conflict['SrAnalitico'],{'state':'conflict','value':None})
+  before=m.unit_dimensions(dict(base,sr_analytic_status='before_regime'));self.assertEqual(before['SrAnalitico']['state'],'before_regime')
+
+ def test_dimension_interning_preserves_exact_cells(self):
+  m=self.load();self.assertTrue(hasattr(m,'compact_dimensions'),'Repeated dimensions not compacted')
+  dims={'Tcb':{'state':'value','value':'B1'}};data={'balance':{'rows':[['202412','sample','B1',0,['1','3'],1,{},0,dims],['202403','sample','B1',0,['2','3'],1,{},0,dims]]},'credit':{'rows':[]}}
+  result=m.compact_dimensions(data);self.assertEqual(len(result['balance']['dimension_dictionary']),1)
+  for r in result['balance']['rows']:self.assertEqual(result['balance']['dimension_dictionary'][r[8]],dims)
+  self.assertEqual(result['balance']['rows'][0][4],['1','3'])
+
  def test_export_context_pin_cannot_drift_from_indicators(self):
   import tempfile,json,hashlib
   sp=importlib.util.spec_from_file_location('exporter',Path(__file__).resolve().parents[1]/'scripts/export-ifdata-explorer.py');e=importlib.util.module_from_spec(sp);sp.loader.exec_module(e)
@@ -50,6 +68,12 @@ const all=contextPoints(c,0,'','total',['202412']);
 assert.deepEqual(all[0].value,['3','10']);assert.equal(all[0].known,2);assert.equal(all[0].missing,1);
 const b=contextPoints(c,0,JSON.stringify(['value','B1']),'sample',['202412']);assert.deepEqual(b[0].value,['1','10']);
 assert.equal(contextPoints(c,0,JSON.stringify(['unknown',null]),'total',['202412'])[0].value,null);
+const j={rows:[['202412','remaining','B1',0,['1','1'],1,{},0,{Tcb:{state:'value',value:'B1'},Tc:{state:'value',value:'1'},Sr:{state:'null',value:null},SrAnalitico:{state:'value',value:'S2'}}],['202412','remaining','B1',0,['2','1'],1,{},0,{Tcb:{state:'value',value:'B1'},Tc:{state:'value',value:'2'},Sr:{state:'value',value:'S2'},SrAnalitico:{state:'value',value:'S2'}}]]};
+const f={Tc:JSON.stringify(['value','1']),SrAnalitico:JSON.stringify(['value','S2'])};
+assert.deepEqual(contextPoints(j,0,'','total',['202412'],f)[0].value,['1','1']);
+const compact={dimension_dictionary:j.rows.map(r=>r[8]),rows:j.rows.map((r,i)=>[...r.slice(0,8),i])};assert.deepEqual(contextPoints(compact,0,'','total',['202412'],f),contextPoints(j,0,'','total',['202412'],f));
+assert.equal(contextPoints(j,0,'','total',['202412'],{...f,Sr:JSON.stringify(['value','S2'])})[0].value,null);
+
 """
   result=subprocess.run(['node','-'],input=code+probe,text=True,encoding='utf8',capture_output=True)
   self.assertEqual(result.returncode,0,result.stderr)

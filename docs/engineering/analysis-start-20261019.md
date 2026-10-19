@@ -26,7 +26,7 @@ IF.data bruto preservado / macro bruto
 | Cadastro e vínculos usados na interface | `unit_periods.parquet` da mesma composição | Unidade/código/período exatos; categorias e Sr derivado datados. CVM/B3 fornecem metadados/vínculos, não os saldos financeiros. |
 | Crédito SCR | Pacotes `core/` e `early/` da196 indicados abaixo | Oito relatórios7–14, com contexto literal. Separado do crédito contábil dos indicadores. |
 | Macro | Pacote `macro-context-20261018-run2/` indicado abaixo | `quarterly.parquet`,25séries/1.476observações; períodos, unidades e janelas próprios. |
-| Auditoria e retomada | `data/curated/indicator-economic-audit-20261019-full2/` | `handoff.json` fixa evidência econômica. `analysis-ready-handoff.json` fixa a entrega v3; recibos posteriores são novos arquivos e não o substituem silenciosamente. |
+| Auditoria e retomada | `data/curated/indicator-economic-audit-20261019-full2/` | `handoff.json` fixa evidência econômica. `analysis-ready-handoff.json` fixa a entrega v3; `analysis-ready-handoff-v4.json` fixa a candidata4 com os seis recortes eMacro autônoma. O recibo4é a entrada corrente da candidata; não substitui silenciosamente o handoff3 ou o ponteiro aceito. |
 | Código de apresentação | `scripts/export-ifdata-explorer.py`, `scripts/ifdata-explorer-contexts.py`, `scripts/ifdata-explorer-template.html` | Redução/filtragem de valores persistidos, sem indicador novo. Código é versionado noGit; dados privados não são distribuídos pelo clone. |
 | HTML eJSON de apresentação | Diretório privado de visualizações da tarefa | Cópias de leitura, com recibos e hashes próprios. Arquivo mais novo não significa aceite; a [nota193](tcb-indicators-explorer-20261018.md) distingue a última candidata da versão aceita. |
 

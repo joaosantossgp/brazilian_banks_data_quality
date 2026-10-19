@@ -2,7 +2,7 @@
 
 Exact sums of a single literal context across identified reporting units. No
 indicator, flow transformation, company inference or total/detail addition.
-Only Tcb and disjoint membership are dimensions of these presentation summaries.
+The six dated classification axes and disjoint membership remain distinct.
 """
 from collections import Counter
 from fractions import Fraction
@@ -10,8 +10,24 @@ import hashlib
 import json
 from pathlib import Path
 import duckdb
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from bank_quality.ifdata_universe_analysis import _category, JOINT_DIMENSIONS
 
 FIELDS=('NumeroRelatorio','NomeRelatorio','Grupo','Conta','NomeColuna','DescricaoColuna')
+
+def unit_dimensions(row):
+ """Use the same typed category interpretation as indicator joint cells."""
+ cad=row.get('classifications');own=row.get('own_cadastro');states={}
+ status=row.get('sr_analytic_status')
+ if status in ('before_regime','unknown','conflict'):states['SrAnalitico']=status
+ target=dict(cad or {},Data=own.get('Data')) if own else None
+ if not own and status in ('derived','conflict'):
+  states.update({f:'missing_dated_cadastro' for f in JOINT_DIMENSIONS if f!='SrAnalitico'})
+  target=dict(cad or {},Data=row['period'])
+ context={'period':row['period'],'target_cadastro':target,'classification_states':states}
+ return {f:dict(zip(('state','value'),_category(context,f))) for f in JOINT_DIMENSIONS}
+
 
 def summarize(rows,membership,kind):
  catalog=[];lookup={};groups={};seen=set();unidentified=unmatched=0
@@ -20,7 +36,8 @@ def summarize(rows,membership,kind):
   if code is None or code=='':unidentified+=1;continue
   member=membership.get((period,code))
   if member is None:unmatched+=1;continue
-  cohort,tcb=member
+  cohort,tcb=member[:2];dims=member[2] if len(member)==3 else None
+  dimension_key=json.dumps(dims,sort_keys=True,ensure_ascii=False) if dims is not None else None
   if cohort not in ('sample','remaining','unknown'):raise ValueError('Invalid disjoint membership')
   context=tuple(row[k] for k in FIELDS)
   ident=(period,code,context)
@@ -28,14 +45,14 @@ def summarize(rows,membership,kind):
   seen.add(ident)
   if context not in lookup:
    lookup[context]=len(catalog);catalog.append(dict(zip(FIELDS,context),unit='count_non_unique' if row['NumeroRelatorio']=='10' else 'BRL',kind=kind))
-  key=(period,cohort,tcb,lookup[context]);g=groups.setdefault(key,[None,0,Counter(),0])
+  key=(period,cohort,tcb,lookup[context],dimension_key);g=groups.setdefault(key,[None,0,Counter(),0])
   token=row['Saldo']
   status={None:'native_null','':'native_empty','NA':'native_NA','NI':'native_NI'}.get(token)
   if status:g[2][status]+=1;continue
   try:value=Fraction(token)
   except (ValueError,ZeroDivisionError) as exc:raise ValueError('Unsupported native numeric token') from exc
   g[0]=(g[0] or Fraction(0))+value;g[1]+=1;g[3]+=value<0
- return dict(catalog=catalog,rows=[[*key,None if v[0] is None else [str(v[0].numerator),str(v[0].denominator)],v[1],dict(v[2]),v[3]] for key,v in groups.items()],unidentified_rows=unidentified,unmatched_rows=unmatched)
+ return dict(catalog=catalog,rows=[[*key[:4],None if v[0] is None else [str(v[0].numerator),str(v[0].denominator)],v[1],dict(v[2]),v[3],*([json.loads(key[4])] if key[4] is not None else [])] for key,v in groups.items()],unidentified_rows=unidentified,unmatched_rows=unmatched)
 
 def digest(path):
  with Path(path).open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
@@ -52,6 +69,19 @@ def authenticated(root,entry):
  if not path.is_relative_to(root) or digest(path)!=entry['sha256']:raise ValueError('Context table hash mismatch')
  return path
 
+def compact_dimensions(data):
+ """Intern only repeated labels; numerical cells and states remain exact."""
+ for kind in ('balance','credit'):
+  part=data[kind];dictionary=[];lookup={}
+  for row in part['rows']:
+   if len(row)!=9:raise ValueError('Joint dimensions required for compaction')
+   key=json.dumps(row[8],sort_keys=True,ensure_ascii=False)
+   if key not in lookup:lookup[key]=len(dictionary);dictionary.append(row[8])
+   row[8]=lookup[key]
+  part['dimension_dictionary']=dictionary
+ return data
+
+
 def build_contexts(composition,composition_pin,balance_root,balance_pin,credit_packages,periods=None):
  root,m=load_package(composition,composition_pin,'ifdata-composed-analysis-v1')
  u=authenticated(root,next(e for e in m['files'] if e['file']=='unit_periods.parquet'))
@@ -60,8 +90,8 @@ def build_contexts(composition,composition_pin,balance_root,balance_pin,credit_p
   for payload, in con.execute("select payload from read_parquet(?) where dataset='financial'",[str(u)]).fetchall():
    r=json.loads(payload);key=(r['period'],r['code'])
    if key in members:raise ValueError('Ambiguous financial reporting unit')
-   members[key]=(r['membership'],(r.get('classifications') or {}).get('Tcb'))
-  result={'composition_manifest':composition_pin,'dimension_scope':['Tcb','membership'],'perspective':'financial','sources':[]}
+   members[key]=(r['membership'],(r.get('classifications') or {}).get('Tcb'),unit_dimensions(r))
+  result={'composition_manifest':composition_pin,'context_contract':'native-contexts-joint-v2','dimension_scope':[*JOINT_DIMENSIONS,'membership'],'perspective':'financial','sources':[]}
   for kind,packages in [('balance',[(balance_root,balance_pin)]),('credit',credit_packages)]:
    parts=[];global_catalog=[];global_lookup={};source_periods=set()
    for package_root,pin in packages:
@@ -86,7 +116,7 @@ def build_contexts(composition,composition_pin,balance_root,balance_pin,credit_p
      parts.append(part)
      print('CONTEXT',kind,period,len(part['rows']),flush=True)
    result[kind]={'catalog':global_catalog,'rows':[r for p in parts for r in p['rows']],'unidentified_rows':sum(p['unidentified_rows'] for p in parts),'unmatched_rows':sum(p['unmatched_rows'] for p in parts)}
-  return result
+  return compact_dimensions(result)
 
 
 if __name__=='__main__':
