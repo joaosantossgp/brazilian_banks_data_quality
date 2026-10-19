@@ -20,13 +20,56 @@ def complement_catalogue(datasets=('financial','individual')):
     roles=[('funding','3','78185','[41000007] + [42000006] + [43000005] + [46000002]'),
            ('repos','3','78288','[42000006]'),('issuances','3','78294','[43000005]'),
            ('loans_transfers','3','78295','[46000002]'),
-           ('credit_income','4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]')]
+           ('credit_income','4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]'),
+           ('RIF','4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias'),
+           ('other_income','4','78222','[71900005]-[71910002]-[71915007]-[71920009]-[71925004]-[71930006]-[71940003]-[71945008]-[71947006]-[71950000]-[71955005]-[71960007]-[71965002]-[71970004]-[71980001]-[71990053]-[71990101][71990125]-[71990156]-[71990204]-[71990266]-[71990307]-[71990352]-[71990400]-[71990503]-[71990606]-[71990709]-[71990802]-[71990905]'),
+           ('participations','4','78221','[71800002]+[71990802]+[71990905]+[71990709]+[81600003]+[81830804]+[81830907]+[81830701]'),
+           ('leasing_receivables','2','78194','[17000000]-[17900007]'),
+           ('leasing_provision','2','78197','[17900007]')]
     rows=[]
     for ds in datasets:
         for name,report,account,description in roles:
             literal=dict(zip(DIMENSIONS,(ds,universe.TYPES[ds],report,'Passivo' if report=='3' else 'DRE',account,None,name,description)))
             rows.append(dict(literal,periodos=periods))
     return rows
+
+
+class ScopedComplementCompositionTests(unittest.TestCase):
+    def test_financial_complement_does_not_fabricate_individual_scope(self):
+        from test_ifdata_composition import CompositionTests
+        from unittest.mock import patch
+        helper=CompositionTests()
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);cfg=helper.fixture(root)
+            def individual(row):
+                return json.loads(json.dumps(row).replace('financial|2|','individual|3|')
+                    .replace('"financial"','"individual"').replace('["individual", "2",','["individual", "3",'))
+            for table in ('unit_periods','components','unit_coverage'):
+                helper.rewrite(cfg['baseline'],table,lambda rows:rows.extend(
+                    individual(r) for r in list(rows) if r.get('dataset')=='financial' and r.get('code')=='B'))
+            for spec,table in ((cfg['membership'],'unit_membership'),(cfg['sr'],'attributes')):
+                helper.rewrite(spec,table,lambda rows:rows.extend(
+                    dict(individual(r),status='unknown',sr_analitico=None) if table=='attributes' else individual(r)
+                    for r in list(rows) if r.get('dataset')=='financial' and r.get('code')=='B'))
+            for spec in (cfg['membership'],cfg['sr'],*cfg['corrections'],*cfg['complements']):
+                path=Path(spec['root'])/'manifest.json';manifest=json.loads(path.read_text(encoding='utf8'))
+                if manifest['contract']=='ifdata-updated-membership-v1':manifest['baseline_manifest_sha256']=cfg['baseline']['expected_manifest_sha256']
+                elif manifest['contract']=='ifdata-sr-attribution-v1':manifest['baseline']['sha256']=cfg['baseline']['expected_manifest_sha256']
+                else:manifest['baseline']=deepcopy(cfg['baseline'])
+                path.write_text(json.dumps(manifest),encoding='utf8');spec['expected_manifest_sha256']=math._digest_file(path)
+            cfg['datasets'].append('individual');out=root/'composed'
+            with patch.object(math,'evaluate_metric',side_effect=AssertionError('Stored composition must not calculate formulas')):
+                universe.compose_analysis(cfg,out)
+            rows=helper.rows(out,'unit_coverage')
+            self.assertEqual(len([r for r in rows if r['dataset']=='financial' and r['metric']=='LA']),2)
+            self.assertFalse(any(r['dataset']=='individual' and r['metric']=='LA' for r in rows))
+            originals=helper.rows(Path(cfg['baseline']['root']),'unit_coverage')
+            old={r['id']:r for r in originals if r['dataset']=='individual'}
+            current={r['id']:r for r in rows if r['dataset']=='individual'}
+            self.assertEqual(set(current),set(old))
+            for key in old:
+                for field in ('status','value_fraction','numerator_fraction','denominator_fraction','flags'):
+                    self.assertEqual(current[key][field],old[key][field])
 
 
 class ComplementProfileTests(unittest.TestCase):
@@ -38,7 +81,7 @@ class ComplementProfileTests(unittest.TestCase):
     def test_additive_profile_keeps_frozen_contexts_and_own_individual_bindings(self):
         original=universe.load_profile();profile=self.compile()
         self.assertEqual(profile['contexts'][:len(original['contexts'])],original['contexts'])
-        self.assertEqual(len(profile['contexts'])-len(original['contexts']),10)
+        self.assertEqual(len(profile['contexts'])-len(original['contexts']),20)
         for c in profile['contexts'][len(original['contexts']):]:
             self.assertEqual(len(c['periods']),60)
             self.assertEqual(c['literal_context']['TipoInstituicao'],universe.TYPES[c['literal_context']['dataset']])
@@ -50,7 +93,7 @@ class ComplementProfileTests(unittest.TestCase):
             if kind=='duplicate':rows.append(deepcopy(rows[0]))
             if kind=='description':rows[0]['DescricaoColuna']='other'
             if kind=='period':rows[0]['periodos']=rows[0]['periodos'][1:]
-            if kind=='perspective':rows[5]['TipoInstituicao']='2'
+            if kind=='perspective':next(r for r in rows if r['dataset']=='individual')['TipoInstituicao']='2'
             with self.subTest(kind=kind),self.assertRaises(ValueError):self.compile(rows)
 
     def test_api_rejects_unapproved_selection_before_io(self):
@@ -60,8 +103,74 @@ class ComplementProfileTests(unittest.TestCase):
             args=dict(periods=['202412'],datasets=['financial'],metrics=['LA']);args.update(options)
             with self.subTest(options=options),self.assertRaises(ValueError):fn('missing','a'*64,'missing-output',**args)
 
+    def test_rif_binding_is_a_flow_and_ambiguous_history_is_rejected(self):
+        profile=self.compile()
+        rif=[c for c in profile['contexts'] if c['component']=='intermediation_income']
+        self.assertEqual(len(rif),2,'RIF must have its own authenticated binding in each perspective')
+        self.assertTrue(all(c['window_rule']=='native-semester-analysis-v2' for c in rif))
+        rows=complement_catalogue();rows.append(deepcopy(next(r for r in rows if r['Conta']=='78208')))
+        with self.assertRaises(ValueError):self.compile(rows)
+
+    def test_wide_income_has_two_distinct_own_flow_bindings(self):
+        contexts=self.compile()['contexts']
+        for name in ('other_operating_income','participation_result'):
+            bindings=[c for c in contexts if c['component']==name]
+            self.assertEqual(len(bindings),2)
+            self.assertTrue(all(c['window_rule']=='native-semester-analysis-v2' for c in bindings))
+
+    def test_leasing_bindings_are_own_stocks_not_a_flow_or_credit_substitute(self):
+        contexts=self.compile()['contexts']
+        for name,account in [('leasing_receivables_before_provision','78194'),('leasing_provision_signed','78197')]:
+            rows=[c for c in contexts if c['component']==name]
+            self.assertEqual(len(rows),2)
+            self.assertTrue(all(c['window_rule']=='stock' and c['literal_context']['Conta']==account for c in rows))
+
 
 class ComplementProducerTests(unittest.TestCase):
+    def test_leasing_selection_retains_zero_null_and_own_population(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);base,pin=self.fixture(root,['202412']);out=root/'leasing'
+            manifest=universe.calculate_complements(base,pin,out,periods=['202412'],metrics=['QL'])
+            rows=json.loads((out/'results.json').read_text(encoding='utf8'))
+            self.assertEqual(manifest['tables']['results'],6)
+            bycode={r['code']:r for r in rows}
+            self.assertEqual(math._rational(bycode['BNDES']['value_fraction']),Fraction(3,40))
+            self.assertEqual(bycode['NULL']['status'],'native_null')
+            self.assertEqual(bycode['ZERO']['status'],'zero_denominator')
+            self.assertEqual(bycode['ZERO']['applicability'],'unknown')
+            self.assertEqual(math._digest_file(base/'manifest.json'),pin)
+
+    def test_income_selection_keeps_adopted_denominators_separate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);base,pin=self.fixture(root,['202312','202403','202406','202409','202412'])
+            out=root/'income'
+            manifest=universe.calculate_complements(base,pin,out,periods=['202412'],metrics=['E2-W','E2-WP'])
+            rows=json.loads((out/'results.json').read_text(encoding='utf8'))
+            self.assertEqual(manifest['tables']['results'],24)
+            for metric,expected in [('E2-W',Fraction(-2,3)),('E2-WP',Fraction(-1,2))]:
+                r=next(r for r in rows if r['code']=='BNDES' and r['metric']==metric and r['horizon']=='quarter')
+                self.assertEqual(r['status'],'ok');self.assertEqual(math._rational(r['value_fraction']),expected)
+                self.assertIn('signed_cost_reversal',r['flags'])
+            self.assertEqual(math._digest_file(base/'manifest.json'),pin)
+
+    def test_assaf_selection_preserves_native_windows_states_and_cohorts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);base,pin=self.fixture(root,['202312','202403','202406','202409','202412'])
+            out=root/'assaf'
+            manifest=universe.calculate_complements(base,pin,out,periods=['202412'],
+                metrics=['L1','PL_DEP','R3','RIF_AT'])
+            rows=json.loads((out/'results.json').read_text(encoding='utf8'))
+            pick=lambda code,metric,h:next(r for r in rows if r['code']==code and r['metric']==metric and r['horizon']==h)
+            self.assertEqual(manifest['tables']['results'],36)
+            self.assertEqual(math._rational(pick('BNDES','L1','point')['value_fraction']),Fraction(1,2))
+            self.assertEqual(math._rational(pick('BNDES','PL_DEP','point')['value_fraction']),4)
+            self.assertEqual(math._rational(pick('BNDES','R3','ttm')['value_fraction']),1)
+            self.assertEqual(math._rational(pick('BNDES','RIF_AT','quarter')['value_fraction']),Fraction(7,135))
+            self.assertEqual(pick('NULL','L1','point')['status'],'native_null')
+            self.assertEqual(pick('ZERO','PL_DEP','point')['status'],'zero_denominator')
+            self.assertEqual(pick('UNKNOWN','R3','quarter')['membership'],'unknown')
+            self.assertEqual(math._digest_file(base/'manifest.json'),pin)
+
     def fixture(self,root,periods,dataset='financial'):
         import duckdb
         from bank_quality.ifdata_odata import COLUMNS,CONTRACT
@@ -71,7 +180,8 @@ class ComplementProducerTests(unittest.TestCase):
         contexts=[c for c in profile['contexts'] if c['literal_context']['dataset']==dataset]
         catalogue.extend(dict(c['literal_context'],periodos=c['periods']) for c in universe.load_profile()['contexts'] if c['literal_context']['dataset']==dataset)
         tokens=dict(cash='10',interfinancial='20',credit='40',deposits='10',repos='20',issuances='30',loans_transfers='40',funding='100',
-                    RBIF='12',provision_flow='-2',services='2',fees='1',personnel='-2',administration='-1',credit_income='20')
+                    RBIF='12',provision_flow='-2',services='2',fees='1',personnel='-2',administration='-1',credit_income='20',
+                    LL='3',RIF='12',PL='40',sight_deposits='20',other_income='6',participations='3',leasing_receivables='200',leasing_provision='-15')
         codes=('BNDES','IP','COOP','UNKNOWN','NULL','ZERO');files=[];units=[]
         with duckdb.connect() as conn:
             for i,p in enumerate(periods):
@@ -81,8 +191,8 @@ class ComplementProducerTests(unittest.TestCase):
                         ctx=next(c for c in contexts if c['component']==math.COMPONENT_NAMES[name] and p in c['periods'])
                         token=str(100+i*10) if name=='AT' else tokens[name]
                         if name in math.FLOW_COMPONENTS:token=str({'03':3,'06':8,'09':5,'12':12}[p[-2:]])
-                        if code=='NULL' and name=='cash':token=None
-                        if code=='ZERO' and name in ('funding','deposits','repos','issuances','loans_transfers'):token='0'
+                        if code=='NULL' and name in ('cash','leasing_provision'):token=None
+                        if code=='ZERO' and name in ('funding','deposits','repos','issuances','loans_transfers','leasing_receivables'):token='0'
                         rows.append(dict({k:v for k,v in ctx['literal_context'].items() if k!='dataset'},CodInst=code,AnoMes=p,Saldo=token,source_file='native',source_sha256='a'*64,source_row=str(len(rows))))
                     cad=dict(Tcb={'BNDES':'B4','IP':'N4','COOP':'B3'}.get(code),Td='I',Tc=None,Sr=None,SegmentoTb=None)
                     units.append(dict(id=code+'|'+p,unit_id=dataset+'|'+universe.TYPES[dataset]+'|'+code+'|'+p,period=p,dataset=dataset,code=code,

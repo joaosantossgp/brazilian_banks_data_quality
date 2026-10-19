@@ -26,6 +26,88 @@ def stock(period, token, **changes):
                        window_rule='stock', **changes)
 
 
+class LeasingProtectionTests(unittest.TestCase):
+    def evaluate(self, receivables='200', provision='-15', **changes):
+        from bank_quality import ifdata_analysis as math
+        components=dict(leasing_receivables=[stock('202412',receivables)],
+                        leasing_provision=[stock('202412',provision)],
+                        leasing_net=[stock('202412','185')],leasing_vrg=[stock('202412','900')],
+                        leasing_fixed_assets=[stock('202412','500')])
+        inputs=dict(period='202412',components=components,financial_statement=True);inputs.update(changes)
+        return math.evaluate_metric('QL',inputs,changes.get('horizon','point'))
+
+    def test_receivable_before_provision_is_the_only_denominator(self):
+        from fractions import Fraction
+        from bank_quality import ifdata_analysis as math
+        r=self.evaluate();self.assertEqual(r['status'],'ok')
+        self.assertEqual(math._rational(r['value_fraction']),Fraction(3,40))
+        self.assertEqual(math._rational(r['numerator_fraction']),15)
+        self.assertEqual(math._rational(r['denominator_fraction']),200)
+        self.assertEqual(r['applicability'],'applicable')
+        self.assertIn('not_NPL_or_regulatory_adequacy',r['limits'])
+        self.assertEqual(self.evaluate(horizon='ttm')['status'],'invalid_horizon')
+
+    def test_signed_zero_null_and_own_perimeter_states_remain_distinct(self):
+        from fractions import Fraction
+        from bank_quality import ifdata_analysis as math
+        r=self.evaluate(provision='15');self.assertEqual(r['status'],'ok')
+        self.assertEqual(math._rational(r['value_fraction']),Fraction(-3,40))
+        self.assertIn('positive_native_leasing_provision',r['flags'])
+        r=self.evaluate(receivables='0');self.assertEqual(r['status'],'zero_denominator');self.assertEqual(r['applicability'],'unknown')
+        r=self.evaluate(receivables='0',provision='15');self.assertEqual(r['status'],'zero_denominator')
+        self.assertIn('positive_native_leasing_provision',r['flags'])
+        r=self.evaluate(receivables='-200');self.assertEqual(r['status'],'ok');self.assertEqual(r['applicability'],'unknown');self.assertIn('negative_denominator',r['flags'])
+        self.assertEqual(self.evaluate(provision=None)['status'],'native_null')
+        self.assertEqual(self.evaluate(receivables=None)['status'],'native_null')
+        self.assertEqual(self.evaluate(components={})['status'],'missing_component')
+        c=dict(leasing_receivables=[stock('202412','200')],leasing_provision=[stock('202412','-15',unit_key=('individual','1','001'))])
+        self.assertEqual(self.evaluate(components=c)['status'],'incompatible_unit')
+
+
+class AssafSensitivityTests(unittest.TestCase):
+    def evaluate(self, metric, *, changes=None, horizon=None):
+        from bank_quality import ifdata_analysis as api
+        point=metric in ('L1','PL_DEP')
+        rows={n:[observation('202403',v,definition_id=n,window_rule='stock')] for n,v in
+              {'cash':'5','sight_deposits':'20','PL':'-10','deposits':'40'}.items()}
+        rows.update({n:[observation(p,v,definition_id=n) for p,v in
+                    zip(('202403','202406','202409','202412'),tokens)] for n,tokens in
+                    {'LL':('3','6','3','6'),'RIF':('12','24','12','24')}.items()})
+        rows['AT']=[observation(p,'120',definition_id='AT',window_rule='stock') for p in
+                    ('202312','202403','202406','202409','202412')]
+        if changes:changes(rows)
+        return api.evaluate_metric(metric,dict(period='202403' if point or horizon!='ttm' else '202412',
+                                               components=rows,financial_statement=True),
+                                   horizon or ('point' if point else 'quarter'))
+
+    def test_exact_sensitivities_use_native_quarters_and_stock_means(self):
+        from bank_quality import ifdata_analysis as api
+        from fractions import Fraction
+        for metric,value in {'L1':Fraction(1,4),'PL_DEP':Fraction(-1,4),
+                             'R3':Fraction(1,4),'RIF_AT':Fraction(1,10)}.items():
+            with self.subTest(metric=metric):
+                r=self.evaluate(metric);self.assertEqual(r['status'],'ok')
+                self.assertEqual(api._rational(r['value_fraction']),value)
+        self.assertIn('negative_equity',self.evaluate('PL_DEP')['flags'])
+        self.assertEqual(api._rational(self.evaluate('R3',horizon='ttm')['value_fraction']),Fraction(1,4))
+        self.assertEqual(api._rational(self.evaluate('RIF_AT',horizon='ttm')['value_fraction']),Fraction(2,5))
+
+    def test_zero_null_negative_and_unknown_history_remain_distinct(self):
+        def change(name,value):return lambda rows:rows[name][0].update(token=value)
+        self.assertEqual(self.evaluate('L1',changes=change('sight_deposits','0'))['status'],'zero_denominator')
+        self.assertEqual(self.evaluate('L1',changes=change('cash',None))['status'],'native_null')
+        self.assertEqual(self.evaluate('R3',changes=change('RIF','0'))['status'],'zero_denominator')
+        r=self.evaluate('R3',changes=change('RIF','-12'))
+        self.assertEqual(r['value'],'-0.25');self.assertIn('negative_denominator',r['flags'])
+        def no_opening(rows):rows['AT']=rows['AT'][1:]
+        self.assertEqual(self.evaluate('RIF_AT',changes=no_opening)['status'],'missing_opening')
+        def new_definition(rows):rows['LL'][2]['definition_id']='other-definition'
+        self.assertEqual(self.evaluate('R3',changes=new_definition,horizon='ttm')['status'],'incompatible_definition')
+        def wrong_window(rows):rows['RIF'][0]['window_rule']='stock'
+        self.assertEqual(self.evaluate('R3',changes=wrong_window)['status'],'unverified_window')
+        self.assertEqual(self.evaluate('R3',horizon='point')['status'],'invalid_horizon')
+
+
 class ComplementMetricTests(unittest.TestCase):
     def setUp(self):
         from bank_quality import ifdata_analysis
@@ -56,7 +138,8 @@ class ComplementMetricTests(unittest.TestCase):
 
     def flow(self,metric,change=None,horizon='quarter'):
         values={'RBIF':('50','110'),'provision_flow':('-2','-6'),'services':('5','15'),
-                'fees':('2','6'),'personnel':('-3','-9'),'administration':('-1','-3'),'credit_income':('10','30')}
+                'fees':('2','6'),'personnel':('-3','-9'),'administration':('-1','-3'),'credit_income':('10','30'),
+                'other_income':('2','8'),'participations':('1','4')}
         rows={name:[observation(p,t,definition_id=name) for p,t in zip(('202409','202412'),tokens)] for name,tokens in values.items()}
         rows.update({name:[observation(p,t,definition_id=name,window_rule='stock') for p,t in zip(('202409','202412'),tokens)]
                      for name,tokens in {'AT':('100','120'),'credit':('50','60')}.items()})
@@ -70,6 +153,35 @@ class ComplementMetricTests(unittest.TestCase):
             with self.subTest(metric=metric):
                 r=self.flow(metric);self.assertEqual(r['status'],'ok');self.assertEqual(self.api._rational(r['value_fraction']),value)
         self.assertIn('not_NIM_or_contractual_spread',self.flow('R4')['limits'])
+
+    def test_income_extensions_keep_costs_and_provisions_separate(self):
+        from fractions import Fraction
+        # C=8; S=60-(-4)+10+4=78; other income=6; participations=3.
+        for metric,value in {'E2-W':Fraction(2,21),'E2-WP':Fraction(8,87)}.items():
+            with self.subTest(metric=metric):
+                r=self.flow(metric);self.assertEqual(r['status'],'ok')
+                self.assertEqual(self.api._rational(r['value_fraction']),value)
+                self.assertEqual(self.api._rational(r['numerator_fraction']),8)
+        def reversed_provision(rows):rows['provision_flow'][-1]['token']='2'
+        r=self.flow('E2-W',reversed_provision)
+        self.assertEqual(r['status'],'ok')
+        self.assertEqual(self.api._rational(r['value_fraction']),Fraction(2,19))
+        # Heterogeneous expense and net operating-result fields are not denominator terms.
+        def unrelated(rows):
+            rows['other_expenses']=[observation('202412','-999999')]
+            rows['operating_result']=[observation('202412','-888888')]
+        self.assertEqual(self.flow('E2-W',unrelated)['value_fraction'],self.flow('E2-W')['value_fraction'])
+
+    def test_income_extensions_do_not_impute_or_hide_signed_income(self):
+        def other(value):return lambda rows:rows['other_income'][-1].update(token=value)
+        self.assertEqual(self.flow('E2-W',other('-76'))['status'],'zero_denominator')
+        r=self.flow('E2-W',other('-100'));self.assertIn('negative_denominator',r['flags'])
+        self.assertEqual(r['value_fraction'],{'numerator':'-1','denominator':'3'})
+        self.assertEqual(self.flow('E2-W',other(None))['status'],'native_null')
+        def reversed_cost(rows):
+            rows['personnel'][-1]['token']='3';rows['administration'][-1]['token']='1'
+        self.assertIn('signed_cost_reversal',self.flow('E2-WP',reversed_cost)['flags'])
+        self.assertEqual(self.flow('E2-W',horizon='point')['status'],'invalid_horizon')
 
     def test_new_formulas_preserve_guards_signs_and_missing_history(self):
         def missing_opening(rows):rows['credit']=rows['credit'][1:]
