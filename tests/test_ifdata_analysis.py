@@ -26,6 +26,50 @@ def stock(period, token, **changes):
                        window_rule='stock', **changes)
 
 
+class AssafSensitivityTests(unittest.TestCase):
+    def evaluate(self, metric, *, changes=None, horizon=None):
+        from bank_quality import ifdata_analysis as api
+        point=metric in ('L1','PL_DEP')
+        rows={n:[observation('202403',v,definition_id=n,window_rule='stock')] for n,v in
+              {'cash':'5','sight_deposits':'20','PL':'-10','deposits':'40'}.items()}
+        rows.update({n:[observation(p,v,definition_id=n) for p,v in
+                    zip(('202403','202406','202409','202412'),tokens)] for n,tokens in
+                    {'LL':('3','6','3','6'),'RIF':('12','24','12','24')}.items()})
+        rows['AT']=[observation(p,'120',definition_id='AT',window_rule='stock') for p in
+                    ('202312','202403','202406','202409','202412')]
+        if changes:changes(rows)
+        return api.evaluate_metric(metric,dict(period='202403' if point or horizon!='ttm' else '202412',
+                                               components=rows,financial_statement=True),
+                                   horizon or ('point' if point else 'quarter'))
+
+    def test_exact_sensitivities_use_native_quarters_and_stock_means(self):
+        from bank_quality import ifdata_analysis as api
+        from fractions import Fraction
+        for metric,value in {'L1':Fraction(1,4),'PL_DEP':Fraction(-1,4),
+                             'R3':Fraction(1,4),'RIF_AT':Fraction(1,10)}.items():
+            with self.subTest(metric=metric):
+                r=self.evaluate(metric);self.assertEqual(r['status'],'ok')
+                self.assertEqual(api._rational(r['value_fraction']),value)
+        self.assertIn('negative_equity',self.evaluate('PL_DEP')['flags'])
+        self.assertEqual(api._rational(self.evaluate('R3',horizon='ttm')['value_fraction']),Fraction(1,4))
+        self.assertEqual(api._rational(self.evaluate('RIF_AT',horizon='ttm')['value_fraction']),Fraction(2,5))
+
+    def test_zero_null_negative_and_unknown_history_remain_distinct(self):
+        def change(name,value):return lambda rows:rows[name][0].update(token=value)
+        self.assertEqual(self.evaluate('L1',changes=change('sight_deposits','0'))['status'],'zero_denominator')
+        self.assertEqual(self.evaluate('L1',changes=change('cash',None))['status'],'native_null')
+        self.assertEqual(self.evaluate('R3',changes=change('RIF','0'))['status'],'zero_denominator')
+        r=self.evaluate('R3',changes=change('RIF','-12'))
+        self.assertEqual(r['value'],'-0.25');self.assertIn('negative_denominator',r['flags'])
+        def no_opening(rows):rows['AT']=rows['AT'][1:]
+        self.assertEqual(self.evaluate('RIF_AT',changes=no_opening)['status'],'missing_opening')
+        def new_definition(rows):rows['LL'][2]['definition_id']='other-definition'
+        self.assertEqual(self.evaluate('R3',changes=new_definition,horizon='ttm')['status'],'incompatible_definition')
+        def wrong_window(rows):rows['RIF'][0]['window_rule']='stock'
+        self.assertEqual(self.evaluate('R3',changes=wrong_window)['status'],'unverified_window')
+        self.assertEqual(self.evaluate('R3',horizon='point')['status'],'invalid_horizon')
+
+
 class ComplementMetricTests(unittest.TestCase):
     def setUp(self):
         from bank_quality import ifdata_analysis

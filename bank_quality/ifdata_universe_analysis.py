@@ -818,11 +818,12 @@ COMPLEMENT_BINDINGS={
     'issuances':('3','78294','[43000005]'),
     'loans_transfers':('3','78295','[46000002]'),
     'credit_income':('4','78203','[71100001]+[71910002]+[71915007]+[71920009]+[71925004]+[71950000]+[71980001]+[81945005]+[81950007]+[81915004]'),
+    'RIF':('4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias'),
 }
 
 
 def compile_complement_profile(profile,catalogue,datasets):
-    """Append five finite own-perspective literal bindings; never edit v1.
+    """Append finite own-perspective literal bindings; never edit v1.
 
     One unchanged eight-dimensional catalogue context must cover all sixty
     core references. A different description, missing quarter or ambiguity is
@@ -846,7 +847,7 @@ def compile_complement_profile(profile,catalogue,datasets):
             literal={k:row[k] for k in DIMENSIONS}
             digest=hashlib.sha256(json.dumps(literal,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
             result['contexts'].append(dict(component=math.COMPONENT_NAMES[role],literal_context=literal,context_sha256=digest,
-                compatibility=digest,periods=periods,window_rule='native-semester-analysis-v2' if role=='credit_income' else 'stock',
+                compatibility=digest,periods=periods,window_rule='native-semester-analysis-v2' if role in ('credit_income','RIF') else 'stock',
                 sign_rule='native_signed_no_abs',proof_rule='literal_catalogue_60_core_references',
                 proof='Issue152 / research143; own dataset and TipoInstituicao, unchanged literal accounts; no cross-perimeter equivalence'))
     return result
