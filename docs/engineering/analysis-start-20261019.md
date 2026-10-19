@@ -44,7 +44,7 @@ A composição aceita contém nove tabelas. Seus manifests inventariam caminhos,
 | `cohort_comparisons` |551.595| Comparações entre coortes e recortes conforme o contrato persistido; não certificam causalidade. |
 | `joint_cells` |355.632| Células conjuntas observadas dos seis eixos e coortes disjuntas, usadas para recompor filtrosAND sem inventar cruzamentos. |
 
-**Versões e autoridade:** `current-indicators.json` aponta para a seleção vigente aceita no computador, atualmente20métricas/d47. A entrada explícita desta análise é27métricas/f374, aceita localmente na192 e pinada abaixo. A última candidata do explorador é identificada na nota193, por caminho/hash/recibo; enquanto a193não registrar seu aceite, não é a referência aceita do ponteiro. PRpublicada, CIaprovada, dado aceito, artefato visual aceito e integração emmain são estados distintos. Não alterar a seleção de uma tarefa já iniciada sem migração explícita.
+**Versões e autoridade:** `current-indicators.json` é a referência corrente aceita no computador. Na abertura desta entrega ele selecionava20métricas/d47; a análise adotou explicitamente27métricas/f374, aceita localmente na192 e pinada abaixo. A promoção controlada e o aceite do explorador são registrados na193. A próxima tarefa deve ler o ponteiro real e autenticar os hashes, sem interpretar o checkpoint histórico20/d47 como seleção eterna. PRpublicada, CIaprovada, dado aceito, artefato visual aceito e integração emmain são estados distintos. Não alterar o pin de uma tarefa já iniciada sem migração explícita.
 
 A próxima tarefa deve: resolver o checkout principal peloGit comum; ler o ponteiro; autenticar a entrada explícita desta análise e as tabelas consumidas; ler a nota193 para o recibo do candidato corrente. Se estiver em outro computador e o pacote privado faltar, parar nesse ponto e obter a cópia autorizada, em vez de reconstruir dados pela idade das pastas. A Release antiga não é promessa de sincronização com27métricas ou crédito196.
 
@@ -52,7 +52,7 @@ A próxima tarefa deve: resolver o checkout principal peloGit comum; ler o ponte
 
 Descobrir o checkout principal pelo diretório Git comum e autenticar o ponteiro conforme o [comando canônico](local-queries-20261013.md#base-de-indicadores-vigente-entre-tasks). Não escolher pasta por nome/data, não reconstruir a seleção pelo chat e não confundir o HEAD do checkout principal com o do worktree de entrega. Registrar o pin inicial e conferir os hashes das tabelas consumidas.
 
-Nesta tarefa houve migração explícita da entrada de auditoria do ponteiro de 20 métricas (d47 abaixo) para a composição aceita de 27 métricas (f374). Enquanto a promoção controlada da #193 não estiver registrada, **o ponteiro antigo continua selecionando 20 métricas**. O conjunto fixado aqui é identificável independentemente da promoção. Os caminhos abaixo são relativos ao checkout principal, privados e válidos neste computador; o clone Git não distribui os dados.
+Nesta tarefa houve migração explícita da entrada de auditoria da composição de20métricas(d47abaixo) para a composição aceita de27métricas(f374). Oponteiro de20foi preservado durante a validação; sua promoção posterior depende do aceite registrado na193. A seleção corrente deve ser verificada no arquivo real. O conjunto fixado aqui permanece identificável por hash, inclusive para tarefas que conservaram pins anteriores. Os caminhos abaixo são relativos ao checkout principal, privados e válidos neste computador; o clone Git não distribui os dados.
 
 | Entrada | Caminho relativo | SHA-256 do manifest |
 |---|---|---|
@@ -81,6 +81,16 @@ if ((Get-FileHash -LiteralPath $analysisTable -Algorithm SHA256 -ErrorAction Sto
 ```
 
 Os manifests de crédito são os da importação; conferir os nomes concretos no [ledger #196](ifdata-credit-openings-temporal-gaps-20261019.md) antes de executar. Não selecionar o CSV piloto do portal como parte desses pacotes. A [auditoria econômica](indicator-economic-plausibility-20261019.md) identifica seu recibo próprio e o explorador #193 documenta o artefato entregue.
+
+## Como pedir a outra tarefa
+
+Pode copiar esta instrução, acrescentando a pergunta de análise desejada:
+
+> Use a base vigente deste projeto, sem nova coleta nem recálculo de indicadores. Leia AGENTS.md e docs/engineering/analysis-start-20261019.md. Resolva o checkout principal pelo diretórioGit comum; leia data/curated/current-indicators.json e autentique o manifest e as tabelas consumidas. Informe o caminho e o SHA-256 fixados, a versão do explorador e os pins de macro, balanço e crédito aplicáveis. Para esta etapa acadêmica, confira a composição de27métricas/f374 e o núcleo2010–2024, no sistema observado inteiro, com vinculadas/restante/vínculo desconhecido separados. Preserve perspectivas, estados de ausência, janelas e limites; não use o HTML como base canônica, não escolha pasta por data e não migre um pin de tarefa em andamento silenciosamente. Então execute: [descrever a análise].
+
+No ponteiro, `package`+`manifest_sha256` identificam os indicadores. `macro_context`, `balance_context` e `credit_context` identificam fontes separadas; `native_contexts` identifica a projeção conjunta deBalanço/Crédito; `explorer` fixaHTML/recibo; `analysis_context` aponta para esta entrada e a auditoria. Cada referência consumida tem autenticação própria: conferir somente o manifest dos indicadores não autentica todas as fontes adicionais. Esses campos são metadados do ponteiro existente, não novos bancos ou uma segunda seleção corrente. Os snapshots dehandoff permanecem evidência datada; o estado operacional atual vem do ponteiro e das Issues reais.
+
+Se o ponteiro ainda selecionar outro pin, relatar a divergência e ler a193: não substituir a seleção automaticamente. Em outro computador, o pacote deve ser restaurado em escopo autorizado antes de configurar a referência; oGit não transfere os dados privados.
 
 ## Plano enxuto de análise
 

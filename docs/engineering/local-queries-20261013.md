@@ -28,6 +28,8 @@ A saída identifica a pasta das tabelas Parquet, consultáveis por DuckDB/Python
 
 Se o ponteiro não existir em outro computador, os dados não foram configurados ali: não procurar automaticamente uma pasta parecida nem presumir que a Release antiga seja a versão do explorador. Copiar/restaurar o pacote em escopo autorizado, validar e só então configurar sua referência local.
 
+O ponteiro também pode referenciar `macro_context`, `balance_context`, `credit_context`, `native_contexts`, `explorer` e `analysis_context`. São fontes e artefatos separados, cada um com caminho/hash próprio; autentique somente os que a consulta consumir, além da composição. A [instrução pronta para outra tarefa](analysis-start-20261019.md#como-pedir-a-outra-tarefa) evita reconstruir versões pelo chat. Handoffs datados preservam checkpoints; o ponteiro real e aIssue193 indicam a seleção/aceite correntes.
+
 Para publicar uma nova seleção local, o integrador registra primeiro a nova pasta imutável, hash do manifest, evidência de aceite e código/PR de origem. Só depois atualiza o ponteiro, preservando a versão anterior para tarefas já fixadas. Saída em construção, tentativa parcial ou pasta mais recente não é versão vigente. O arquivo privado não entra no Git; estas instruções são versionadas para descoberta por outras tasks.
 
 ## Entrada fixada para a análise acadêmica
