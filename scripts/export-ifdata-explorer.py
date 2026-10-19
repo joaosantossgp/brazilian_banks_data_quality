@@ -30,6 +30,13 @@ METRIC_INFO = {
     'E3': ['Custos / ativo médio · E3', 'Pessoal e administração / ativo médio; intensidade de custo, distinta de eficiência técnica.'],
     'R4': ['Intermediação / ativo médio · R4', 'Resultado de intermediação / ativo médio; inclui provisão, não é NIM.'],
     'R5': ['Rendas de crédito / crédito médio · R5', 'Rendas de crédito / crédito médio; não é spread líquido nem taxa contratual.'],
+    'L1': ['Encaixe voluntário · L1', 'Disponibilidades / depósitos à vista; depende desse financiamento e não mede liquidez por vencimentos.'],
+    'PL_DEP': ['Capital contábil sobre depósitos · PL_DEP', 'Patrimônio líquido / depósitos; não é requisito prudencial.'],
+    'R3': ['Margem sobre receita de intermediação · R3', 'Lucro líquido / receitas de intermediação; não é margem sobre toda a receita operacional.'],
+    'RIF_AT': ['Receita de intermediação / ativo médio · RIF_AT', 'Intensidade da receita bruta de intermediação; não é spread líquido.'],
+    'E2-W': ['Eficiência ampliada · E2-W · principal', 'Pessoal e administração / renda selecionada ampliada por outras receitas operacionais.'],
+    'E2-WP': ['Eficiência ampliada com participações · E2-WP', 'Sensibilidade separada: inclui participações, cujos custos podem estar fora do numerador.'],
+    'QL': ['Intensidade da provisão de leasing · QL', 'Proteção contábil sobre recebíveis de arrendamento antes da provisão; não é inadimplência ou suficiência regulatória.'],
 }
 FORMULAS = {
     'LA': '(disponibilidades + aplicações interfinanceiras) / AT', 'LC': 'crédito / AT',
@@ -38,6 +45,11 @@ FORMULAS = {
     'RS': '(serviços + tarifas) / (resultado de intermediação − resultado de provisão + serviços + tarifas)',
     'E3': '−(pessoal + administração) / AT médio',
     'R4': 'resultado de intermediação / AT médio', 'R5': 'rendas de crédito / crédito médio',
+    'L1': 'disponibilidades / depósitos à vista', 'PL_DEP': 'PL / depósitos',
+    'R3': 'lucro líquido / receitas de intermediação', 'RIF_AT': 'receitas de intermediação / AT médio',
+    'E2-W': '−(pessoal + administração) / (resultado de intermediação − resultado de provisão + serviços + tarifas + outras receitas operacionais)',
+    'E2-WP': '−(pessoal + administração) / (resultado de intermediação − resultado de provisão + serviços + tarifas + outras receitas operacionais + participações)',
+    'QL': '−provisão de arrendamento / recebíveis de arrendamento antes da provisão',
 }
 ADEQUACY = {
     'B1': 'Bancos: o mix de crédito, tesouraria e serviços condiciona a comparação.',
@@ -130,10 +142,99 @@ def presentation_macro(root, pin, authenticate=None):
     return dict(contract='explorer-macro-v1',manifest=pin,series=list(views.values()),rows=rows)
 
 
+def presentation_profile(root, manifest, authenticate, universe_pin, legacy_pin):
+    """The embedded contexts file, rather than the legacy profile, was consumed."""
+    name = manifest['contexts_file']
+    entries = [entry for entry in manifest['files'] if entry['file'] == name]
+    if len(entries) != 1:
+        raise ValueError('Missing presentation profile file')
+    path = math._contained(Path(root).resolve(), name)
+    authenticate(path, entries[0]['sha256'])
+    profile = math._json_unique(path.read_bytes())
+    if manifest['profile_sha256'] != universe_pin or profile.get('legacy_profile_sha256') != legacy_pin:
+        raise ValueError('Presentation profile lineage mismatch')
+    return profile
+
+
+def method_catalog(profiles, available):
+    """Expose literal bindings, keeping definition epochs and actual scope apart."""
+    sources = {
+        'L1': ('Assaf Neto, 11. ed., Atlas, 2015, cap. 18, p. 334; adoção #189', 'tcb-assaf-sensitivity-pilot-20261018.md'),
+        'PL_DEP': ('Assaf Neto, 2015, cap. 18, p. 337; adoção #189', 'tcb-assaf-sensitivity-pilot-20261018.md'),
+        'R3': ('Assaf Neto, 2015, cap. 18, p. 341; adoção #189', 'tcb-assaf-sensitivity-pilot-20261018.md'),
+        'RIF_AT': ('Assaf Neto, 2015, cap. 18, p. 342; adaptação temporal #189', 'tcb-assaf-sensitivity-pilot-20261018.md'),
+        'E2-W': ('Adaptação própria #182/#190; Assaf, 2015, p. 342; FMI, 2019, §§5.16/5.25/7.60–63', 'tcb-income-indicator-pilot-20261018.md'),
+        'E2-WP': ('Sensibilidade própria #190, incluindo participações; distinta de E2-W e do FSI do FMI', 'tcb-income-indicator-pilot-20261018.md'),
+        'QL': ('Conciliação Cosif/IF.data #183 e adoção contábil #191; não é NPL', 'tcb-leasing-indicator-pilot-20261018.md'),
+    }
+    base_url = 'https://github.com/joaosantossgp/brazilian_banks_data_quality/blob/main/docs/engineering/'
+    result = {}
+    for metric, datasets in sorted(available.items()):
+        roles = math.METRICS.get(metric, math.COMPLEMENT_METRICS.get(metric))
+        if roles is None:
+            raise ValueError('Unknown presentation metric: ' + metric)
+        components = []
+        for role in roles:
+            component = math.COMPONENT_NAMES.get(role, role)
+            bindings = {}
+            for profile, scope, source in profiles:
+                if metric not in scope:
+                    continue
+                for context in profile['contexts']:
+                    if context['component'] != component:
+                        continue
+                    literal = context['literal_context']
+                    digest = hashlib.sha256(json.dumps(literal, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                    if digest != context['context_sha256']:
+                        raise ValueError('Invalid presentation context hash')
+                    if literal['dataset'] not in datasets:
+                        continue
+                    key = json.dumps(context, ensure_ascii=False, sort_keys=True)
+                    entry = bindings.setdefault(key, dict(context, source_manifests=[]))
+                    if source not in entry['source_manifests']:
+                        entry['source_manifests'].append(source)
+            labels = {'AT':'Ativo total', 'PL':'Patrimônio líquido', 'LL':'Lucro líquido',
+                      'cash':'Disponibilidades', 'sight_deposits':'Depósitos à vista',
+                      'interfinancial':'Aplicações interfinanceiras', 'credit':'Crédito antes da provisão',
+                      'provision_stock':'Provisão de crédito, sinal nativo', 'provision_flow':'Resultado de provisão, sinal nativo',
+                      'personnel':'Pessoal, sinal nativo', 'administration':'Administração, sinal nativo',
+                      'services':'Serviços', 'fees':'Tarifas', 'RBIF':'Resultado de intermediação',
+                      'RIF':'Receitas de intermediação', 'other_income':'Outras receitas operacionais',
+                      'participations':'Resultado de participações', 'leasing_provision':'Provisão de arrendamento, sinal nativo',
+                      'leasing_receivables':'Recebíveis de arrendamento antes da provisão', 'deposits':'Depósitos',
+                      'repos':'Compromissadas', 'issuances':'Emissões', 'loans_transfers':'Empréstimos e repasses',
+                      'funding':'Captações conciliadas', 'credit_income':'Rendas de crédito',
+                      'PR':'Patrimônio de referência', 'CP':'Capital principal', 'RWA':'Ativos ponderados pelo risco'}
+            item = dict(role=role, label=labels.get(role,role), component=component, bindings=list(bindings.values()))
+            if role == 'funding':
+                item['derivation'] = 'Denominador: soma de depósitos, compromissadas, emissões e empréstimos/repasses. A rubrica Captações é controle de conciliação, não substitui essa soma.'
+            components.append(item)
+        label, document = sources.get(metric, ('Fundamentação e limites do conjunto anterior: pesquisa #143, adequação #152 e contratos do perfil autenticado', 'financial-dimensions-literature-20261014.md'))
+        kind, condition = 'Comum: descrição contábil', 'Comparação exige o mesmo perímetro, janela e composição do negócio. Retorno ou intensidade de custo não certificam mandato, benefício ao cooperado ou eficiência técnica.'
+        if metric == 'QL':
+            kind, condition = 'Específico: recebíveis de arrendamento', 'Aplica-se a recebíveis próprios compatíveis antes da provisão; não se restringe a N1. Não mede inadimplência nem suficiência regulatória.'
+        elif metric in ('L1','L2','L3','PL_DEP'):
+            kind, condition = 'Condicional: financiamento por depósitos', 'A espécie de depósito da fórmula deve responder à pergunta do negócio. Zero, nulo e ausência não são não aplicabilidade; esta razão não encerra liquidez por atividade.'
+        elif metric in ('Q1','Q2','R5'):
+            kind, condition = 'Específico: crédito próprio compatível', 'Carteira, provisão ou renda devem corresponder ao mesmo crédito próprio; não aplicar a custódia, recursos de clientes ou leasing por analogia.'
+        elif metric in ('C3','C4'):
+            kind, condition = 'Específico: perímetro prudencial', 'Conferir regime e data; Sr não é apenas tamanho. PR não substitui capital principal, e a razão não calcula folga sem mínimos/adicionais correspondentes.'
+        elif metric in ('R3','RIF_AT','R4'):
+            kind, condition = 'Condicional: intermediação financeira', 'Explicitar o peso de intermediação no modelo de negócio; não representa toda a renda operacional nem margem líquida de juros.'
+        elif metric in ('E2-B','E2-W','E2-WP','RS'):
+            kind, condition = 'Condicional: composição da renda e dos custos', 'Renda selecionada e custos têm alcance próprio. E2-W é principal; E2-WP é sensibilidade separada, com custos de investidas possivelmente fora do numerador.'
+        elif metric in ('LA','LC','LF-DEP','LF-OC','LF-EM','LF-REP'):
+            kind, condition = 'Comum: composição contábil condicionada ao negócio', 'Descreve estoques ou fontes conciliadas; não demonstra recursos livres, maturidade, estabilidade, LCR, NSFR ou salvaguarda.'
+        result[metric] = dict(datasets=sorted(datasets), components=components, kind=kind, condition=condition,
+                             sources=[dict(label=label, url=base_url + document)],
+                             scope_note='Tcb orienta a família de negócio; SegmentoTb refina o subtipo. Tc, Td e Sr contextualizam controle, consolidação e regime; não criam fórmulas próprias. Calculabilidade não certifica adequação universal.')
+    return result
+
+
 def prior_correction_derivation(manifest, package):
     """Membership-only children retain the authenticated correction ancestry."""
     seen=set()
-    while manifest.get('derivation',{}).get('rule')=='dated_historical_membership_v1':
+    while manifest.get('derivation',{}).get('rule') in ('dated_historical_membership_v1', 'retained_accepted_membership_provenance_v1'):
         source=manifest['derivation']['composition'];key=(source['root'],source['expected_manifest_sha256'])
         if key in seen:raise ValueError('Cyclic presentation correction ancestry')
         seen.add(key);manifest=package(*key)
@@ -276,6 +377,16 @@ def export(root, pin, output, template, macro_root=None, macro_pin=None):
     profile = math._json_unique(profile_path.read_bytes())
     formulas = {k: v['formula_documentation'] for k, v in profile['metrics'].items()}
     formulas.update(FORMULAS)
+    profiles = [(profile, list(profile['metrics']), baseline_spec['expected_manifest_sha256'])]
+    for spec in manifest['config']['complements']:
+        source_root = Path(spec['root']).resolve()
+        source = package(source_root, spec['expected_manifest_sha256'])
+        profiles.append((presentation_profile(source_root, source, authenticate, baseline['profile_sha256'], profile['legacy_profile_sha256']),
+                         spec['scope']['metrics'], spec['expected_manifest_sha256']))
+    available = {}
+    for cell in records:
+        available.setdefault(cell[2], set()).add(cell[1])
+    methods = method_catalog(profiles, available)
     template_pin = math._digest_file(template)
     authenticate(template, template_pin)
     corrections = []
@@ -291,10 +402,10 @@ def export(root, pin, output, template, macro_root=None, macro_pin=None):
         spec=derivation['patch'];source=package(Path(spec['root']).resolve(),spec['expected_manifest_sha256'])
         corrections.append(dict(issue=154,scope=['202412','financial','Terra','quarter/ttm'],manifest=spec['expected_manifest_sha256'],
             note='Ponte finita Terra: histórico Individual 4T2023–3T2024; corrente Financeiro preservado. Originais mantidos no pacote. Não preenche os 21 períodos sem unidade Financeiro; crédito zero mantém Q2/R5 indefinidos.'))
-    data = dict(cells=records, cell_contract="joint-cells-compact-v1", monetary_unit="BRL", monetary_scale=1, names=names, companies=companies, formulas=formulas, metric_info=METRIC_INFO,
+    data = dict(cells=records, cell_contract="joint-cells-compact-v1", monetary_unit="BRL", monetary_scale=1, names=names, companies=companies, formulas=formulas, metric_info=METRIC_INFO, methods=methods,
                 adequacy=ADEQUACY, manifest=pin, periods=manifest['periods'], source_counts=manifest['tables'],
                 corrections=corrections,
-                historical_membership=manifest.get('derivation',{}).get('rule')=='dated_historical_membership_v1',
+                historical_membership=bool(membership.get('historical_evidence')),
                 caixa=dict(periods=['202109', '202112', '202203', '202206']),
                 sr_linkage=dict(coverage=sr_coverage, attributes_manifest=manifest['config']['sr']['expected_manifest_sha256'],
                                 segmentation_manifest=pin),
