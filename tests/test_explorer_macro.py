@@ -92,5 +92,20 @@ console.log('Browser alignment, gaps, native percent scale and exact fractions P
         self.assertEqual(result.returncode,0,result.stderr)
 
 
+
+class MacroControlTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'),'Node unavailable')
+    def test_macro_selection_does_not_depend_on_institution_controls(self):
+        template=Path(exporter.__file__).with_name('ifdata-explorer-template.html').read_text(encoding='utf8')
+        code=template.split('</script><script>')[1].split('(async()=>{try{const bytes')[0]
+        probe="""
+const assert=require('node:assert/strict');
+global.document={getElementById:id=>{const values={macroStart:'201203',macroEnd:'201203',macroSeries:'unemployment|4099|total|official_quarter'};if(!(id in values))throw Error('Macro tried to read institution control: '+id);return {value:values[id]}}};
+DATA={periods:['201003','201203','202412'],macro:{series:[{key:'unemployment|4099|total|official_quarter'}],rows:[]}};
+const r=macroComparison();assert.deepEqual(r.points.map(x=>x.period),['201203']);
+"""
+        result=subprocess.run(['node','-'],input=code+probe,text=True,encoding='utf8',capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
 if __name__ == '__main__':
     unittest.main()
