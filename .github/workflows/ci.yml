@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.check.outputs.docs_only }}
+      run_software: ${{ steps.check.outputs.run_software }}
+      software_signature: ${{ steps.check.outputs.software_signature }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -33,7 +35,7 @@ jobs:
 
   offline-tests:
     needs: changed-files
-    if: needs.changed-files.outputs.docs_only != 'true'
+    if: needs.changed-files.outputs.run_software != 'false'
     name: Offline tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -60,10 +62,13 @@ jobs:
         run: node tests/test-budget.cjs
       - name: Portal readiness tests
         run: node --test tests/test-portal-ready.cjs
+      - name: Validated software tree ${{ needs.changed-files.outputs.software_signature }}
+        if: needs.changed-files.outputs.software_signature != ''
+        run: echo "All Linux software checks completed"
 
   windows-native-tests:
     needs: changed-files
-    if: needs.changed-files.outputs.docs_only != 'true'
+    if: needs.changed-files.outputs.run_software != 'false'
     name: Windows native offline tests
     runs-on: windows-2022
     timeout-minutes: 15
@@ -111,3 +116,6 @@ jobs:
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
           '@ | python -B -
+      - name: Validated software tree ${{ needs.changed-files.outputs.software_signature }}
+        if: needs.changed-files.outputs.software_signature != ''
+        run: echo "All Windows software checks completed"

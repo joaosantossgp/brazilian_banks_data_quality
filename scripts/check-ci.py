@@ -1,16 +1,20 @@
-"""Conservative CI routing and offline checks for changed documentation; stdlib only."""
+"""CI routing, offline document checks and public read-only test evidence; stdlib only."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import struct
 import subprocess
+import time
 from urllib.parse import unquote, urlsplit
+from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 import zlib
 
 IMAGES = {'.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp'}
+SOFTWARE_JOBS = {'Offline tests', 'Windows native offline tests'}
 
 
 def git(root, *args):
@@ -39,6 +43,64 @@ def inspect_diff(root, base, head):
         docs_only = docs_only and regular and document_path(name)
         paths.append(name)
     return bool(paths) and docs_only, paths
+
+
+def software_signature(root):
+    """Hash the actual checkout tree, including integration changes, modes and paths.
+
+    Only regular non-executable documents are omitted, exactly as in diff routing.
+    Workflow/helper/tests/dependencies are therefore part of their own reuse key.
+    """
+    records = git(root, 'ls-tree', '-r', '-z', 'HEAD').split(b'\0')
+    digest = hashlib.sha256(b'ifdata-ci-software-tree-v1\0')
+    for record in records:
+        if not record:
+            continue
+        metadata, path = record.split(b'\t', 1)
+        mode = metadata.split()[0]
+        if mode == b'100644' and document_path(path.decode('utf-8')):
+            continue
+        digest.update(record + b'\0')
+    return digest.hexdigest()
+
+
+def public_actions_json(path):
+    # This repository is public: read public metadata without tokens or new permissions.
+    request = Request('https://api.github.com' + path, headers={
+        'Accept': 'application/vnd.github+json', 'User-Agent': 'ifdata-ci-selector'})
+    with urlopen(request, timeout=5) as response:
+        return json.load(response)
+
+
+def reusable_run(repository, signature, current_run, fetch=public_actions_json):
+    """Bounded lookup of real successful test jobs; no cache or transitive reuse."""
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+        return None
+    marker = 'Validated software tree ' + signature
+    deadline = time.monotonic() + 20
+    try:
+        runs = fetch(f'/repos/{repository}/actions/workflows/ci.yml/runs?per_page=10')['workflow_runs']
+        for run in runs[:10]:
+            if time.monotonic() >= deadline:
+                break
+            if (str(run['id']) == str(current_run) or run['status'] != 'completed'
+                    or run['conclusion'] != 'success' or run['event'] not in ('push', 'pull_request')
+                    or run['path'] != '.github/workflows/ci.yml'
+                    or run['repository']['full_name'].lower() != repository.lower()
+                    or run['head_repository']['full_name'].lower() != repository.lower()):
+                continue
+            run_id, attempt = int(run['id']), int(run['run_attempt'])
+            jobs = fetch(f'/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')['jobs']
+            validated = {job['name'] for job in jobs
+                         if job['name'] in SOFTWARE_JOBS and job['status'] == 'completed'
+                         and job['conclusion'] == 'success'
+                         and any(step['name'] == marker and step['status'] == 'completed'
+                                 and step['conclusion'] == 'success' for step in job['steps'])}
+            if validated == SOFTWARE_JOBS:
+                return f'https://github.com/{repository}/actions/runs/{run_id}'
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        print('::notice::Prior test evidence unavailable; running software tests.')
+    return None
 
 
 def check_png(data, name):
@@ -129,13 +191,32 @@ def main():
         markdown = [name for name in paths if document_path(name) and Path(name).suffix.lower() == '.md']
         if markdown:
             subprocess.run(['git', '-C', str(root), 'diff', '--check', base, head, '--', *markdown], check=True)
-    result = f'docs_only={str(docs_only).lower()}'
+    signature, reused = '', None
+    if paths is not None:
+        try:
+            signature = software_signature(root)
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            print('::notice::Software tree unavailable; running software tests.')
+            docs_only = False
+        if signature and not docs_only and os.environ.get('GITHUB_ACTIONS') == 'true':
+            reused = reusable_run(os.environ.get('GITHUB_REPOSITORY', ''), signature,
+                                  os.environ.get('GITHUB_RUN_ID', ''))
+    run_software = not docs_only and not reused
+    result = (f'docs_only={str(docs_only).lower()}\n'
+              f'run_software={str(bool(run_software)).lower()}\n'
+              f'software_signature={signature}\nreused_run={reused or ""}')
     print(result)
     if paths is not None:
         print(f'Checked {len(paths)} changed paths (UTF-8, inline local links, SVG/XML, image containers, whitespace).')
     if os.environ.get('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
             output.write(result + '\n')
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+            summary.write('## CI selection\n\n' + (
+                f'Software tests reused from [successful run]({reused}); identical software tree `{signature}`. '
+                'Document checks ran on the full changed range.\n' if reused else
+                'Documentation checks only.\n' if docs_only else 'Fresh software tests required.\n'))
 
 
 if __name__ == '__main__':

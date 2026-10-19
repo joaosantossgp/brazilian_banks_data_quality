@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import io
+import copy
+import os
 
 spec = importlib.util.spec_from_file_location('ci_checks', Path(__file__).parents[1] / 'scripts/check-ci.py')
 ci = importlib.util.module_from_spec(spec)
@@ -115,3 +117,107 @@ class RoutingTests(unittest.TestCase):
         with patch('sys.argv', ['check-ci.py', '--base', self.base, '--head', self.base]), patch.object(ci, 'inspect_diff', return_value=(True, ['README.md'])), patch.object(ci, 'check_documents', side_effect=ValueError('broken document')):
             with self.assertRaisesRegex(ValueError, 'broken document'):
                 ci.main()
+
+    def test_software_signature_preserves_docs_but_detects_all_other_changes(self):
+        before = ci.software_signature(self.repo)
+        self.write('README.md', '# Changed\n')
+        self.write('docs/new.svg', '<svg/>')
+        self.commit()
+        self.assertEqual(before, ci.software_signature(self.repo))
+        for path in ['scripts/source.py', 'tests/test_x.py', 'requirements.txt', '.github/workflows/ci.yml']:
+            self.write(path, 'changed\n')
+            self.commit()
+            after = ci.software_signature(self.repo)
+            self.assertNotEqual(before, after, path)
+            before = after
+        self.git('mv', 'scripts/source.py', 'docs/source.md')
+        self.commit()
+        self.assertNotEqual(before, ci.software_signature(self.repo))
+
+    def test_software_signature_includes_executable_docs_and_merge_base_advances(self):
+        before = ci.software_signature(self.repo)
+        self.git('update-index', '--chmod=+x', 'README.md')
+        self.git('commit', '-qm', 'mode')
+        executable = ci.software_signature(self.repo)
+        self.assertNotEqual(before, executable)
+        self.git('checkout', '-qb', 'base-advance')
+        self.write('scripts/base.py', 'base change\n')
+        self.commit()
+        self.assertNotEqual(executable, ci.software_signature(self.repo))
+
+    def test_missing_signature_runs_full_tests(self):
+        with patch('sys.argv', ['check-ci.py', '--base', self.base, '--head', self.base]), \
+                patch.object(ci, 'inspect_diff', return_value=(False, ['scripts/source.py'])), \
+                patch.object(ci, 'software_signature', side_effect=OSError('unavailable')), \
+                patch('sys.stdout', new_callable=io.StringIO) as output:
+            ci.main()
+        self.assertIn('run_software=true', output.getvalue())
+
+    def test_mixed_pr_reuses_software_without_skipping_document_checks(self):
+        url='https://github.com/owner/repo/actions/runs/123'
+        with patch('sys.argv', ['check-ci.py', '--base', self.base, '--head', self.base]), \
+                patch.object(ci, 'inspect_diff', return_value=(False, ['README.md'])), \
+                patch.object(ci, 'software_signature', return_value='a'*64), \
+                patch.object(ci, 'reusable_run', return_value=url), \
+                patch.object(ci, 'check_documents') as documents, \
+                patch.object(ci.subprocess, 'run'), \
+                patch.dict(os.environ, {'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':'owner/repo'}), \
+                patch('sys.stdout', new_callable=io.StringIO) as output:
+            ci.main()
+        documents.assert_called_once()
+        self.assertIn('docs_only=false', output.getvalue())
+        self.assertIn('run_software=false', output.getvalue())
+        self.assertIn('reused_run='+url, output.getvalue())
+
+
+class ReuseTests(unittest.TestCase):
+    def setUp(self):
+        self.repo = 'owner/repo'
+        self.signature = 'a' * 64
+        self.run = dict(id=123, status='completed', conclusion='success', event='pull_request',
+                        path='.github/workflows/ci.yml', run_attempt=1,
+                        repository={'full_name': self.repo}, head_repository={'full_name': self.repo})
+        self.jobs = [dict(name=name, status='completed', conclusion='success',
+                          steps=[dict(name='Validated software tree ' + self.signature,
+                                      status='completed', conclusion='success')])
+                     for name in ['Offline tests', 'Windows native offline tests']]
+
+    def reuse(self, run=None, jobs=None):
+        run = self.run if run is None else run
+        jobs = self.jobs if jobs is None else jobs
+        def fetch(path):
+            if '/workflows/ci.yml/runs?' in path:
+                return {'workflow_runs': [run]}
+            self.assertIn('/runs/123/attempts/1/jobs?', path)
+            return {'jobs': jobs}
+        return ci.reusable_run(self.repo, self.signature, '456', fetch)
+
+    def test_reuse_requires_successful_actual_tests_on_identical_software(self):
+        self.assertEqual('https://github.com/owner/repo/actions/runs/123', self.reuse())
+        for status in ['failure', 'cancelled', 'skipped', None]:
+            with self.subTest(status=status):
+                jobs = copy.deepcopy(self.jobs)
+                jobs[0]['conclusion'] = status
+                self.assertIsNone(self.reuse(jobs=jobs))
+        jobs = copy.deepcopy(self.jobs)
+        jobs[0]['steps'][0]['name'] = 'Validated software tree ' + 'b' * 64
+        self.assertIsNone(self.reuse(jobs=jobs))
+        self.assertIsNone(self.reuse(jobs=[]))  # A docs-only successful run is not test evidence.
+        self.assertIsNone(self.reuse(jobs=self.jobs[:1]))
+
+    def test_rejects_forks_wrong_workflow_current_run_and_incomplete_marker(self):
+        for key, value in [('id',456), ('conclusion','failure'), ('status','in_progress'),
+                           ('path','.github/workflows/other.yml'), ('event','workflow_dispatch'),
+                           ('head_repository',{'full_name':'fork/repo'})]:
+            run = copy.deepcopy(self.run); run[key] = value
+            with self.subTest(key=key):
+                self.assertIsNone(self.reuse(run=run))
+        jobs=copy.deepcopy(self.jobs); jobs[0]['steps'][0]['conclusion']='skipped'
+        self.assertIsNone(self.reuse(jobs=jobs))
+
+    def test_api_failure_or_bad_response_requires_fresh_tests(self):
+        def unavailable(path): raise OSError('unavailable')
+        self.assertIsNone(ci.reusable_run(self.repo, self.signature, '456', unavailable))
+        self.assertIsNone(ci.reusable_run(self.repo, self.signature, '456', lambda path: {}))
+        run=copy.deepcopy(self.run); run['repository']['full_name']=None
+        self.assertIsNone(self.reuse(run=run))
