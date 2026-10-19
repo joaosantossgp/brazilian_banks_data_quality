@@ -48,6 +48,8 @@ Implementar e verificar uma fatia; solicitar revisão independente **antes de am
 
 Documentação pede links, coerência, escopo e visual; não adicionar testes que repitam texto nem executar suíte sem pertinência. Usar o [guia de comandos](docs/engineering/local-queries-20261013.md#comandos-locais-verificados) conforme impacto. Preservar tentativas falhas; reexecuções isoladas não transformam uma execução global falha em PASS. Medir recursos por máquina antes de ampliar ingestões; paralelismo exige destinos/ownership compatíveis, sem teto universal de RAM.
 
+Após validação do software, um delta somente documental pede checks documentais e revisão independente do delta/SHA final, sem repetir a suíte completa. A CI pode reaproveitar os dois jobs aprovados quando comprovar a mesma assinatura de todos os arquivos fora da allowlist documental no checkout efetivo, inclusive código incorporado de `main`; registra o run original. Código, testes, dependências e workflow alterados invalidam essa prova. Sem prova válida, roda os testes completos; detalhes no [workflow](docs/agents/workflow.md#reaproveitamento-de-testes-aprovados--issue200-19102026). Consolidar os ajustes documentais antes do último ciclo de validação sempre que possível.
+
 A PR pode ter o tamanho necessário; não é obrigatório separar PRs por fatia ou trimestre. Revisões parciais não dispensam conferência final da composição, deltas, inventário e **SHA entregue**. Checkpoints registram comandos/saídas, revisão, limites e checks não executados.
 
 ## Agent skills
