@@ -26,6 +26,44 @@ def stock(period, token, **changes):
                        window_rule='stock', **changes)
 
 
+class LeasingProtectionTests(unittest.TestCase):
+    def evaluate(self, receivables='200', provision='-15', **changes):
+        from bank_quality import ifdata_analysis as math
+        components=dict(leasing_receivables=[stock('202412',receivables)],
+                        leasing_provision=[stock('202412',provision)],
+                        leasing_net=[stock('202412','185')],leasing_vrg=[stock('202412','900')],
+                        leasing_fixed_assets=[stock('202412','500')])
+        inputs=dict(period='202412',components=components,financial_statement=True);inputs.update(changes)
+        return math.evaluate_metric('QL',inputs,changes.get('horizon','point'))
+
+    def test_receivable_before_provision_is_the_only_denominator(self):
+        from fractions import Fraction
+        from bank_quality import ifdata_analysis as math
+        r=self.evaluate();self.assertEqual(r['status'],'ok')
+        self.assertEqual(math._rational(r['value_fraction']),Fraction(3,40))
+        self.assertEqual(math._rational(r['numerator_fraction']),15)
+        self.assertEqual(math._rational(r['denominator_fraction']),200)
+        self.assertEqual(r['applicability'],'applicable')
+        self.assertIn('not_NPL_or_regulatory_adequacy',r['limits'])
+        self.assertEqual(self.evaluate(horizon='ttm')['status'],'invalid_horizon')
+
+    def test_signed_zero_null_and_own_perimeter_states_remain_distinct(self):
+        from fractions import Fraction
+        from bank_quality import ifdata_analysis as math
+        r=self.evaluate(provision='15');self.assertEqual(r['status'],'ok')
+        self.assertEqual(math._rational(r['value_fraction']),Fraction(-3,40))
+        self.assertIn('positive_native_leasing_provision',r['flags'])
+        r=self.evaluate(receivables='0');self.assertEqual(r['status'],'zero_denominator');self.assertEqual(r['applicability'],'unknown')
+        r=self.evaluate(receivables='0',provision='15');self.assertEqual(r['status'],'zero_denominator')
+        self.assertIn('positive_native_leasing_provision',r['flags'])
+        r=self.evaluate(receivables='-200');self.assertEqual(r['status'],'ok');self.assertEqual(r['applicability'],'unknown');self.assertIn('negative_denominator',r['flags'])
+        self.assertEqual(self.evaluate(provision=None)['status'],'native_null')
+        self.assertEqual(self.evaluate(receivables=None)['status'],'native_null')
+        self.assertEqual(self.evaluate(components={})['status'],'missing_component')
+        c=dict(leasing_receivables=[stock('202412','200')],leasing_provision=[stock('202412','-15',unit_key=('individual','1','001'))])
+        self.assertEqual(self.evaluate(components=c)['status'],'incompatible_unit')
+
+
 class AssafSensitivityTests(unittest.TestCase):
     def evaluate(self, metric, *, changes=None, horizon=None):
         from bank_quality import ifdata_analysis as api

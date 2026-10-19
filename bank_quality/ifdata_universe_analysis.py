@@ -821,6 +821,8 @@ COMPLEMENT_BINDINGS={
     'RIF':('4','78208','Somatório de Rendas de Operações de Crédito, Rendas de Operações de Arrendamento Mercantil, Rendas de Operações com TVM, Rendas de Operações com Instrumentos Financeiros Derivativos, Resultado de Operações de Câmbio e Rendas de Aplicações Compulsórias'),
     'other_income':('4','78222','[71900005]-[71910002]-[71915007]-[71920009]-[71925004]-[71930006]-[71940003]-[71945008]-[71947006]-[71950000]-[71955005]-[71960007]-[71965002]-[71970004]-[71980001]-[71990053]-[71990101][71990125]-[71990156]-[71990204]-[71990266]-[71990307]-[71990352]-[71990400]-[71990503]-[71990606]-[71990709]-[71990802]-[71990905]'),
     'participations':('4','78221','[71800002]+[71990802]+[71990905]+[71990709]+[81600003]+[81830804]+[81830907]+[81830701]'),
+    'leasing_receivables':('2','78194','[17000000]-[17900007]'),
+    'leasing_provision':('2','78197','[17900007]'),
 }
 
 

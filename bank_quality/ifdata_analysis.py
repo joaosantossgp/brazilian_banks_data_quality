@@ -372,6 +372,7 @@ COMPLEMENT_METRICS = {
     'R3':('LL','RIF'),'RIF_AT':('RIF','AT'),
     'E2-W':('personnel','administration','RBIF','provision_flow','services','fees','other_income'),
     'E2-WP':('personnel','administration','RBIF','provision_flow','services','fees','other_income','participations'),
+    'QL':('leasing_provision','leasing_receivables'),
 }
 COMPLEMENT_LIMITS = {
     'LA':['not_certified_available_liquidity','not_LCR_or_HQLA'],
@@ -388,6 +389,7 @@ COMPLEMENT_LIMITS = {
     'RIF_AT':['gross_intermediation_income_not_net_spread','business_model_comparability_required'],
     'E2-W':['restricted_personnel_administration_cost','not_total_operating_revenue_or_IMF_FSI'],
     'E2-WP':['restricted_personnel_administration_cost','not_total_operating_revenue_or_IMF_FSI','participation_cost_perimeter_differs'],
+    'QL':['accounting_provision_intensity_on_leasing_receivables','not_NPL_or_regulatory_adequacy','receivables_exclude_unearned_income_not_nominal_contract_principal'],
 }
 COMPLEMENT_FLOW_METRICS={'RS','E3','R4','R5','R3','RIF_AT','E2-W','E2-WP'}
 FLOW_COMPONENTS = {'LL', 'provision_flow', 'RBIF', 'services', 'fees', 'personnel', 'administration','credit_income','RIF','other_income','participations'}
@@ -405,6 +407,7 @@ COMPONENT_NAMES = {
     'issuances':'debt_issuance','loans_transfers':'borrowings_transfers','funding':'funding',
     'RIF':'intermediation_income',
     'other_income':'other_operating_income','participations':'participation_result',
+    'leasing_receivables':'leasing_receivables_before_provision','leasing_provision':'leasing_provision_signed',
 }
 
 
@@ -548,14 +551,14 @@ def evaluate_metric(metric, inputs, horizon):
                     and r.get('status','ok') not in ('binding_missing','binding_unverified','ambiguous_binding','ambiguous_occurrence')
                     for r in components.get(name,[])) for name in METRICS[metric]):
             result['applicability']='applicable'
-    elif metric in ('R1','R2','C1','E2-B') or metric in COMPLEMENT_METRICS and metric not in ('R5','L1','PL_DEP'):
+    elif metric in ('R1','R2','C1','E2-B') or metric in COMPLEMENT_METRICS and metric not in ('R5','L1','PL_DEP','QL'):
         if inputs.get('financial_statement') and all(
                 any(r['period']==period and r.get('binding') and r.get('sources')
                     and r.get('status','ok') not in ('binding_missing','binding_unverified','ambiguous_binding','ambiguous_occurrence')
                     for r in components.get(name,[])) for name in formula):
             result['applicability']='applicable'
     else:
-        activity='credit' if metric in ('Q1','Q2','R5') else 'sight_deposits' if metric in ('L1','L2') else 'deposits'
+        activity='leasing_receivables' if metric=='QL' else 'credit' if metric in ('Q1','Q2','R5') else 'sight_deposits' if metric in ('L1','L2') else 'deposits'
         row=next((r for r in components.get(activity,[]) if r['period']==period),None)
         value,status=_native_value(row) if row else (None,'missing')
         if status is None and value>0:
@@ -587,8 +590,9 @@ def evaluate_metric(metric, inputs, horizon):
         numerator=values[{'LF-DEP':'deposits','LF-OC':'repos','LF-EM':'issuances','LF-REP':'loans_transfers'}[metric]]
         denominator=values['funding']
     else:
-        a,b=formula;numerator=values[a]*(-1 if metric in ('Q1','Q2') else 1);denominator=values[b]
+        a,b=formula;numerator=values[a]*(-1 if metric in ('Q1','Q2','QL') else 1);denominator=values[b]
     result['numerator_fraction']=_fraction_field(numerator);result['denominator_fraction']=_fraction_field(denominator)
+    if metric=='QL' and values['leasing_provision']>0:result['flags'].append('positive_native_leasing_provision')
     if denominator==0:return dict(result,status='zero_denominator')
     if denominator<0:result['flags'].append('negative_denominator')
     if metric=='PL_DEP' and numerator<0:result['flags'].append('negative_equity')
