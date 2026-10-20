@@ -1,5 +1,7 @@
 # Entrada para a análise da monografia
 
+**Seleção acadêmica D1/D2 — 20/10/2026:** ler a [matriz operacional aprovada](monograph-operational-matrix-20261020.md) para medidas, unidades, prioridades, janelas, apresentação monetária, subperíodos, CODACE e complemento das abertas. Ela sucede propostas anteriores de seleção editorial; esta entrada mantém a responsabilidade pela descoberta/autenticação dos dados. D3–D5 permanecem abertas nas Issues #2/#3. O roteiro não dispensa conferir a base vigente e seus hashes antes de consultar valores.
+
 Contrato: [Pesquisa #198](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/198), articulada à [Entrega #193](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/193). Plano operacional: [fatias e verificações](../superpowers/plans/2026-10-19-analysis-ready-explorer.md). Este documento propõe a sequência de análise; o fechamento acadêmico final cabe a João/orientador. A base é o universo observado inteiro, com seleção vinculada, restante e vínculo desconhecido separados.
 
 ## Onde estão os dados e qual versão usar
