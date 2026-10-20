@@ -1,5 +1,15 @@
 # Referências da monografia
 
+**Consolidação D1/D2 — 20/10/2026:** a [matriz operacional](docs/engineering/monograph-operational-matrix-20261020.md) registra a seleção acadêmica vigente e aponta para os contratos técnicos posteriores. Estados de pesquisas/candidatos datados abaixo são preservados como histórico. A referência CODACE a seguir foi conferida nesta consolidação e adotada para a finalidade delimitada.
+
+## CODACE — cronologia macroeconômica adotada na D2
+
+COMITÊ DE DATAÇÃO DE CICLOS ECONÔMICOS (CODACE). *Comunicado da reunião de 31 de janeiro de 2023*. Rio de Janeiro: FGV/IBRE, divulgação em 2 fev. 2023. [PDF oficial, 3 páginas](https://portalibre.fgv.br/sites/default/files/2023-02/comunicado-do-comite-de-datacao-de-ciclos-economicos-31_01_2023_minuta.pdf), vinculado pela [página institucional](https://portalibre.fgv.br/codace). Acesso e leitura dirigida: 20 out. 2026. **Localizadores:** p. 1, contração 1T–2T2020/retomada desde 3T2020; p. 2, finalidade, independência e indicadores amplos de atividade/trabalho; p. 3, cronologia trimestral, incluindo recessão 2T2014–4T2016 e expansão 1T2017–4T2019.
+
+**Uso adotado:** referência especializada e externa aos resultados financeiros para as fronteiras macro da narrativa. Não data automaticamente o ciclo bancário nem identifica causalidade. Os blocos 2020–2021 e 2022–2024 são escolhas da monografia, não recessões atribuídas ao CODACE. IBGE/BCB e o pacote macro mantêm séries/vintages próprios; não importar taxas do comunicado silenciosamente. [Atribuição, motivação e contrastes](docs/engineering/monograph-operational-matrix-20261020.md#fonte-codace-referência-escolha-e-limites).
+
+## Biblioteca e registros anteriores
+
 Biblioteca comentada para fundamentar conceitos, selecionar indicadores e planejar a análise. Organizada em 2026-10-13 na [Issue 109](https://github.com/joaosantossgp/brazilian_banks_data_quality/issues/109); contexto e decisões no [README](README.md) e na [nota metodológica](docs/engineering/institution-type-indicator-methodology-20261012.md).
 
 **Leitura corrente após as pesquisas de 16/10:** a [pesquisa142](docs/engineering/cvm-open-financial-universe-2024-20261016.md) documenta as 55 companhias aprovadas, com 32 associações e 24 códigos financeiros; não recalcula os contratos anteriores. A [pesquisa143](docs/engineering/financial-indicators-activity-review-20261016.md) revê dez métricas atuais e sete complementos candidatos no sistema observado inteiro, com [proveniência e versões](docs/engineering/financial-indicators-activity-review-20261016.provenance.md). O [atlas por recorte](docs/engineering/financial-indicators-formulas-20261017.md) mostra a referência junto de cada indicador. Os estados e leituras datados abaixo preservam sua origem; esta reconciliação documental não é nova leitura dos textos econômicos.
